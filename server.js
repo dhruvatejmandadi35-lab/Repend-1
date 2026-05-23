@@ -1,9 +1,11 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const Anthropic = require("@anthropic-ai/sdk");
+const https = require("https");
+const OpenAI = require("openai");
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const SKYBOX_API_KEY = process.env.SKYBOX_API_KEY || "";
 
 const PLAN_SYSTEM = `You are an expert educational experience designer. Given a learning topic, return ONLY valid JSON (no markdown, no explanation):
 
@@ -25,6 +27,11 @@ TECHNICAL REQUIREMENTS:
 - Window resize handler: renderer.setSize + camera.aspect update + camera.updateProjectionMatrix
 - requestAnimationFrame animation loop
 - No external images or fonts — all geometry generated in code
+
+SKYBOX ENVIRONMENT (if skyboxUrl is provided):
+- Load the skybox equirectangular image as scene background and environment using THREE.TextureLoader
+- Use: const loader = new THREE.TextureLoader(); loader.load(skyboxUrl, tex => { tex.mapping = THREE.EquirectangularReflectionMapping; scene.background = tex; scene.environment = tex; });
+- If no skyboxUrl, use a dark gradient or solid #0B1220 background
 
 UI OVERLAY PANEL (position: fixed, not blocking the 3D view):
 - Background: rgba(11,18,32,0.88); border: 1px solid rgba(59,130,246,0.25); border-radius: 12px; backdrop-filter: blur(8px); padding: 16px
@@ -50,29 +57,78 @@ const VERIFY_SYSTEM = `You are a learning coach checking a student's answer to a
 }`;
 
 async function plan(topic) {
-  const msg = await client.messages.create({
-    model: "claude-sonnet-4-6",
+  const res = await client.chat.completions.create({
+    model: "gpt-4o",
     max_tokens: 1024,
-    system: PLAN_SYSTEM,
-    messages: [{ role: "user", content: `Topic: ${topic}` }],
+    messages: [
+      { role: "system", content: PLAN_SYSTEM },
+      { role: "user", content: `Topic: ${topic}` },
+    ],
   });
-  const text = msg.content[0].text.trim();
+  const text = res.choices[0].message.content.trim();
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
   return JSON.parse(text.slice(first, last + 1));
 }
 
+// Generate an immersive skybox via Blockade Labs Skybox AI
+async function generateSkybox(topic, scenario) {
+  if (!SKYBOX_API_KEY) return null;
+  try {
+    const prompt = `Educational 3D environment for learning about ${topic}. ${scenario.slice(0, 150)}. Photorealistic, immersive, dramatic lighting.`;
+    // Step 1: create generation
+    const body = JSON.stringify({ prompt, skybox_style_id: 2 }); // style 2 = realistic
+    const createRes = await new Promise((resolve, reject) => {
+      const req = https.request(
+        { hostname: "backend.blockadelabs.com", path: "/api/v1/skybox", method: "POST",
+          headers: { "x-api-key": SKYBOX_API_KEY, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } },
+        (r) => { let d = ""; r.on("data", c => d += c); r.on("end", () => resolve(JSON.parse(d))); }
+      );
+      req.on("error", reject);
+      req.write(body);
+      req.end();
+    });
+    const id = createRes.id;
+    if (!id) return null;
+
+    // Step 2: poll until done (max 90s)
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      const poll = await new Promise((resolve, reject) => {
+        const req = https.request(
+          { hostname: "backend.blockadelabs.com", path: `/api/v1/imagine/requests/${id}`, method: "GET",
+            headers: { "x-api-key": SKYBOX_API_KEY } },
+          (r) => { let d = ""; r.on("data", c => d += c); r.on("end", () => resolve(JSON.parse(d))); }
+        );
+        req.on("error", reject);
+        req.end();
+      });
+      if (poll.status === "complete" && poll.file_url) return poll.file_url;
+      if (poll.status === "error") return null;
+    }
+    return null;
+  } catch (e) {
+    console.error("Skybox generation failed:", e.message);
+    return null;
+  }
+}
+
 async function simulate(topic, simulationType, scenario) {
-  const msg = await client.messages.create({
-    model: "claude-sonnet-4-6",
+  // Try to generate a skybox environment in parallel
+  const [skyboxUrl] = await Promise.all([generateSkybox(topic, scenario)]);
+  const skyboxNote = skyboxUrl
+    ? `\nSKYBOX URL (use as equirectangular background): ${skyboxUrl}`
+    : "";
+
+  const res = await client.chat.completions.create({
+    model: "gpt-4o",
     max_tokens: 8192,
-    system: SIM_SYSTEM,
-    messages: [{
-      role: "user",
-      content: `Topic: ${topic}\nSimulation to build: ${simulationType}\nContext: ${scenario.slice(0, 300)}`,
-    }],
+    messages: [
+      { role: "system", content: SIM_SYSTEM },
+      { role: "user", content: `Topic: ${topic}\nSimulation to build: ${simulationType}\nContext: ${scenario.slice(0, 300)}${skyboxNote}` },
+    ],
   });
-  let code = msg.content[0].text.trim();
+  let code = res.choices[0].message.content.trim();
   if (code.startsWith("```")) {
     code = code.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/, "").trim();
   }
@@ -80,19 +136,34 @@ async function simulate(topic, simulationType, scenario) {
 }
 
 async function verify(topic, question, simulationType, userAnswer) {
-  const msg = await client.messages.create({
-    model: "claude-sonnet-4-6",
+  const res = await client.chat.completions.create({
+    model: "gpt-4o",
     max_tokens: 512,
-    system: VERIFY_SYSTEM,
-    messages: [{
-      role: "user",
-      content: `Topic: ${topic}\nSimulation: ${simulationType}\nQuestion: ${question}\nStudent answer: ${userAnswer}`,
-    }],
+    messages: [
+      { role: "system", content: VERIFY_SYSTEM },
+      { role: "user", content: `Topic: ${topic}\nSimulation: ${simulationType}\nQuestion: ${question}\nStudent answer: ${userAnswer}` },
+    ],
   });
-  const text = msg.content[0].text.trim();
+  const text = res.choices[0].message.content.trim();
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
   return JSON.parse(text.slice(first, last + 1));
+}
+
+// Analyze an image with GPT-4o vision
+async function analyzeImage(base64Image, question) {
+  const res = await client.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 512,
+    messages: [{
+      role: "user",
+      content: [
+        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } },
+        { type: "text", text: question || "Describe what you see in this image in the context of the educational simulation." },
+      ],
+    }],
+  });
+  return res.choices[0].message.content.trim();
 }
 
 const server = http.createServer(async (req, res) => {
@@ -130,6 +201,12 @@ const server = http.createServer(async (req, res) => {
           const result = await verify(topic, question, simulationType, userAnswer);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(result));
+
+        } else if (req.url === "/analyze-image") {
+          const { image, question } = data;
+          const result = await analyzeImage(image, question);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ description: result }));
 
         } else {
           res.writeHead(404); res.end("Not found");
