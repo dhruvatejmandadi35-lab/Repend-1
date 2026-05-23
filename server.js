@@ -29,16 +29,26 @@ The JSON must follow this exact shape:
 
 Generate 4–5 modules, each with 3–4 lessons. Make the content genuinely educational.`;
 
+function extractJson(text) {
+  let t = text.trim();
+  if (t.startsWith("```")) {
+    t = t.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+  }
+  const first = t.indexOf("{");
+  const last = t.lastIndexOf("}");
+  if (first !== -1 && last !== -1) t = t.slice(first, last + 1);
+  return JSON.parse(t);
+}
+
 async function generateCourse(topic) {
   const message = await client.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 4096,
+    max_tokens: 8192,
     messages: [{ role: "user", content: `Generate a complete course on: ${topic}` }],
     system: SYSTEM_PROMPT,
   });
 
-  const text = message.content[0].text.trim();
-  return JSON.parse(text);
+  return extractJson(message.content[0].text);
 }
 
 const server = http.createServer(async (req, res) => {
