@@ -3,95 +3,118 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Repend — Learn Anything</title>
+  <title>Repend — Learn by doing.</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #0a0a0f;
-      --surface: #12121a;
-      --surface2: #1c1c28;
-      --border: #2a2a3a;
-      --accent: #7c6fff;
-      --accent2: #a78bfa;
-      --text: #e8e8f0;
-      --muted: #8888a8;
-      --success: #34d399;
-      --radius: 12px;
+      --navy:   #0B1220;
+      --navy2:  #111827;
+      --navy3:  #1a2335;
+      --blue:   #3B82F6;
+      --blue2:  #60A5FA;
+      --copper: #D4A574;
+      --copper2:#E8C49A;
+      --text:   #F0F2F8;
+      --muted:  #8899BB;
+      --border: rgba(59,130,246,0.18);
+      --r:      14px;
     }
+
+    html { scroll-behavior: smooth; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg);
+      background: var(--navy);
       color: var(--text);
       min-height: 100vh;
-      line-height: 1.6;
+      line-height: 1.65;
     }
 
-    /* NAV */
+    /* ── NAV ─────────────────────────────────────── */
     nav {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 20px 40px;
+      padding: 20px 48px;
       border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(11,18,32,0.92);
+      backdrop-filter: blur(12px);
+      z-index: 100;
     }
     .logo {
-      font-size: 1.4rem;
-      font-weight: 700;
+      font-size: 1.3rem;
+      font-weight: 800;
       letter-spacing: -0.5px;
-      color: var(--text);
     }
-    .logo span { color: var(--accent2); }
-    .tagline {
-      font-size: 0.8rem;
+    .logo em { font-style: normal; color: var(--copper); }
+    .nav-tag {
+      font-size: 0.78rem;
       color: var(--muted);
+      letter-spacing: 0.5px;
     }
+    .nav-tag span { color: var(--copper); font-weight: 600; }
 
-    /* HERO */
+    /* ── HERO ────────────────────────────────────── */
     .hero {
       text-align: center;
-      padding: 80px 24px 60px;
+      padding: 96px 24px 72px;
+      max-width: 780px;
+      margin: 0 auto;
+    }
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--copper);
+      background: rgba(212,165,116,0.1);
+      border: 1px solid rgba(212,165,116,0.25);
+      border-radius: 20px;
+      padding: 6px 14px;
+      margin-bottom: 28px;
+    }
+    .hero-eyebrow::before {
+      content: '';
+      width: 6px; height: 6px;
+      background: var(--copper);
+      border-radius: 50%;
     }
     .hero h1 {
-      font-size: clamp(2rem, 5vw, 3.5rem);
-      font-weight: 800;
-      letter-spacing: -1px;
-      line-height: 1.15;
-      margin-bottom: 16px;
+      font-size: clamp(2.8rem, 6vw, 4.2rem);
+      font-weight: 900;
+      letter-spacing: -2px;
+      line-height: 1.05;
+      margin-bottom: 22px;
     }
-    .hero h1 em {
-      font-style: normal;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .hero p {
+    .hero h1 .line1 { color: var(--text); }
+    .hero h1 .line2 { color: var(--blue); }
+    .hero-sub {
+      font-size: 1.05rem;
       color: var(--muted);
-      font-size: 1.1rem;
-      max-width: 480px;
-      margin: 0 auto 48px;
+      max-width: 520px;
+      margin: 0 auto 52px;
+      line-height: 1.75;
     }
 
-    /* SEARCH */
-    .search-wrap {
-      max-width: 640px;
-      margin: 0 auto;
-      position: relative;
-    }
-    .search-row {
+    /* ── INPUT ───────────────────────────────────── */
+    .input-wrap {
       display: flex;
       gap: 10px;
-      background: var(--surface);
+      background: var(--navy2);
       border: 1.5px solid var(--border);
-      border-radius: 14px;
-      padding: 8px 8px 8px 20px;
+      border-radius: 16px;
+      padding: 8px 8px 8px 22px;
       transition: border-color 0.2s;
+      max-width: 620px;
+      margin: 0 auto;
     }
-    .search-row:focus-within {
-      border-color: var(--accent);
-    }
+    .input-wrap:focus-within { border-color: var(--blue); }
     #topicInput {
       flex: 1;
       background: none;
@@ -99,371 +122,626 @@
       outline: none;
       color: var(--text);
       font-size: 1rem;
-      padding: 8px 0;
+      padding: 10px 0;
     }
     #topicInput::placeholder { color: var(--muted); }
-    #generateBtn {
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
+    #genBtn {
+      background: var(--blue);
       color: #fff;
       border: none;
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 12px 28px;
       font-size: 0.95rem;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
-      transition: opacity 0.2s, transform 0.1s;
+      transition: background 0.15s, transform 0.1s;
       white-space: nowrap;
+      letter-spacing: 0.2px;
     }
-    #generateBtn:hover { opacity: 0.9; }
-    #generateBtn:active { transform: scale(0.98); }
-    #generateBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+    #genBtn:hover { background: var(--blue2); }
+    #genBtn:active { transform: scale(0.97); }
+    #genBtn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
-    .examples {
+    .chips {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
       justify-content: center;
-      margin-top: 18px;
+      margin-top: 20px;
     }
     .chip {
-      background: var(--surface2);
+      background: var(--navy3);
       border: 1px solid var(--border);
       border-radius: 20px;
       padding: 6px 14px;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       color: var(--muted);
       cursor: pointer;
       transition: all 0.15s;
     }
-    .chip:hover {
-      border-color: var(--accent);
-      color: var(--accent2);
-    }
+    .chip:hover { border-color: var(--copper); color: var(--copper); }
 
-    /* LOADING */
+    /* ── LOADING ─────────────────────────────────── */
     #loading {
       display: none;
       text-align: center;
-      padding: 60px 24px;
+      padding: 80px 24px;
     }
-    .spinner {
-      width: 44px;
-      height: 44px;
-      border: 3px solid var(--border);
-      border-top-color: var(--accent);
+    .pulse-ring {
+      width: 64px; height: 64px;
       border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin: 0 auto 20px;
+      border: 2px solid rgba(59,130,246,0.15);
+      border-top-color: var(--blue);
+      border-right-color: var(--copper);
+      animation: spin 1.1s linear infinite;
+      margin: 0 auto 24px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #loading p { color: var(--muted); font-size: 0.95rem; }
+    .loading-stage {
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--copper);
+      margin-bottom: 8px;
+    }
+    #loadingMsg {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
 
-    /* ERROR */
-    #error {
+    /* ── ERROR ───────────────────────────────────── */
+    #errorBox {
       display: none;
-      max-width: 640px;
+      max-width: 620px;
       margin: 32px auto;
-      background: #2a1215;
-      border: 1px solid #5a2030;
-      border-radius: var(--radius);
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--r);
       padding: 16px 20px;
-      color: #f87171;
+      color: #FCA5A5;
       font-size: 0.9rem;
     }
 
-    /* COURSE OUTPUT */
-    #course {
+    /* ── EXPERIENCE ──────────────────────────────── */
+    #experience {
       display: none;
       max-width: 860px;
       margin: 0 auto;
-      padding: 0 24px 80px;
+      padding: 0 24px 100px;
     }
 
-    .course-header {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 32px;
-      margin-bottom: 32px;
-    }
-    .course-meta {
+    .step-header {
       display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 24px;
     }
-    .badge {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 4px 12px;
+    .step-num {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: rgba(212,165,116,0.12);
+      border: 1.5px solid var(--copper);
+      display: flex;
+      align-items: center;
+      justify-content: center;
       font-size: 0.78rem;
-      color: var(--accent2);
-      font-weight: 500;
+      font-weight: 800;
+      color: var(--copper);
+      flex-shrink: 0;
     }
-    .course-header h2 {
-      font-size: 1.8rem;
+    .step-label {
+      font-size: 0.72rem;
       font-weight: 700;
-      letter-spacing: -0.5px;
-      margin-bottom: 12px;
-    }
-    .course-header p {
-      color: var(--muted);
-      font-size: 0.97rem;
-    }
-
-    .modules-label {
-      font-size: 0.78rem;
-      font-weight: 600;
-      letter-spacing: 1px;
+      letter-spacing: 1.2px;
       text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 16px;
+      color: var(--copper);
+    }
+    .step-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text);
     }
 
-    .module {
-      background: var(--surface);
+    /* Step 1 — Scenario */
+    #stepScenario { margin-bottom: 56px; }
+    .scenario-card {
+      background: var(--navy2);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
-      margin-bottom: 16px;
+      border-radius: var(--r);
+      padding: 36px 40px;
+      position: relative;
       overflow: hidden;
     }
-    .module-header {
+    .scenario-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--blue), var(--copper));
+    }
+    #scenarioText {
+      font-size: 1rem;
+      line-height: 1.85;
+      color: #C8D4E8;
+      white-space: pre-line;
+    }
+    .sim-type-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 24px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      background: rgba(59,130,246,0.07);
+      border: 1px solid rgba(59,130,246,0.18);
+      border-radius: 20px;
+      padding: 5px 12px;
+    }
+    .sim-type-tag::before {
+      content: '⟡';
+      color: var(--blue);
+    }
+
+    /* Step 2 — Simulation */
+    #stepSim { margin-bottom: 56px; }
+    .sim-loading {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 20px 24px;
+      justify-content: center;
+      gap: 14px;
+      background: var(--navy2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      height: 520px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      flex-direction: column;
+    }
+    .sim-loading .mini-spin {
+      width: 36px; height: 36px;
+      border: 2px solid rgba(59,130,246,0.15);
+      border-top-color: var(--blue);
+      border-right-color: var(--copper);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    .sim-frame-wrap {
+      display: none;
+      border-radius: var(--r);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      position: relative;
+    }
+    #simFrame {
+      width: 100%;
+      height: 520px;
+      border: none;
+      display: block;
+      background: var(--navy);
+    }
+    .sim-hint {
+      margin-top: 10px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-align: center;
+      letter-spacing: 0.3px;
+    }
+    .sim-hint span { color: var(--blue2); }
+
+    /* Step 3 — Verify */
+    #stepVerify { margin-bottom: 40px; }
+    .verify-card {
+      background: var(--navy2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 32px 36px;
+    }
+    #questionText {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    #answerInput {
+      width: 100%;
+      background: var(--navy3);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      color: var(--text);
+      font-size: 0.95rem;
+      resize: vertical;
+      min-height: 90px;
+      outline: none;
+      font-family: inherit;
+      line-height: 1.6;
+      transition: border-color 0.2s;
+    }
+    #answerInput:focus { border-color: var(--blue); }
+    #answerInput::placeholder { color: var(--muted); }
+    #checkBtn {
+      margin-top: 14px;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 13px 32px;
+      font-size: 0.95rem;
+      font-weight: 700;
       cursor: pointer;
-      user-select: none;
       transition: background 0.15s;
     }
-    .module-header:hover { background: var(--surface2); }
-    .module-num {
-      font-size: 0.75rem;
-      font-weight: 700;
-      color: var(--accent);
-      margin-bottom: 4px;
-      letter-spacing: 0.5px;
-    }
-    .module-title {
-      font-weight: 600;
-      font-size: 1rem;
-    }
-    .module-summary {
-      font-size: 0.83rem;
-      color: var(--muted);
-      margin-top: 4px;
-    }
-    .chevron {
-      color: var(--muted);
-      transition: transform 0.25s;
-      flex-shrink: 0;
-      margin-left: 16px;
-    }
-    .module.open .chevron { transform: rotate(180deg); }
+    #checkBtn:hover { background: var(--blue2); }
+    #checkBtn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-    .lessons {
+    #feedback {
       display: none;
-      border-top: 1px solid var(--border);
-    }
-    .module.open .lessons { display: block; }
-
-    .lesson {
-      padding: 20px 24px;
-      border-bottom: 1px solid var(--border);
-    }
-    .lesson:last-child { border-bottom: none; }
-    .lesson-title {
-      font-weight: 600;
-      font-size: 0.95rem;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .lesson-dot {
-      width: 6px;
-      height: 6px;
-      background: var(--accent);
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .lesson-content {
-      color: var(--muted);
-      font-size: 0.88rem;
+      margin-top: 20px;
+      padding: 18px 22px;
+      border-radius: 10px;
+      font-size: 0.93rem;
       line-height: 1.7;
-      padding-left: 14px;
+    }
+    #feedback.correct {
+      background: rgba(52,211,153,0.07);
+      border: 1px solid rgba(52,211,153,0.25);
+      color: #6EE7B7;
+    }
+    #feedback.wrong {
+      background: rgba(251,191,36,0.07);
+      border: 1px solid rgba(251,191,36,0.2);
+      color: #FDE68A;
+    }
+    .feedback-prefix {
+      font-weight: 700;
+      margin-bottom: 6px;
+      font-size: 0.8rem;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
     }
 
-    /* RESET */
-    #resetBtn {
+    #againBtn {
       display: none;
-      margin: 0 auto 32px;
+      margin-top: 40px;
       background: none;
       border: 1.5px solid var(--border);
       color: var(--muted);
       border-radius: 10px;
-      padding: 10px 24px;
+      padding: 12px 28px;
+      font-size: 0.9rem;
       cursor: pointer;
-      font-size: 0.88rem;
       transition: all 0.15s;
     }
-    #resetBtn:hover { border-color: var(--accent); color: var(--accent2); }
+    #againBtn:hover { border-color: var(--copper); color: var(--copper); }
+
+    /* Divider between steps */
+    .step-divider {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin: 0 0 40px;
+    }
+    .step-divider::before, .step-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .step-divider span {
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* Topic badge */
+    #topicBadge {
+      display: none;
+      text-align: center;
+      padding: 40px 24px 0;
+    }
+    #topicBadge .badge-inner {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(212,165,116,0.08);
+      border: 1px solid rgba(212,165,116,0.2);
+      border-radius: 24px;
+      padding: 8px 20px;
+      font-size: 0.85rem;
+      color: var(--copper);
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
 
 <nav>
-  <div class="logo">Rep<span>end</span></div>
-  <div class="tagline">Rep up. End with clarity.</div>
+  <div class="logo">Rep<em>end</em></div>
+  <div class="nav-tag">Learn by doing. <span>Not watching.</span></div>
 </nav>
 
-<div class="hero">
-  <h1>Learn <em>anything</em>,<br>structured instantly.</h1>
-  <p>Type any topic and get a complete course — modules, lessons, and content — generated by AI.</p>
+<!-- HERO -->
+<div class="hero" id="heroSection">
+  <div class="hero-eyebrow">AI-Native Learning</div>
+  <h1>
+    <div class="line1">Learn by doing.</div>
+    <div class="line2">Not watching.</div>
+  </h1>
+  <p class="hero-sub">
+    Type any concept. The AI reasons about it, builds a custom 3D simulation from scratch, and verifies you actually understand it.
+  </p>
 
-  <div class="search-wrap">
-    <div class="search-row">
-      <input
-        type="text"
-        id="topicInput"
-        placeholder="e.g. Machine Learning, Guitar, Stoicism…"
-        maxlength="200"
-        autocomplete="off"
-      />
-      <button id="generateBtn">Generate Course</button>
-    </div>
-    <div class="examples">
-      <span class="chip" onclick="setTopic('Machine Learning')">Machine Learning</span>
-      <span class="chip" onclick="setTopic('Personal Finance')">Personal Finance</span>
-      <span class="chip" onclick="setTopic('Digital Photography')">Digital Photography</span>
-      <span class="chip" onclick="setTopic('Stoic Philosophy')">Stoic Philosophy</span>
-      <span class="chip" onclick="setTopic('Web3 & Blockchain')">Web3 & Blockchain</span>
-    </div>
+  <div class="input-wrap">
+    <input
+      type="text"
+      id="topicInput"
+      placeholder="Try: Compound Interest, Newton's Laws, DNA Replication…"
+      maxlength="150"
+      autocomplete="off"
+    />
+    <button id="genBtn">Generate →</button>
+  </div>
+
+  <div class="chips">
+    <span class="chip" onclick="setTopic('Compound Interest')">Compound Interest</span>
+    <span class="chip" onclick="setTopic('Newton\'s Second Law')">Newton's Second Law</span>
+    <span class="chip" onclick="setTopic('Black Holes')">Black Holes</span>
+    <span class="chip" onclick="setTopic('DNA Replication')">DNA Replication</span>
+    <span class="chip" onclick="setTopic('Quantum Superposition')">Quantum Superposition</span>
   </div>
 </div>
 
+<!-- LOADING -->
 <div id="loading">
-  <div class="spinner"></div>
-  <p>Building your course…</p>
+  <div class="pulse-ring"></div>
+  <div class="loading-stage" id="loadingStage">Designing your experience</div>
+  <div id="loadingMsg">The AI is reasoning about your topic…</div>
 </div>
 
-<div id="error"></div>
+<!-- ERROR -->
+<div id="errorBox"></div>
 
-<div id="course">
-  <button id="resetBtn" onclick="reset()">← Generate another course</button>
-  <div class="course-header">
-    <div class="course-meta">
-      <span class="badge" id="levelBadge"></span>
-      <span class="badge" id="durationBadge"></span>
-    </div>
-    <h2 id="courseTitle"></h2>
-    <p id="courseDesc"></p>
+<!-- TOPIC BADGE -->
+<div id="topicBadge">
+  <div class="badge-inner">
+    <span>⟡</span>
+    <span id="topicBadgeText"></span>
   </div>
-  <div class="modules-label">Course Modules</div>
-  <div id="modulesContainer"></div>
+</div>
+
+<!-- EXPERIENCE -->
+<div id="experience">
+
+  <!-- Step 1: Scenario -->
+  <div id="stepScenario">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-label">Step 1 of 3</div>
+        <div class="step-title">Your scenario</div>
+      </div>
+    </div>
+    <div class="scenario-card">
+      <div id="scenarioText"></div>
+      <div class="sim-type-tag" id="simTypeTag"></div>
+    </div>
+  </div>
+
+  <div class="step-divider"><span>Simulation loading</span></div>
+
+  <!-- Step 2: Simulation -->
+  <div id="stepSim">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-label">Step 2 of 3</div>
+        <div class="step-title">Your custom 3D simulation</div>
+      </div>
+    </div>
+
+    <div class="sim-loading" id="simLoading">
+      <div class="mini-spin"></div>
+      <div id="simLoadingMsg">Building your simulation…</div>
+    </div>
+
+    <div class="sim-frame-wrap" id="simFrameWrap">
+      <iframe id="simFrame" sandbox="allow-scripts allow-same-origin" title="3D Simulation"></iframe>
+    </div>
+    <div class="sim-hint" id="simHint" style="display:none">
+      <span>Drag</span> to orbit · <span>Scroll</span> to zoom · Interact with the controls panel
+    </div>
+  </div>
+
+  <div class="step-divider"><span>Verify your understanding</span></div>
+
+  <!-- Step 3: Verify -->
+  <div id="stepVerify">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-label">Step 3 of 3</div>
+        <div class="step-title">Use the simulation to answer</div>
+      </div>
+    </div>
+    <div class="verify-card">
+      <div id="questionText"></div>
+      <textarea id="answerInput" placeholder="Interact with the simulation above, then type your answer here…"></textarea>
+      <div>
+        <button id="checkBtn">Check my answer</button>
+      </div>
+      <div id="feedback">
+        <div class="feedback-prefix" id="feedbackPrefix"></div>
+        <div id="feedbackText"></div>
+      </div>
+    </div>
+    <button id="againBtn" onclick="reset()">← Try a different topic</button>
+  </div>
+
 </div>
 
 <script>
-  const input = document.getElementById("topicInput");
-  const btn = document.getElementById("generateBtn");
-  const loading = document.getElementById("loading");
-  const errorEl = document.getElementById("error");
-  const courseEl = document.getElementById("course");
-  const resetBtn = document.getElementById("resetBtn");
+  const topicInput  = document.getElementById("topicInput");
+  const genBtn      = document.getElementById("genBtn");
+  const loadingEl   = document.getElementById("loading");
+  const loadingStage= document.getElementById("loadingStage");
+  const loadingMsg  = document.getElementById("loadingMsg");
+  const errorBox    = document.getElementById("errorBox");
+  const heroSection = document.getElementById("heroSection");
+  const experienceEl= document.getElementById("experience");
+  const topicBadge  = document.getElementById("topicBadge");
+  const topicBadgeText = document.getElementById("topicBadgeText");
+  const scenarioText= document.getElementById("scenarioText");
+  const simTypeTag  = document.getElementById("simTypeTag");
+  const simLoading  = document.getElementById("simLoading");
+  const simLoadingMsg=document.getElementById("simLoadingMsg");
+  const simFrameWrap= document.getElementById("simFrameWrap");
+  const simFrame    = document.getElementById("simFrame");
+  const simHint     = document.getElementById("simHint");
+  const questionText= document.getElementById("questionText");
+  const answerInput = document.getElementById("answerInput");
+  const checkBtn    = document.getElementById("checkBtn");
+  const feedbackEl  = document.getElementById("feedback");
+  const feedbackPrefix = document.getElementById("feedbackPrefix");
+  const feedbackText= document.getElementById("feedbackText");
+  const againBtn    = document.getElementById("againBtn");
 
-  function setTopic(t) {
-    input.value = t;
-    input.focus();
-  }
+  let currentPlan = null;
 
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") generate();
-  });
+  function setTopic(t) { topicInput.value = t; topicInput.focus(); }
 
-  btn.addEventListener("click", generate);
+  topicInput.addEventListener("keydown", (e) => { if (e.key === "Enter") generate(); });
+  genBtn.addEventListener("click", generate);
+  checkBtn.addEventListener("click", checkAnswer);
 
   async function generate() {
-    const topic = input.value.trim();
-    if (!topic) { input.focus(); return; }
+    const topic = topicInput.value.trim();
+    if (!topic) { topicInput.focus(); return; }
 
-    btn.disabled = true;
-    errorEl.style.display = "none";
-    courseEl.style.display = "none";
-    loading.style.display = "block";
-    resetBtn.style.display = "none";
+    genBtn.disabled = true;
+    errorBox.style.display = "none";
+    heroSection.style.display = "none";
+    experienceEl.style.display = "none";
+    topicBadge.style.display = "none";
+    loadingEl.style.display = "block";
+    loadingStage.textContent = "Designing your experience";
+    loadingMsg.textContent = "The AI is reasoning about your topic…";
 
     try {
-      const res = await fetch("/generate", {
+      // Step 1: Plan
+      const planRes = await fetch("/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Unknown error");
-      renderCourse(data);
+      if (!planRes.ok) throw new Error((await planRes.json()).error || "Plan failed");
+      currentPlan = await planRes.json();
+
+      // Show scenario immediately
+      topicBadgeText.textContent = currentPlan.topic;
+      scenarioText.textContent = currentPlan.scenario;
+      simTypeTag.textContent = currentPlan.simulationType;
+      questionText.textContent = currentPlan.verificationQuestion;
+
+      feedbackEl.style.display = "none";
+      feedbackEl.className = "feedback";
+      answerInput.value = "";
+      againBtn.style.display = "none";
+      simFrameWrap.style.display = "none";
+      simHint.style.display = "none";
+      simLoading.style.display = "flex";
+      simLoadingMsg.textContent = "Building your 3D simulation…";
+
+      loadingEl.style.display = "none";
+      topicBadge.style.display = "block";
+      experienceEl.style.display = "block";
+      experienceEl.scrollIntoView({ behavior: "smooth", block: "start" });
+
+      // Update loading stage label for sim
+      loadingStage.textContent = "Building simulation";
+      loadingMsg.textContent = "Generating Three.js code for your topic…";
+
+      // Step 2: Generate simulation (fetch HTML directly)
+      const simRes = await fetch("/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: currentPlan.topic,
+          simulationType: currentPlan.simulationType,
+          scenario: currentPlan.scenario,
+        }),
+      });
+      if (!simRes.ok) throw new Error("Simulation generation failed");
+      const simHtml = await simRes.text();
+
+      // Inject into iframe via blob URL
+      const blob = new Blob([simHtml], { type: "text/html" });
+      const blobUrl = URL.createObjectURL(blob);
+      simFrame.src = blobUrl;
+
+      simLoading.style.display = "none";
+      simFrameWrap.style.display = "block";
+      simHint.style.display = "block";
+
     } catch (err) {
-      errorEl.textContent = "Error: " + err.message;
-      errorEl.style.display = "block";
+      loadingEl.style.display = "none";
+      heroSection.style.display = "block";
+      errorBox.textContent = "Error: " + err.message;
+      errorBox.style.display = "block";
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
-      loading.style.display = "none";
-      btn.disabled = false;
+      genBtn.disabled = false;
     }
   }
 
-  function renderCourse(c) {
-    document.getElementById("courseTitle").textContent = c.title;
-    document.getElementById("courseDesc").textContent = c.description;
-    document.getElementById("levelBadge").textContent = c.level;
-    document.getElementById("durationBadge").textContent = c.duration;
+  async function checkAnswer() {
+    const answer = answerInput.value.trim();
+    if (!answer || !currentPlan) return;
 
-    const container = document.getElementById("modulesContainer");
-    container.innerHTML = "";
+    checkBtn.disabled = true;
+    checkBtn.textContent = "Checking…";
+    feedbackEl.style.display = "none";
 
-    c.modules.forEach((mod, i) => {
-      const el = document.createElement("div");
-      el.className = "module";
-      el.innerHTML = `
-        <div class="module-header" onclick="toggleModule(this)">
-          <div>
-            <div class="module-num">MODULE ${i + 1}</div>
-            <div class="module-title">${mod.title}</div>
-            <div class="module-summary">${mod.summary}</div>
-          </div>
-          <svg class="chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </div>
-        <div class="lessons">
-          ${mod.lessons.map(l => `
-            <div class="lesson">
-              <div class="lesson-title"><span class="lesson-dot"></span>${l.title}</div>
-              <div class="lesson-content">${l.content}</div>
-            </div>
-          `).join("")}
-        </div>
-      `;
-      container.appendChild(el);
-    });
+    try {
+      const res = await fetch("/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: currentPlan.topic,
+          question: currentPlan.verificationQuestion,
+          simulationType: currentPlan.simulationType,
+          userAnswer: answer,
+        }),
+      });
+      const data = await res.json();
 
-    // open first module by default
-    const first = container.querySelector(".module");
-    if (first) first.classList.add("open");
-
-    courseEl.style.display = "block";
-    resetBtn.style.display = "block";
-    courseEl.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function toggleModule(header) {
-    header.parentElement.classList.toggle("open");
+      feedbackPrefix.textContent = data.correct ? "✓ Correct" : "Not quite";
+      feedbackText.textContent = data.feedback;
+      feedbackEl.className = "feedback " + (data.correct ? "correct" : "wrong");
+      feedbackEl.style.display = "block";
+      againBtn.style.display = "block";
+    } catch (err) {
+      feedbackPrefix.textContent = "Error";
+      feedbackText.textContent = err.message;
+      feedbackEl.className = "feedback wrong";
+      feedbackEl.style.display = "block";
+    } finally {
+      checkBtn.disabled = false;
+      checkBtn.textContent = "Check my answer";
+    }
   }
 
   function reset() {
-    courseEl.style.display = "none";
-    resetBtn.style.display = "none";
-    errorEl.style.display = "none";
-    input.value = "";
-    input.focus();
+    experienceEl.style.display = "none";
+    topicBadge.style.display = "none";
+    errorBox.style.display = "none";
+    heroSection.style.display = "block";
+    topicInput.value = "";
+    currentPlan = null;
     window.scrollTo({ top: 0, behavior: "smooth" });
+    topicInput.focus();
   }
 </script>
 </body>
