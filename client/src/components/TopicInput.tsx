@@ -1,6 +1,6 @@
 import { useState, FormEvent } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ExternalLink } from "lucide-react";
 
 const EXAMPLES = [
   "compound interest",
@@ -84,8 +84,12 @@ export default function TopicInput({ onSubmit }: Props) {
               key={ex}
               type="button"
               onClick={() => onSubmit(ex)}
-              className="chip"
+              className="chip group inline-flex items-center gap-1.5"
             >
+              <ExternalLink
+                size={11}
+                className="text-muted/40 group-hover:text-primary/70 transition-colors shrink-0"
+              />
               {ex}
             </button>
           ))}

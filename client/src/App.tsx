@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import TopicInput from "./components/TopicInput";
@@ -46,9 +46,12 @@ export default function App() {
     setErrorMsg(null);
     setVerificationResult(null);
     setVerifying(false);
+    window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
   const handleSubmit = useCallback(async (topicText: string) => {
+    const params = new URLSearchParams({ topic: topicText });
+    window.history.replaceState(null, "", `?${params.toString()}`);
     setTopic(topicText);
     setPhase("reasoning");
     setReasoning({ done: [], active: null });
@@ -88,6 +91,14 @@ export default function App() {
       },
     });
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const topicParam = params.get("topic");
+    if (topicParam?.trim()) {
+      handleSubmit(topicParam.trim());
+    }
+  }, [handleSubmit]);
 
   const handleVerify = useCallback(
     async (userAnswer: string) => {
