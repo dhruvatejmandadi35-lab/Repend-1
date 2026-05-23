@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Repend — Learn Anything</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --surface2: #1c1c28;
+      --border: #2a2a3a;
+      --accent: #7c6fff;
+      --accent2: #a78bfa;
+      --text: #e8e8f0;
+      --muted: #8888a8;
+      --success: #34d399;
+      --radius: 12px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* NAV */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+    .logo span { color: var(--accent2); }
+    .tagline {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    /* HERO */
+    .hero {
+      text-align: center;
+      padding: 80px 24px 60px;
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 800;
+      letter-spacing: -1px;
+      line-height: 1.15;
+      margin-bottom: 16px;
+    }
+    .hero h1 em {
+      font-style: normal;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero p {
+      color: var(--muted);
+      font-size: 1.1rem;
+      max-width: 480px;
+      margin: 0 auto 48px;
+    }
+
+    /* SEARCH */
+    .search-wrap {
+      max-width: 640px;
+      margin: 0 auto;
+      position: relative;
+    }
+    .search-row {
+      display: flex;
+      gap: 10px;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 8px 8px 8px 20px;
+      transition: border-color 0.2s;
+    }
+    .search-row:focus-within {
+      border-color: var(--accent);
+    }
+    #topicInput {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 1rem;
+      padding: 8px 0;
+    }
+    #topicInput::placeholder { color: var(--muted); }
+    #generateBtn {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 28px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      white-space: nowrap;
+    }
+    #generateBtn:hover { opacity: 0.9; }
+    #generateBtn:active { transform: scale(0.98); }
+    #generateBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .examples {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 18px;
+    }
+    .chip {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .chip:hover {
+      border-color: var(--accent);
+      color: var(--accent2);
+    }
+
+    /* LOADING */
+    #loading {
+      display: none;
+      text-align: center;
+      padding: 60px 24px;
+    }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading p { color: var(--muted); font-size: 0.95rem; }
+
+    /* ERROR */
+    #error {
+      display: none;
+      max-width: 640px;
+      margin: 32px auto;
+      background: #2a1215;
+      border: 1px solid #5a2030;
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      color: #f87171;
+      font-size: 0.9rem;
+    }
+
+    /* COURSE OUTPUT */
+    #course {
+      display: none;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    .course-header {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      margin-bottom: 32px;
+    }
+    .course-meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .badge {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 0.78rem;
+      color: var(--accent2);
+      font-weight: 500;
+    }
+    .course-header h2 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+    }
+    .course-header p {
+      color: var(--muted);
+      font-size: 0.97rem;
+    }
+
+    .modules-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .module {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .module-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .module-header:hover { background: var(--surface2); }
+    .module-num {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 4px;
+      letter-spacing: 0.5px;
+    }
+    .module-title {
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    .module-summary {
+      font-size: 0.83rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .chevron {
+      color: var(--muted);
+      transition: transform 0.25s;
+      flex-shrink: 0;
+      margin-left: 16px;
+    }
+    .module.open .chevron { transform: rotate(180deg); }
+
+    .lessons {
+      display: none;
+      border-top: 1px solid var(--border);
+    }
+    .module.open .lessons { display: block; }
+
+    .lesson {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .lesson:last-child { border-bottom: none; }
+    .lesson-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .lesson-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .lesson-content {
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.7;
+      padding-left: 14px;
+    }
+
+    /* RESET */
+    #resetBtn {
+      display: none;
+      margin: 0 auto 32px;
+      background: none;
+      border: 1.5px solid var(--border);
+      color: var(--muted);
+      border-radius: 10px;
+      padding: 10px 24px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      transition: all 0.15s;
+    }
+    #resetBtn:hover { border-color: var(--accent); color: var(--accent2); }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">Rep<span>end</span></div>
+  <div class="tagline">Rep up. End with clarity.</div>
+</nav>
+
+<div class="hero">
+  <h1>Learn <em>anything</em>,<br>structured instantly.</h1>
+  <p>Type any topic and get a complete course — modules, lessons, and content — generated by AI.</p>
+
+  <div class="search-wrap">
+    <div class="search-row">
+      <input
+        type="text"
+        id="topicInput"
+        placeholder="e.g. Machine Learning, Guitar, Stoicism…"
+        maxlength="200"
+        autocomplete="off"
+      />
+      <button id="generateBtn">Generate Course</button>
+    </div>
+    <div class="examples">
+      <span class="chip" onclick="setTopic('Machine Learning')">Machine Learning</span>
+      <span class="chip" onclick="setTopic('Personal Finance')">Personal Finance</span>
+      <span class="chip" onclick="setTopic('Digital Photography')">Digital Photography</span>
+      <span class="chip" onclick="setTopic('Stoic Philosophy')">Stoic Philosophy</span>
+      <span class="chip" onclick="setTopic('Web3 & Blockchain')">Web3 & Blockchain</span>
+    </div>
+  </div>
+</div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <p>Building your course…</p>
+</div>
+
+<div id="error"></div>
+
+<div id="course">
+  <button id="resetBtn" onclick="reset()">← Generate another course</button>
+  <div class="course-header">
+    <div class="course-meta">
+      <span class="badge" id="levelBadge"></span>
+      <span class="badge" id="durationBadge"></span>
+    </div>
+    <h2 id="courseTitle"></h2>
+    <p id="courseDesc"></p>
+  </div>
+  <div class="modules-label">Course Modules</div>
+  <div id="modulesContainer"></div>
+</div>
+
+<script>
+  const input = document.getElementById("topicInput");
+  const btn = document.getElementById("generateBtn");
+  const loading = document.getElementById("loading");
+  const errorEl = document.getElementById("error");
+  const courseEl = document.getElementById("course");
+  const resetBtn = document.getElementById("resetBtn");
+
+  function setTopic(t) {
+    input.value = t;
+    input.focus();
+  }
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") generate();
+  });
+
+  btn.addEventListener("click", generate);
+
+  async function generate() {
+    const topic = input.value.trim();
+    if (!topic) { input.focus(); return; }
+
+    btn.disabled = true;
+    errorEl.style.display = "none";
+    courseEl.style.display = "none";
+    loading.style.display = "block";
+    resetBtn.style.display = "none";
+
+    try {
+      const res = await fetch("/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Unknown error");
+      renderCourse(data);
+    } catch (err) {
+      errorEl.textContent = "Error: " + err.message;
+      errorEl.style.display = "block";
+    } finally {
+      loading.style.display = "none";
+      btn.disabled = false;
+    }
+  }
+
+  function renderCourse(c) {
+    document.getElementById("courseTitle").textContent = c.title;
+    document.getElementById("courseDesc").textContent = c.description;
+    document.getElementById("levelBadge").textContent = c.level;
+    document.getElementById("durationBadge").textContent = c.duration;
+
+    const container = document.getElementById("modulesContainer");
+    container.innerHTML = "";
+
+    c.modules.forEach((mod, i) => {
+      const el = document.createElement("div");
+      el.className = "module";
+      el.innerHTML = `
+        <div class="module-header" onclick="toggleModule(this)">
+          <div>
+            <div class="module-num">MODULE ${i + 1}</div>
+            <div class="module-title">${mod.title}</div>
+            <div class="module-summary">${mod.summary}</div>
+          </div>
+          <svg class="chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="lessons">
+          ${mod.lessons.map(l => `
+            <div class="lesson">
+              <div class="lesson-title"><span class="lesson-dot"></span>${l.title}</div>
+              <div class="lesson-content">${l.content}</div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+      container.appendChild(el);
+    });
+
+    // open first module by default
+    const first = container.querySelector(".module");
+    if (first) first.classList.add("open");
+
+    courseEl.style.display = "block";
+    resetBtn.style.display = "block";
+    courseEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function toggleModule(header) {
+    header.parentElement.classList.toggle("open");
+  }
+
+  function reset() {
+    courseEl.style.display = "none";
+    resetBtn.style.display = "none";
+    errorEl.style.display = "none";
+    input.value = "";
+    input.focus();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+</script>
+</body>
+</html>
