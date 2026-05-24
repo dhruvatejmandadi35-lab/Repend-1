@@ -1,0 +1,22 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Pretty URLs → serverless function paths
+[[redirects]]
+  from = "/plan"
+  to = "/.netlify/functions/plan"
+  status = 200
+
+[[redirects]]
+  from = "/verify"
+  to = "/.netlify/functions/verify"
+  status = 200
+
+[[redirects]]
+  from = "/analyze-image"
+  to = "/.netlify/functions/analyze-image"
+  status = 200

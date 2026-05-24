@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Repend — Learn by doing.</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:   #0B1220;
+      --navy2:  #111827;
+      --navy3:  #1a2335;
+      --blue:   #3B82F6;
+      --blue2:  #60A5FA;
+      --copper: #D4A574;
+      --copper2:#E8C49A;
+      --text:   #F0F2F8;
+      --muted:  #8899BB;
+      --border: rgba(59,130,246,0.18);
+      --r:      14px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--navy);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.65;
+    }
+
+    /* ── NAV ─────────────────────────────────────── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 48px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(11,18,32,0.92);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+    }
+    .logo {
+      font-size: 1.3rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .logo em { font-style: normal; color: var(--copper); }
+    .nav-tag {
+      font-size: 0.78rem;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+    }
+    .nav-tag span { color: var(--copper); font-weight: 600; }
+
+    /* ── HERO ────────────────────────────────────── */
+    .hero {
+      text-align: center;
+      padding: 96px 24px 72px;
+      max-width: 780px;
+      margin: 0 auto;
+    }
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--copper);
+      background: rgba(212,165,116,0.1);
+      border: 1px solid rgba(212,165,116,0.25);
+      border-radius: 20px;
+      padding: 6px 14px;
+      margin-bottom: 28px;
+    }
+    .hero-eyebrow::before {
+      content: '';
+      width: 6px; height: 6px;
+      background: var(--copper);
+      border-radius: 50%;
+    }
+    .hero h1 {
+      font-size: clamp(2.8rem, 6vw, 4.2rem);
+      font-weight: 900;
+      letter-spacing: -2px;
+      line-height: 1.05;
+      margin-bottom: 22px;
+    }
+    .hero h1 .line1 { color: var(--text); }
+    .hero h1 .line2 { color: var(--blue); }
+    .hero-sub {
+      font-size: 1.05rem;
+      color: var(--muted);
+      max-width: 520px;
+      margin: 0 auto 52px;
+      line-height: 1.75;
+    }
+
+    /* ── INPUT ───────────────────────────────────── */
+    .input-wrap {
+      display: flex;
+      gap: 10px;
+      background: var(--navy2);
+      border: 1.5px solid var(--border);
+      border-radius: 16px;
+      padding: 8px 8px 8px 22px;
+      transition: border-color 0.2s;
+      max-width: 620px;
+      margin: 0 auto;
+    }
+    .input-wrap:focus-within { border-color: var(--blue); }
+    #topicInput {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 1rem;
+      padding: 10px 0;
+    }
+    #topicInput::placeholder { color: var(--muted); }
+    #genBtn {
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 28px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      white-space: nowrap;
+      letter-spacing: 0.2px;
+    }
+    #genBtn:hover { background: var(--blue2); }
+    #genBtn:active { transform: scale(0.97); }
+    #genBtn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 20px;
+    }
+    .chip {
+      background: var(--navy3);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .chip:hover { border-color: var(--copper); color: var(--copper); }
+
+    /* ── LOADING ─────────────────────────────────── */
+    #loading {
+      display: none;
+      text-align: center;
+      padding: 80px 24px;
+    }
+    .pulse-ring {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      border: 2px solid rgba(59,130,246,0.15);
+      border-top-color: var(--blue);
+      border-right-color: var(--copper);
+      animation: spin 1.1s linear infinite;
+      margin: 0 auto 24px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-stage {
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--copper);
+      margin-bottom: 8px;
+    }
+    #loadingMsg {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    /* ── ERROR ───────────────────────────────────── */
+    #errorBox {
+      display: none;
+      max-width: 620px;
+      margin: 32px auto;
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--r);
+      padding: 16px 20px;
+      color: #FCA5A5;
+      font-size: 0.9rem;
+    }
+
+    /* ── EXPERIENCE ──────────────────────────────── */
+    #experience {
+      display: none;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px 100px;
+    }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .step-num {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: rgba(212,165,116,0.12);
+      border: 1.5px solid var(--copper);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: var(--copper);
+      flex-shrink: 0;
+    }
+    .step-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--copper);
+    }
+    .step-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* Step 1 — Scenario */
+    #stepScenario { margin-bottom: 56px; }
+    .scenario-card {
+      background: var(--navy2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 36px 40px;
+      position: relative;
+      overflow: hidden;
+    }
+    .scenario-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--blue), var(--copper));
+    }
+    #scenarioText {
+      font-size: 1rem;
+      line-height: 1.85;
+      color: #C8D4E8;
+      white-space: pre-line;
+    }
+    .sim-type-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 24px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      background: rgba(59,130,246,0.07);
+      border: 1px solid rgba(59,130,246,0.18);
+      border-radius: 20px;
+      padding: 5px 12px;
+    }
+    .sim-type-tag::before {
+      content: '⟡';
+      color: var(--blue);
+    }
+
+    /* Step 2 — Simulation */
+    #stepSim { margin-bottom: 56px; }
+    .sim-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background: var(--navy2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      height: 520px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      flex-direction: column;
+    }
+    .sim-loading .mini-spin {
+      width: 36px; height: 36px;
+      border: 2px solid rgba(59,130,246,0.15);
+      border-top-color: var(--blue);
+      border-right-color: var(--copper);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    .sim-frame-wrap {
+      display: none;
+      border-radius: var(--r);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      position: relative;
+    }
+    #simFrame {
+      width: 100%;
+      height: 520px;
+      border: none;
+      display: block;
+      background: var(--navy);
+    }
+    .sim-hint {
+      margin-top: 10px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-align: center;
+      letter-spacing: 0.3px;
+    }
+    .sim-hint span { color: var(--blue2); }
+
+    /* Step 3 — Verify */
+    #stepVerify { margin-bottom: 40px; }
+    .verify-card {
+      background: var(--navy2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 32px 36px;
+    }
+    #questionText {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    #answerInput {
+      width: 100%;
+      background: var(--navy3);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      color: var(--text);
+      font-size: 0.95rem;
+      resize: vertical;
+      min-height: 90px;
+      outline: none;
+      font-family: inherit;
+      line-height: 1.6;
+      transition: border-color 0.2s;
+    }
+    #answerInput:focus { border-color: var(--blue); }
+    #answerInput::placeholder { color: var(--muted); }
+    #checkBtn {
+      margin-top: 14px;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 13px 32px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #checkBtn:hover { background: var(--blue2); }
+    #checkBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    #feedback {
+      display: none;
+      margin-top: 20px;
+      padding: 18px 22px;
+      border-radius: 10px;
+      font-size: 0.93rem;
+      line-height: 1.7;
+    }
+    #feedback.correct {
+      background: rgba(52,211,153,0.07);
+      border: 1px solid rgba(52,211,153,0.25);
+      color: #6EE7B7;
+    }
+    #feedback.wrong {
+      background: rgba(251,191,36,0.07);
+      border: 1px solid rgba(251,191,36,0.2);
+      color: #FDE68A;
+    }
+    .feedback-prefix {
+      font-weight: 700;
+      margin-bottom: 6px;
+      font-size: 0.8rem;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    #againBtn {
+      display: none;
+      margin-top: 40px;
+      background: none;
+      border: 1.5px solid var(--border);
+      color: var(--muted);
+      border-radius: 10px;
+      padding: 12px 28px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    #againBtn:hover { border-color: var(--copper); color: var(--copper); }
+
+    /* Divider between steps */
+    .step-divider {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin: 0 0 40px;
+    }
+    .step-divider::before, .step-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .step-divider span {
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* Topic badge */
+    #topicBadge {
+      display: none;
+      text-align: center;
+      padding: 40px 24px 0;
+    }
+    #topicBadge .badge-inner {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(212,165,116,0.08);
+      border: 1px solid rgba(212,165,116,0.2);
+      border-radius: 24px;
+      padding: 8px 20px;
+      font-size: 0.85rem;
+      color: var(--copper);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">Rep<em>end</em></div>
+  <div class="nav-tag">Learn by doing. <span>Not watching.</span></div>
+</nav>
+
+<!-- HERO -->
+<div class="hero" id="heroSection">
+  <div class="hero-eyebrow">AI-Native Learning</div>
+  <h1>
+    <div class="line1">Learn by doing.</div>
+    <div class="line2">Not watching.</div>
+  </h1>
+  <p class="hero-sub">
+    Type any concept. The AI reasons about it, builds a custom 3D simulation from scratch, and verifies you actually understand it.
+  </p>
+
+  <div class="input-wrap">
+    <input
+      type="text"
+      id="topicInput"
+      placeholder="Try: Compound Interest, Newton's Laws, DNA Replication…"
+      maxlength="150"
+      autocomplete="off"
+    />
+    <button id="genBtn">Generate →</button>
+  </div>
+
+  <div class="chips">
+    <span class="chip" onclick="setTopic('Compound Interest')">Compound Interest</span>
+    <span class="chip" onclick="setTopic('Newton\'s Second Law')">Newton's Second Law</span>
+    <span class="chip" onclick="setTopic('Black Holes')">Black Holes</span>
+    <span class="chip" onclick="setTopic('DNA Replication')">DNA Replication</span>
+    <span class="chip" onclick="setTopic('Quantum Superposition')">Quantum Superposition</span>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div id="loading">
+  <div class="pulse-ring"></div>
+  <div class="loading-stage" id="loadingStage">Designing your experience</div>
+  <div id="loadingMsg">The AI is reasoning about your topic…</div>
+</div>
+
+<!-- ERROR -->
+<div id="errorBox"></div>
+
+<!-- TOPIC BADGE -->
+<div id="topicBadge">
+  <div class="badge-inner">
+    <span>⟡</span>
+    <span id="topicBadgeText"></span>
+  </div>
+</div>
+
+<!-- EXPERIENCE -->
+<div id="experience">
+
+  <!-- Step 1: Scenario -->
+  <div id="stepScenario">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-label">Step 1 of 3</div>
+        <div class="step-title">Your scenario</div>
+      </div>
+    </div>
+    <div class="scenario-card">
+      <div id="scenarioText"></div>
+      <div class="sim-type-tag" id="simTypeTag"></div>
+    </div>
+  </div>
+
+  <div class="step-divider"><span>Simulation loading</span></div>
+
+  <!-- Step 2: Simulation -->
+  <div id="stepSim">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-label">Step 2 of 3</div>
+        <div class="step-title">Your custom 3D simulation</div>
+      </div>
+    </div>
+
+    <div class="sim-loading" id="simLoading">
+      <div class="mini-spin"></div>
+      <div id="simLoadingMsg">Building your simulation…</div>
+    </div>
+
+    <div class="sim-frame-wrap" id="simFrameWrap">
+      <iframe id="simFrame" sandbox="allow-scripts allow-same-origin" title="3D Simulation"></iframe>
+    </div>
+    <div class="sim-hint" id="simHint" style="display:none">
+      <span>Drag</span> to orbit · <span>Scroll</span> to zoom · Interact with the controls panel
+    </div>
+  </div>
+
+  <div class="step-divider"><span>Verify your understanding</span></div>
+
+  <!-- Step 3: Verify -->
+  <div id="stepVerify">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-label">Step 3 of 3</div>
+        <div class="step-title">Use the simulation to answer</div>
+      </div>
+    </div>
+    <div class="verify-card">
+      <div id="questionText"></div>
+      <textarea id="answerInput" placeholder="Interact with the simulation above, then type your answer here…"></textarea>
+      <div>
+        <button id="checkBtn">Check my answer</button>
+      </div>
+      <div id="feedback">
+        <div class="feedback-prefix" id="feedbackPrefix"></div>
+        <div id="feedbackText"></div>
+      </div>
+    </div>
+    <button id="againBtn" onclick="reset()">← Try a different topic</button>
+  </div>
+
+</div>
+
+<script>
+  const topicInput  = document.getElementById("topicInput");
+  const genBtn      = document.getElementById("genBtn");
+  const loadingEl   = document.getElementById("loading");
+  const loadingStage= document.getElementById("loadingStage");
+  const loadingMsg  = document.getElementById("loadingMsg");
+  const errorBox    = document.getElementById("errorBox");
+  const heroSection = document.getElementById("heroSection");
+  const experienceEl= document.getElementById("experience");
+  const topicBadge  = document.getElementById("topicBadge");
+  const topicBadgeText = document.getElementById("topicBadgeText");
+  const scenarioText= document.getElementById("scenarioText");
+  const simTypeTag  = document.getElementById("simTypeTag");
+  const simLoading  = document.getElementById("simLoading");
+  const simLoadingMsg=document.getElementById("simLoadingMsg");
+  const simFrameWrap= document.getElementById("simFrameWrap");
+  const simFrame    = document.getElementById("simFrame");
+  const simHint     = document.getElementById("simHint");
+  const questionText= document.getElementById("questionText");
+  const answerInput = document.getElementById("answerInput");
+  const checkBtn    = document.getElementById("checkBtn");
+  const feedbackEl  = document.getElementById("feedback");
+  const feedbackPrefix = document.getElementById("feedbackPrefix");
+  const feedbackText= document.getElementById("feedbackText");
+  const againBtn    = document.getElementById("againBtn");
+
+  let currentPlan = null;
+  let lastLabResult = null;
+
+  function setTopic(t) { topicInput.value = t; topicInput.focus(); }
+
+  topicInput.addEventListener("keydown", (e) => { if (e.key === "Enter") generate(); });
+  genBtn.addEventListener("click", generate);
+  checkBtn.addEventListener("click", checkAnswer);
+
+  // Engine (iframe) posts lab evaluation back here when learner clicks "Check answer"
+  window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "labCheck") lastLabResult = e.data.result;
+  });
+
+  async function generate() {
+    const topic = topicInput.value.trim();
+    if (!topic) { topicInput.focus(); return; }
+
+    genBtn.disabled = true;
+    errorBox.style.display = "none";
+    heroSection.style.display = "none";
+    experienceEl.style.display = "none";
+    topicBadge.style.display = "none";
+    loadingEl.style.display = "block";
+    loadingStage.textContent = "Designing your experience";
+    loadingMsg.textContent = "The AI is reasoning about your topic…";
+
+    try {
+      // Step 1: Plan
+      const planRes = await fetch("/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic }),
+      });
+      if (!planRes.ok) throw new Error((await planRes.json()).error || "Plan failed");
+      currentPlan = await planRes.json();
+
+      // Show scenario immediately
+      topicBadgeText.textContent = currentPlan.topic;
+      scenarioText.textContent = currentPlan.scenario;
+      simTypeTag.textContent = (currentPlan.recipe && currentPlan.recipe.title) || "Interactive lab";
+      questionText.textContent = currentPlan.verificationQuestion;
+
+      feedbackEl.style.display = "none";
+      feedbackEl.className = "feedback";
+      answerInput.value = "";
+      againBtn.style.display = "none";
+      simFrameWrap.style.display = "none";
+      simHint.style.display = "none";
+      simLoading.style.display = "flex";
+      simLoadingMsg.textContent = "Assembling your interactive lab…";
+
+      loadingEl.style.display = "none";
+      topicBadge.style.display = "block";
+      experienceEl.style.display = "block";
+      experienceEl.scrollIntoView({ behavior: "smooth", block: "start" });
+
+      loadingStage.textContent = "Building lab";
+      loadingMsg.textContent = "Wiring the interactive engine…";
+
+      // Step 2: Fetch the static engine template, inject the recipe client-side.
+      // (No server roundtrip needed — engine.html is static.)
+      const engineRes = await fetch("/engine.html");
+      if (!engineRes.ok) throw new Error("Engine template missing");
+      const engineTemplate = await engineRes.text();
+      const recipeJson = JSON.stringify(currentPlan.recipe);
+      const simHtml = engineTemplate.replace(
+        /\/\*__RECIPE__\*\/[\s\S]*?\/\*__END__\*\//,
+        `/*__RECIPE__*/ ${recipeJson} /*__END__*/`
+      );
+
+      // Inject into iframe via blob URL
+      const blob = new Blob([simHtml], { type: "text/html" });
+      const blobUrl = URL.createObjectURL(blob);
+      simFrame.src = blobUrl;
+
+      simLoading.style.display = "none";
+      simFrameWrap.style.display = "block";
+      simHint.style.display = "block";
+
+    } catch (err) {
+      loadingEl.style.display = "none";
+      heroSection.style.display = "block";
+      errorBox.textContent = "Error: " + err.message;
+      errorBox.style.display = "block";
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } finally {
+      genBtn.disabled = false;
+    }
+  }
+
+  async function checkAnswer() {
+    const answer = answerInput.value.trim();
+    if (!answer || !currentPlan) return;
+
+    checkBtn.disabled = true;
+    checkBtn.textContent = "Checking…";
+    feedbackEl.style.display = "none";
+
+    try {
+      const res = await fetch("/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: currentPlan.topic,
+          question: currentPlan.verificationQuestion,
+          recipeSummary: (currentPlan.recipe && currentPlan.recipe.title) || "",
+          userAnswer: answer,
+          labResult: lastLabResult,
+        }),
+      });
+      const data = await res.json();
+
+      feedbackPrefix.textContent = data.correct ? "✓ Correct" : "Not quite";
+      feedbackText.textContent = data.feedback;
+      feedbackEl.className = "feedback " + (data.correct ? "correct" : "wrong");
+      feedbackEl.style.display = "block";
+      againBtn.style.display = "block";
+    } catch (err) {
+      feedbackPrefix.textContent = "Error";
+      feedbackText.textContent = err.message;
+      feedbackEl.className = "feedback wrong";
+      feedbackEl.style.display = "block";
+    } finally {
+      checkBtn.disabled = false;
+      checkBtn.textContent = "Check my answer";
+    }
+  }
+
+  function reset() {
+    experienceEl.style.display = "none";
+    topicBadge.style.display = "none";
+    errorBox.style.display = "none";
+    heroSection.style.display = "block";
+    topicInput.value = "";
+    currentPlan = null;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    topicInput.focus();
+  }
+</script>
+</body>
+</html>

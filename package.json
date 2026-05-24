@@ -1,0 +1,14 @@
+{
+  "name": "repend",
+  "version": "1.0.0",
+  "description": "AI-native learning platform — generate any course from a topic",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^6.39.0"
+  }
+}
