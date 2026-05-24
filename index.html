@@ -668,14 +668,16 @@
       loadingStage.textContent = "Building lab";
       loadingMsg.textContent = "Wiring the interactive engine…";
 
-      // Step 2: Send the recipe to /simulate, which injects it into the engine HTML
-      const simRes = await fetch("/simulate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipe: currentPlan.recipe }),
-      });
-      if (!simRes.ok) throw new Error("Lab build failed");
-      const simHtml = await simRes.text();
+      // Step 2: Fetch the static engine template, inject the recipe client-side.
+      // (No server roundtrip needed — engine.html is static.)
+      const engineRes = await fetch("/engine.html");
+      if (!engineRes.ok) throw new Error("Engine template missing");
+      const engineTemplate = await engineRes.text();
+      const recipeJson = JSON.stringify(currentPlan.recipe);
+      const simHtml = engineTemplate.replace(
+        /\/\*__RECIPE__\*\/[\s\S]*?\/\*__END__\*\//,
+        `/*__RECIPE__*/ ${recipeJson} /*__END__*/`
+      );
 
       // Inject into iframe via blob URL
       const blob = new Blob([simHtml], { type: "text/html" });
