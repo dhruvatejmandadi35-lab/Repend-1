@@ -269,24 +269,50 @@ async function analyzeImage(base64Image, question) {
 // FREEFORM LAB PIPELINE — two-step: Designer spec → Coder writes full HTML
 // ─────────────────────────────────────────────────────────────────
 
-const DESIGNER_SYSTEM = `You are an instructional designer. Given a topic, you write a precise spec for one interactive lab that another model will then code.
+const DESIGNER_SYSTEM = `You are an instructional designer who builds discovery-based learning labs. Your job is NOT to design a toy — it is to design a guided experience where the learner DISCOVERS a concept by being walked through specific manipulations, each one with an observation prompt and an insight reveal.
 
 Return ONLY JSON with this shape:
 {
   "topic": "Display name",
-  "scenario": "2-3 paragraph immersive 2nd-person scenario. Open with a CONCRETE real-world moment (a real role, place, dollar amount, news event, failure mode). End by stating exactly what the learner will manipulate.",
-  "verificationQuestion": "One specific question the learner can only answer by interacting with the lab.",
+  "scenario": "2-3 paragraph immersive 2nd-person scenario. Open with a CONCRETE real-world moment (a real role, place, dollar amount, news event, failure mode). Make it clear WHY this concept matters in the real world. End by stating exactly what the learner will discover.",
+  "verificationQuestion": "One specific question the learner can only answer AFTER completing the guided sequence.",
   "spec": {
     "title": "Short lab title",
-    "learning_goal": "One sentence: the insight the learner should walk away with.",
-    "interaction_type": "one of: slider-tune | drag-label | click-classify | sequence-order | sketch-construct | code-edit | multi-stage",
-    "visuals": "Detailed description of what the lab looks like — shapes, layout, colors, what moves. Be specific: 'a 400px circle centered at (450,270) with a red point that slides around its perimeter as the angle slider changes; below it, two readouts showing cos(θ) and sin(θ) to 3 decimals'.",
-    "controls": "Detailed description of every interactive control — what each slider/button/draggable does and what visually responds. Minimum 3 controls.",
-    "success_condition": "Exact rule for when the learner has 'got it'. Must be programmatically checkable (e.g., 'angle is within 0.05 rad of π/4 AND user clicked Reveal')."
+    "learning_goal": "ONE sentence: the precise insight the learner will walk away with. Not 'understand X' — instead 'see that doubling principal doubles final balance but doubling rate more than doubles it'.",
+    "interaction_type": "one of: slider-tune | drag-label | click-classify | sequence-order | sketch-construct | multi-stage",
+    "visuals": "Detailed description of what the lab looks like — shapes, layout, colors, what moves. Be specific about position, size, color, animation. The visual must make the underlying concept VISIBLE — if money grows, draw bars growing; if a wave shifts, show the wave; if cells divide, animate the division.",
+    "controls": "Every interactive control — exactly what changes visually on input. Minimum 2 meaningful controls.",
+    "teaching_sequence": [
+      {
+        "step": 1,
+        "instruction": "Specific action the learner should take RIGHT NOW. E.g., 'Drag the rate slider from 5% to 10%.'",
+        "observation_prompt": "What they should notice. E.g., 'Look at the green bar — how much did the final balance change?'",
+        "insight": "What this proves. E.g., 'Doubling the rate didn't just double your money — it grew it 5x over 30 years. That's compounding.'",
+        "completion_check": "Programmatic rule — when this step is done. E.g., 'rate >= 0.10 for at least 1 second'"
+      },
+      {
+        "step": 2,
+        "instruction": "...",
+        "observation_prompt": "...",
+        "insight": "...",
+        "completion_check": "..."
+      },
+      {
+        "step": 3,
+        "instruction": "Final challenge: ask them to USE what they discovered. E.g., 'Find the combination of rate and years that turns $1,000 into exactly $10,000.'",
+        "observation_prompt": "...",
+        "insight": "...",
+        "completion_check": "..."
+      }
+    ],
+    "success_condition": "Exact rule for the FINAL challenge (step 3). Must be programmatically checkable.",
+    "real_world_payoff": "One sentence connecting what they just discovered back to a real-world decision they could make better. E.g., 'This is why starting your IRA at 22 vs 32 matters more than a 1% better rate.'"
   }
 }
 
-Make the spec rich enough that a coder reading it can implement the entire lab. Use real values, real names, real numbers.`;
+CRITICAL: every lab is a 3-step guided sequence. Step 1 = make them notice. Step 2 = make them question. Step 3 = make them apply. NOT just "play with this widget".
+
+Use real values, real names, real numbers.`;
 
 async function designLab(topic) {
   const res = await openai.chat.completions.create({
@@ -302,7 +328,7 @@ async function designLab(topic) {
 }
 
 async function codeLab(design) {
-  const userPrompt = `You are building a world-class interactive educational lab as a single self-contained HTML file.
+  const userPrompt = `You are building a world-class GUIDED interactive educational lab as a single self-contained HTML file. This is not a sandbox toy — it is a 3-step discovery experience that TEACHES the concept.
 
 TOPIC: ${design.topic}
 LEARNING GOAL: ${design.spec.learning_goal}
@@ -314,8 +340,56 @@ ${design.spec.visuals}
 CONTROLS & INTERACTIONS:
 ${design.spec.controls}
 
-SUCCESS CONDITION:
-${design.spec.success_condition}
+═══════════════════════════════════════════════════
+GUIDED TEACHING SEQUENCE — render this as a progressive UX:
+═══════════════════════════════════════════════════
+${(design.spec.teaching_sequence || []).map(s => `
+STEP ${s.step}:
+  Instruction (show prominently when this step is active): "${s.instruction}"
+  Observation prompt (show after they start interacting): "${s.observation_prompt}"
+  Insight (reveal when completion_check passes): "${s.insight}"
+  Completion rule: ${s.completion_check}
+`).join("\n")}
+
+REAL-WORLD PAYOFF (show at the very end): "${design.spec.real_world_payoff || ""}"
+
+FINAL SUCCESS CONDITION: ${design.spec.success_condition}
+
+═══════════════════════════════════════════════════
+HOW TO RENDER THE GUIDED EXPERIENCE:
+═══════════════════════════════════════════════════
+• At the top of the stage, show a "STEP X of 3" indicator with the current instruction in large clear type
+• Below it, show the observation prompt in muted text once the learner has interacted at least once on this step
+• When the step's completion_check passes:
+  - Briefly flash the stage with a soft green glow
+  - Reveal the insight as a card that slides in from the right
+  - After 2 seconds (or on user click "Continue"), advance to the next step
+• Step 3 is the challenge — show the success_condition target prominently. On final correctness:
+  - Full stage celebration: confetti burst, success message, real_world_payoff card
+  - postMessage({type:"labCheck", result:{ok:true, score:3, total:3}}, "*")
+• Never let the learner skip ahead — they must complete each step's completion_check before the next instruction appears
+• Always show a "Why?" button next to the current instruction — clicking it reveals a hint or deeper explanation
+
+═══════════════════════════════════════════════════
+VISUAL QUALITY:
+═══════════════════════════════════════════════════
+• Dark theme: bg #0B1220, stage #0E1830, surfaces #131A2A, borders rgba(59,130,246,0.2)
+• Glowing accents: primary #3B82F6, copper #D4A574, green #22C55E success, muted #8899BB
+• Stage fills viewport. Smooth animations (requestAnimationFrame).
+• Main visual = Canvas 2D or SVG, drawing something that looks ALIVE (axes, gridlines, particles, glowing markers)
+• Use KaTeX via CDN if equations are involved
+• Use p5.js if simulation-heavy, three.js if 3D
+• Animated transitions between steps (fade old instruction out, slide new one in)
+• Numeric readouts update live as sliders move
+• Hover glow on interactive elements
+
+TECHNICAL:
+• Single HTML file, inline <style> and <script>
+• pointerdown/move/up for drag (works mouse + touch)
+• Works in sandbox="allow-scripts" — no fetch, no localStorage
+• On final success: postMessage to parent with result
+
+Return ONLY the complete HTML starting with <!doctype html>. No markdown. No explanation.`;
 
 ═══════════════════════════════════════════════════
 VISUAL QUALITY REQUIREMENTS — this is the most important section:
