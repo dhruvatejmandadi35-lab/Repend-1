@@ -2,8 +2,10 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const OpenAI = require("openai");
+const Anthropic = require("@anthropic-ai/sdk");
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ---------------------------------------------------------------------------
 // PLAN_SYSTEM — prompt for GPT-4o to generate a recipe JSON for a given topic.
@@ -208,7 +210,7 @@ const VERIFY_SYSTEM = `You are a learning coach. The student attempted an intera
 const ENGINE_TEMPLATE = fs.readFileSync(path.join(__dirname, "engine.html"), "utf8");
 
 async function plan(topic) {
-    const res = await client.chat.completions.create({
+    const res = await openai.chat.completions.create({
           model: "gpt-4o",
           max_tokens: 4096,
           response_format: { type: "json_object" },
@@ -231,7 +233,7 @@ function injectRecipe(recipe) {
 }
 
 async function verify(topic, question, recipeSummary, userAnswer, labResult) {
-    const res = await client.chat.completions.create({
+    const res = await openai.chat.completions.create({
           model: "gpt-4o",
           max_tokens: 512,
           response_format: { type: "json_object" },
@@ -249,7 +251,7 @@ async function verify(topic, question, recipeSummary, userAnswer, labResult) {
 }
 
 async function analyzeImage(base64Image, question) {
-    const res = await client.chat.completions.create({
+    const res = await openai.chat.completions.create({
           model: "gpt-4o",
           max_tokens: 512,
           messages: [{
@@ -286,27 +288,8 @@ Return ONLY JSON with this shape:
 
 Make the spec rich enough that a coder reading it can implement the entire lab. Use real values, real names, real numbers.`;
 
-const CODER_SYSTEM = `You are a senior frontend engineer. You write ONE self-contained HTML file implementing an interactive educational lab from a spec.
-
-HARD REQUIREMENTS — non-negotiable:
-1. Single file. Inline <style> and <script>. No external assets except CDN scripts (p5.js, three.js, KaTeX, Desmos API are allowed).
-2. Dark theme: background #0B1220, surfaces #131A2A, text #F0F2F8, primary #3B82F6, copper accent #D4A574, muted #8899BB.
-3. Fonts: system-ui, -apple-system, sans-serif.
-4. Layout: header (title + 1-line instructions) at top, main interactive stage in middle (fills viewport, min 520px tall), footer with "Check answer", "Hint", "Reset" buttons + feedback area.
-5. The lab MUST be genuinely interactive: every control changes something visible immediately on input/drag/click.
-6. Check answer button evaluates the success_condition and shows green ("✓ Correct! <insight>") or amber ("Not yet — <hint>") feedback.
-7. On Check, postMessage to parent: window.parent.postMessage({type:"labCheck", result:{ok:true|false, score:N, total:N}}, "*").
-8. Use SVG, Canvas, or p5.js — whichever fits the topic. For math graphs prefer SVG with custom rendering. For physics simulations, p5.js. For 3D, three.js via CDN.
-9. Handle pointer events for both mouse and touch (use pointerdown/move/up).
-10. Code must run with sandbox="allow-scripts" — no localStorage, no cookies, no top-level navigation, no fetch to external APIs.
-
-OUTPUT FORMAT:
-Return ONLY the complete HTML, starting with <!doctype html> and ending with </html>. NO markdown code fences. NO commentary before or after.
-
-Quality bar: this should look and feel like a polished educational tool — not a sketch. Smooth animations, clear labels, sensible coordinate ranges, immediate visual feedback on every interaction.`;
-
 async function designLab(topic) {
-  const res = await client.chat.completions.create({
+  const res = await openai.chat.completions.create({
     model: "gpt-4o",
     max_tokens: 1500,
     response_format: { type: "json_object" },
@@ -319,16 +302,69 @@ async function designLab(topic) {
 }
 
 async function codeLab(design) {
-  const res = await client.chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: 6000,
-    messages: [
-      { role: "system", content: CODER_SYSTEM },
-      { role: "user", content: `Spec to implement:\n\n${JSON.stringify(design.spec, null, 2)}\n\nLearning goal: ${design.spec.learning_goal}\n\nReturn the complete self-contained HTML.` },
-    ],
+  const userPrompt = `You are building a world-class interactive educational lab as a single self-contained HTML file.
+
+TOPIC: ${design.topic}
+LEARNING GOAL: ${design.spec.learning_goal}
+INTERACTION TYPE: ${design.spec.interaction_type}
+
+WHAT IT SHOULD LOOK LIKE:
+${design.spec.visuals}
+
+CONTROLS & INTERACTIONS:
+${design.spec.controls}
+
+SUCCESS CONDITION:
+${design.spec.success_condition}
+
+═══════════════════════════════════════════════════
+VISUAL QUALITY REQUIREMENTS — this is the most important section:
+═══════════════════════════════════════════════════
+The lab must look impressive and modern — like something from 3Blue1Brown, Brilliant.org, or a polished science museum app.
+
+REQUIRED VISUAL STANDARDS:
+• Dark space theme: bg #0B1220, stage bg #0E1830, surfaces #131A2A, borders rgba(59,130,246,0.2)
+• Glowing accents: primary #3B82F6 (blue glow), copper #D4A574, green #22C55E, muted #8899BB
+• Stage must fill the viewport (use 100vw × calc(100vh - header - footer))
+• All animations must be smooth (requestAnimationFrame or CSS transitions)
+• Use Canvas 2D or SVG for the main visual — draw something that looks ALIVE
+• NO plain HTML form elements as the main interaction — sliders must be styled, draggables must look polished
+• If math is involved: render equations with KaTeX (via CDN) or draw them on canvas
+• If physics: show particles, waves, or objects that actually move
+• Glowing highlights on interactive elements on hover
+• Grid lines / axes wherever spatial context matters (draw on canvas/SVG)
+
+LAYOUT (strict):
+• Header: 60px, dark surface, title (bold white) + 1-line instruction (muted)
+• Main stage: flex-1, fills remaining height, position:relative — canvas/SVG goes here
+• Controls panel (if sliders): floating glass card top-right, max 220px wide, dark with blur backdrop
+• Footer: 56px, dark surface, "Check Answer" (blue pill), "Hint" (ghost), "Reset" (ghost), feedback text right-aligned
+
+INTERACTIVITY RULES:
+• Every slider/drag/click must change something VISIBLE on the stage IMMEDIATELY
+• Animate transitions (at least 200ms ease)
+• Show numeric readouts that update live as sliders move
+• Draggable elements snap with a satisfying visual pop (scale briefly to 1.05 then back)
+• Correct answer: stage flashes green glow + success message
+• Wrong: gentle red pulse, specific hint about what's off
+
+TECHNICAL:
+• Single HTML file, inline <style> and <script>
+• Use requestAnimationFrame for anything animated
+• pointerdown/pointermove/pointerup for drag (works mouse + touch)
+• On Check: window.parent.postMessage({type:"labCheck", result:{ok:Boolean, score:Number, total:Number}}, "*")
+• Works in sandbox="allow-scripts" — no fetch, no localStorage
+• p5.js OK via CDN if simulation-heavy; three.js OK for 3D; KaTeX OK for math
+
+Return ONLY the complete HTML starting with <!doctype html>. No markdown. No explanation.`;
+
+  const msg = await claude.messages.create({
+    model: "claude-opus-4-7",
+    max_tokens: 8000,
+    messages: [{ role: "user", content: userPrompt }],
   });
-  let html = res.choices[0].message.content.trim();
-  // Strip accidental markdown fences
+
+  let html = msg.content[0].text.trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
 }
