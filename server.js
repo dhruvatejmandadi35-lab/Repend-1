@@ -266,7 +266,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Repend running at http://localhost:${PORT}`));
-
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Repend running at http://localhost:${PORT}`));
