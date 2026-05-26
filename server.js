@@ -16,7 +16,7 @@ RECIPE JSON SCHEMA — return exactly this shape:
 
 {
   "topic": "Display name for the topic",
-    "scenario": "2-3 paragraph immersive second-person scenario placing the learner in a vivid moment where this concept matters.",
+    "scenario": "2-3 paragraph immersive second-person scenario. Open with a concrete real-world moment where THIS specific concept matters (a real job, a real decision, a real failure mode, a real product, a real news story). Name actual roles, places, dollar amounts, or consequences. End by stating exactly what the learner is about to manipulate to feel why it matters. NO generic 'imagine you are exploring' openings.",
       "verificationQuestion": "Specific question the learner can ONLY answer by interacting with the lab.",
         "recipe": {
             "title": "Lab title shown at top",
@@ -85,6 +85,18 @@ RECIPE JSON SCHEMA — return exactly this shape:
                                                                                                                                           "min": 0, "max": 50, "step": 1, "initial": 10,
                                                                                                                                             "bind": { "selector": "#forceArrow", "attr": "x2", "scale": 4, "offset": 200 }
                                                                                                                                             }
+
+                                                                                                                                            SLIDER bind options — pick the one that fits:
+                                                                                                                                              • Linear: { "selector": "#bar", "attr": "width", "scale": 2, "offset": 0 }   → attr = value*scale + offset
+                                                                                                                                              • Expression: { "selector": "#point", "attr": "cx", "expr": "cos(v) * 150 + 450" }  → 'v' is the slider value. Math.sin, cos, tan, sqrt, pow, exp, log, PI, E all available.
+                                                                                                                                              • Multi-target (one slider, many elements): { "binds": [
+                                                                                                                                                  { "selector": "#point", "attr": "cx", "expr": "cos(v) * 150 + 450" },
+                                                                                                                                                  { "selector": "#point", "attr": "cy", "expr": "-sin(v) * 150 + 270" },
+                                                                                                                                                  { "selector": "#xVal", "attr": "x", "expr": "0", "textContent": true, "decimals": 3 }
+                                                                                                                                                ] }
+                                                                                                                                              • textContent:true + decimals:N → writes the computed value AS text into the element (use for readouts like "x = 0.866").
+
+                                                                                                                                            CRITICAL: every slider in a quantitative lab MUST have a bind that visibly changes something. A slider with no bind, or a bind that does nothing visible, is a broken lab. If the formula needs trig, USE the "expr" form — don't fall back to "scale/offset" which only does linear math.
                                                                                                                                             
                                                                                                                                             LABEL (static text annotation on stage):
                                                                                                                                             {

@@ -357,11 +357,29 @@ const RECIPE = /*__RECIPE__*/ { title: "Loading...", instructions: "", stage: {w
   }
 
   function applyBind(bind, value) {
-    // bind = { selector: "#someId", attr: "r", scale: 1, offset: 0 }
+    // bind = { selector, attr, scale, offset }       (linear)
+    // bind = { selector, attr, expr: "cos(v)*150+450" } (any math, 'v' = slider value)
+    // bind = { binds: [ {selector, attr, expr}, ... ] } (apply multiple at once)
+    if (bind.binds && Array.isArray(bind.binds)) {
+      bind.binds.forEach(b => applyBind(b, value));
+      return;
+    }
     const el = stage.querySelector(bind.selector);
     if (!el) return;
-    const v = (Number(value) * (bind.scale ?? 1)) + (bind.offset ?? 0);
+    let v;
+    if (typeof bind.expr === "string") {
+      try {
+        // Whitelist: v + Math functions only. No identifiers besides v/Math allowed.
+        const fn = new Function("v", "Math",
+          `"use strict"; const {sin,cos,tan,asin,acos,atan,atan2,sqrt,abs,pow,exp,log,min,max,PI,E,round,floor,ceil} = Math; return (${bind.expr});`
+        );
+        v = fn(Number(value), Math);
+      } catch (e) { return; }
+    } else {
+      v = (Number(value) * (bind.scale ?? 1)) + (bind.offset ?? 0);
+    }
     el.setAttribute(bind.attr || "r", v);
+    if (bind.textContent) el.textContent = v.toFixed(bind.decimals ?? 2);
   }
 
   function formatVal(v, unit) { return unit ? `${v} ${unit}` : `${v}`; }
