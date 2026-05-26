@@ -170,6 +170,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && req.url === "/engine.html") {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(fs.readFileSync(path.join(__dirname, "engine.html")));
+    return;
+  }
+
   if (req.method === "POST") {
     let body = "";
     req.on("data", (c) => (body += c));
