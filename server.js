@@ -135,13 +135,25 @@ RECIPE JSON SCHEMA — return exactly this shape:
                                                                                                                                                         6. Be specific: use real names, real organelles, real numbers — not placeholder text.
                                                                                                                                                         7. The activity must be solvable in 30-90 seconds and force the learner to discover the key insight by interacting.
 
-DEPTH REQUIREMENTS — your lab MUST have ALL of:
-- 6-12 interactive objects minimum (NOT 1-2). Anatomy → 6+ organs/parts. Pedigrees → 8+ family members across 3 generations. Physics → multiple sliders + visible response objects.
-- Rich background SVG (15+ primitives): for anatomy, draw the actual organ/body shapes with <path>/<circle>/<ellipse>; for pedigrees, draw ALL marriage/descent/sibling connector lines; for physics, draw axes with gridlines, arrows, schematic.
-- TARGET zones must be placed at anatomically/structurally meaningful coordinates on the background diagram, not arbitrary.
-- The labels "Mitochondria", "II-1", "force" in the schema above are PLACEHOLDERS — invent fresh, topic-specific content. Never copy them verbatim.
+UNIVERSAL DEPTH REQUIREMENTS — apply to EVERY topic without exception:
+1. MINIMUM 6 interactive objects. Count them before submitting. If you have fewer, add more. No topic is too simple to reach 6.
+   - Labeling/sorting topic (anatomy, chemistry, history, geography): 6-10 draggable labels + matching targets placed on a diagram
+   - Sequence/classification topic (cell cycle, historical events, logic gates): 6-8 nodes or draggables to order/classify
+   - Pedigree/family/inheritance topic: 8-12 nodes across 3 generations
+   - Physics/math/quantitative topic: 3-5 sliders each binding to a visible SVG element
+   - Any other topic: find 6+ meaningful pieces the learner must place, toggle, or tune
 
-If your output has fewer than 6 interactive objects, you have failed. Re-plan with more depth before responding.
+2. RICH BACKGROUND SVG — always draw a real visual context (15+ SVG elements):
+   - Labeling: draw the actual subject (body outline, cell membrane, map outline, circuit schematic) using <path>, <ellipse>, <circle>, <rect>, <line>
+   - Pedigree: draw every marriage/descent/sibling connector line
+   - Physics: draw axes, gridlines, arrows, force vectors, object shapes
+   - Never leave background.markup as an empty string or a single line
+
+3. Place interactive objects at visually meaningful positions that correspond to the background diagram, not scattered randomly.
+
+4. NEVER copy the placeholder values from the schema examples (Mitochondria, II-1, force, Powerhouse organelle). Every id, label, and value must be specific to the user's actual topic.
+
+If your output has fewer than 6 interactive objects or an empty background, you have failed. Think harder and re-plan.
                                                                                                                                                         `;
 
 const VERIFY_SYSTEM = `You are a learning coach. The student attempted an interactive lab and may have written a free-text reflection on top. Return ONLY JSON:
