@@ -134,6 +134,14 @@ RECIPE JSON SCHEMA — return exactly this shape:
                                                                                                                                                         5. Do NOT include the text strings "RECIPE" or "END" inside any SVG markup or other string values.
                                                                                                                                                         6. Be specific: use real names, real organelles, real numbers — not placeholder text.
                                                                                                                                                         7. The activity must be solvable in 30-90 seconds and force the learner to discover the key insight by interacting.
+
+DEPTH REQUIREMENTS — your lab MUST have ALL of:
+- 6-12 interactive objects minimum (NOT 1-2). Anatomy → 6+ organs/parts. Pedigrees → 8+ family members across 3 generations. Physics → multiple sliders + visible response objects.
+- Rich background SVG (15+ primitives): for anatomy, draw the actual organ/body shapes with <path>/<circle>/<ellipse>; for pedigrees, draw ALL marriage/descent/sibling connector lines; for physics, draw axes with gridlines, arrows, schematic.
+- TARGET zones must be placed at anatomically/structurally meaningful coordinates on the background diagram, not arbitrary.
+- The labels "Mitochondria", "II-1", "force" in the schema above are PLACEHOLDERS — invent fresh, topic-specific content. Never copy them verbatim.
+
+If your output has fewer than 6 interactive objects, you have failed. Re-plan with more depth before responding.
                                                                                                                                                         `;
 
 const VERIFY_SYSTEM = `You are a learning coach. The student attempted an interactive lab and may have written a free-text reflection on top. Return ONLY JSON:
