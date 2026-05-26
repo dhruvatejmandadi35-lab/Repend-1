@@ -633,11 +633,11 @@
     topicBadge.style.display = "none";
     loadingEl.style.display = "block";
     loadingStage.textContent = "Designing your experience";
-    loadingMsg.textContent = "The AI is reasoning about your topic…";
+    loadingMsg.textContent = "Designing your activity, then coding it from scratch (~30-50 sec)…";
 
     try {
-      // Step 1: Plan
-      const planRes = await fetch("/plan", {
+      // Freeform pipeline: server runs Designer → Coder, returns full HTML
+      const planRes = await fetch("/plan-lab", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic }),
@@ -645,38 +645,25 @@
       if (!planRes.ok) throw new Error((await planRes.json()).error || "Plan failed");
       currentPlan = await planRes.json();
 
-      // Show scenario immediately
       topicBadgeText.textContent = currentPlan.topic;
       scenarioText.textContent = currentPlan.scenario;
-      simTypeTag.textContent = (currentPlan.recipe && currentPlan.recipe.title) || "Interactive lab";
+      simTypeTag.textContent = (currentPlan.spec && currentPlan.spec.title) || "Interactive lab";
       questionText.textContent = currentPlan.verificationQuestion;
 
       feedbackEl.style.display = "none";
       feedbackEl.className = "feedback";
       answerInput.value = "";
       againBtn.style.display = "none";
-      simFrameWrap.style.display = "none";
-      simHint.style.display = "none";
-      simLoading.style.display = "flex";
-      simLoadingMsg.textContent = "Assembling your interactive lab…";
+      simFrameWrap.style.display = "block";
+      simHint.style.display = "block";
+      simLoading.style.display = "none";
 
       loadingEl.style.display = "none";
       topicBadge.style.display = "block";
       experienceEl.style.display = "block";
       experienceEl.scrollIntoView({ behavior: "smooth", block: "start" });
 
-      loadingStage.textContent = "Building lab";
-      loadingMsg.textContent = "Wiring the interactive engine…";
-
-      // Step 2: POST recipe to /simulate — server injects it into engine.html and returns full HTML.
-      const simRes = await fetch("/simulate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipe: currentPlan.recipe }),
-      });
-      if (!simRes.ok) throw new Error("Simulation failed");
-      const simHtml = await simRes.text();
-      simFrame.srcdoc = simHtml;
+      simFrame.srcdoc = currentPlan.labHtml;
 
       simLoading.style.display = "none";
       simFrameWrap.style.display = "block";
@@ -708,7 +695,7 @@
         body: JSON.stringify({
           topic: currentPlan.topic,
           question: currentPlan.verificationQuestion,
-          recipeSummary: (currentPlan.recipe && currentPlan.recipe.title) || "",
+          recipeSummary: (currentPlan.spec && currentPlan.spec.title) || (currentPlan.recipe && currentPlan.recipe.title) || "",
           userAnswer: answer,
           labResult: lastLabResult,
         }),

@@ -263,6 +263,76 @@ async function analyzeImage(base64Image, question) {
     return res.choices[0].message.content.trim();
 }
 
+// ─────────────────────────────────────────────────────────────────
+// FREEFORM LAB PIPELINE — two-step: Designer spec → Coder writes full HTML
+// ─────────────────────────────────────────────────────────────────
+
+const DESIGNER_SYSTEM = `You are an instructional designer. Given a topic, you write a precise spec for one interactive lab that another model will then code.
+
+Return ONLY JSON with this shape:
+{
+  "topic": "Display name",
+  "scenario": "2-3 paragraph immersive 2nd-person scenario. Open with a CONCRETE real-world moment (a real role, place, dollar amount, news event, failure mode). End by stating exactly what the learner will manipulate.",
+  "verificationQuestion": "One specific question the learner can only answer by interacting with the lab.",
+  "spec": {
+    "title": "Short lab title",
+    "learning_goal": "One sentence: the insight the learner should walk away with.",
+    "interaction_type": "one of: slider-tune | drag-label | click-classify | sequence-order | sketch-construct | code-edit | multi-stage",
+    "visuals": "Detailed description of what the lab looks like — shapes, layout, colors, what moves. Be specific: 'a 400px circle centered at (450,270) with a red point that slides around its perimeter as the angle slider changes; below it, two readouts showing cos(θ) and sin(θ) to 3 decimals'.",
+    "controls": "Detailed description of every interactive control — what each slider/button/draggable does and what visually responds. Minimum 3 controls.",
+    "success_condition": "Exact rule for when the learner has 'got it'. Must be programmatically checkable (e.g., 'angle is within 0.05 rad of π/4 AND user clicked Reveal')."
+  }
+}
+
+Make the spec rich enough that a coder reading it can implement the entire lab. Use real values, real names, real numbers.`;
+
+const CODER_SYSTEM = `You are a senior frontend engineer. You write ONE self-contained HTML file implementing an interactive educational lab from a spec.
+
+HARD REQUIREMENTS — non-negotiable:
+1. Single file. Inline <style> and <script>. No external assets except CDN scripts (p5.js, three.js, KaTeX, Desmos API are allowed).
+2. Dark theme: background #0B1220, surfaces #131A2A, text #F0F2F8, primary #3B82F6, copper accent #D4A574, muted #8899BB.
+3. Fonts: system-ui, -apple-system, sans-serif.
+4. Layout: header (title + 1-line instructions) at top, main interactive stage in middle (fills viewport, min 520px tall), footer with "Check answer", "Hint", "Reset" buttons + feedback area.
+5. The lab MUST be genuinely interactive: every control changes something visible immediately on input/drag/click.
+6. Check answer button evaluates the success_condition and shows green ("✓ Correct! <insight>") or amber ("Not yet — <hint>") feedback.
+7. On Check, postMessage to parent: window.parent.postMessage({type:"labCheck", result:{ok:true|false, score:N, total:N}}, "*").
+8. Use SVG, Canvas, or p5.js — whichever fits the topic. For math graphs prefer SVG with custom rendering. For physics simulations, p5.js. For 3D, three.js via CDN.
+9. Handle pointer events for both mouse and touch (use pointerdown/move/up).
+10. Code must run with sandbox="allow-scripts" — no localStorage, no cookies, no top-level navigation, no fetch to external APIs.
+
+OUTPUT FORMAT:
+Return ONLY the complete HTML, starting with <!doctype html> and ending with </html>. NO markdown code fences. NO commentary before or after.
+
+Quality bar: this should look and feel like a polished educational tool — not a sketch. Smooth animations, clear labels, sensible coordinate ranges, immediate visual feedback on every interaction.`;
+
+async function designLab(topic) {
+  const res = await client.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 1500,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: DESIGNER_SYSTEM },
+      { role: "user", content: `Topic: ${topic}\n\nDesign the lab spec.` },
+    ],
+  });
+  return JSON.parse(res.choices[0].message.content.trim());
+}
+
+async function codeLab(design) {
+  const res = await client.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 6000,
+    messages: [
+      { role: "system", content: CODER_SYSTEM },
+      { role: "user", content: `Spec to implement:\n\n${JSON.stringify(design.spec, null, 2)}\n\nLearning goal: ${design.spec.learning_goal}\n\nReturn the complete self-contained HTML.` },
+    ],
+  });
+  let html = res.choices[0].message.content.trim();
+  // Strip accidental markdown fences
+  html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  return html;
+}
+
 const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/") {
           res.writeHead(200, { "Content-Type": "text/html" });
@@ -292,6 +362,24 @@ const server = http.createServer(async (req, res) => {
                                                                const result = await plan(data.topic.trim());
                                                                res.writeHead(200, { "Content-Type": "application/json" });
                                                                res.end(JSON.stringify(result));
+
+                                                   } else if (req.url === "/plan-lab") {
+                                                               // Freeform pipeline: Designer → Coder → full HTML
+                                                               if (!data.topic?.trim()) {
+                                                                             res.writeHead(400, { "Content-Type": "application/json" });
+                                                                             res.end(JSON.stringify({ error: "Topic is required" }));
+                                                                             return;
+                                                               }
+                                                               const design = await designLab(data.topic.trim());
+                                                               const html = await codeLab(design);
+                                                               res.writeHead(200, { "Content-Type": "application/json" });
+                                                               res.end(JSON.stringify({
+                                                                   topic: design.topic,
+                                                                   scenario: design.scenario,
+                                                                   verificationQuestion: design.verificationQuestion,
+                                                                   labHtml: html,
+                                                                   spec: design.spec,
+                                                               }));
 
                                                    } else if (req.url === "/simulate") {
                                                                // Take an already-planned recipe and return engine HTML
