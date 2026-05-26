@@ -391,47 +391,6 @@ TECHNICAL:
 
 Return ONLY the complete HTML starting with <!doctype html>. No markdown. No explanation.`;
 
-═══════════════════════════════════════════════════
-VISUAL QUALITY REQUIREMENTS — this is the most important section:
-═══════════════════════════════════════════════════
-The lab must look impressive and modern — like something from 3Blue1Brown, Brilliant.org, or a polished science museum app.
-
-REQUIRED VISUAL STANDARDS:
-• Dark space theme: bg #0B1220, stage bg #0E1830, surfaces #131A2A, borders rgba(59,130,246,0.2)
-• Glowing accents: primary #3B82F6 (blue glow), copper #D4A574, green #22C55E, muted #8899BB
-• Stage must fill the viewport (use 100vw × calc(100vh - header - footer))
-• All animations must be smooth (requestAnimationFrame or CSS transitions)
-• Use Canvas 2D or SVG for the main visual — draw something that looks ALIVE
-• NO plain HTML form elements as the main interaction — sliders must be styled, draggables must look polished
-• If math is involved: render equations with KaTeX (via CDN) or draw them on canvas
-• If physics: show particles, waves, or objects that actually move
-• Glowing highlights on interactive elements on hover
-• Grid lines / axes wherever spatial context matters (draw on canvas/SVG)
-
-LAYOUT (strict):
-• Header: 60px, dark surface, title (bold white) + 1-line instruction (muted)
-• Main stage: flex-1, fills remaining height, position:relative — canvas/SVG goes here
-• Controls panel (if sliders): floating glass card top-right, max 220px wide, dark with blur backdrop
-• Footer: 56px, dark surface, "Check Answer" (blue pill), "Hint" (ghost), "Reset" (ghost), feedback text right-aligned
-
-INTERACTIVITY RULES:
-• Every slider/drag/click must change something VISIBLE on the stage IMMEDIATELY
-• Animate transitions (at least 200ms ease)
-• Show numeric readouts that update live as sliders move
-• Draggable elements snap with a satisfying visual pop (scale briefly to 1.05 then back)
-• Correct answer: stage flashes green glow + success message
-• Wrong: gentle red pulse, specific hint about what's off
-
-TECHNICAL:
-• Single HTML file, inline <style> and <script>
-• Use requestAnimationFrame for anything animated
-• pointerdown/pointermove/pointerup for drag (works mouse + touch)
-• On Check: window.parent.postMessage({type:"labCheck", result:{ok:Boolean, score:Number, total:Number}}, "*")
-• Works in sandbox="allow-scripts" — no fetch, no localStorage
-• p5.js OK via CDN if simulation-heavy; three.js OK for 3D; KaTeX OK for math
-
-Return ONLY the complete HTML starting with <!doctype html>. No markdown. No explanation.`;
-
   const msg = await claude.messages.create({
     model: "claude-opus-4-7",
     max_tokens: 8000,
@@ -527,4 +486,4 @@ const server = http.createServer(async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Repend running at http://localhost:${PORT}`));
+server.listen(PORT, "0.0.0.0", () => console.log(`Repend running at http://0.0.0.0:${PORT}`));
