@@ -68,7 +68,7 @@ function injectRecipe(recipe) {
 
 async function verify(topic, question, recipeSummary, userAnswer, labResult) {
   const res = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-4o-mini",
     max_tokens: 512,
     response_format: { type: "json_object" },
     messages: [
@@ -106,7 +106,7 @@ async function analyzeImage(base64Image, question) {
 
 async function thinkAboutTopic(topic) {
   const res = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-4o-mini",
     max_tokens: 700,
     messages: [
       {
