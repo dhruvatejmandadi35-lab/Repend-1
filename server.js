@@ -227,8 +227,8 @@ Do NOT use any of these words: slider, button, input, form, checkbox, select, dr
   return res.choices[0].message.content.trim();
 }
 
-// Step 4 — claude-sonnet-4-6 implements the HTML.
-// The hard reasoning is done — sonnet just executes it.
+// Step 4 — GPT-4.5 implements the HTML.
+// The hard reasoning is done — this step just executes it.
 async function codeFromSpec(design, labThinking) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}`)
@@ -271,7 +271,7 @@ TECHNICAL REQUIREMENTS:
 Return ONLY the complete HTML starting with <!doctype html>. No markdown. No explanation. No code fences.`;
 
   const res = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-4.5-preview",
     max_tokens: 8000,
     messages: [{ role: "user", content: prompt }],
   });
