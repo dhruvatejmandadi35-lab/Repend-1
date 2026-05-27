@@ -470,9 +470,13 @@
       <div class="stage-dot"></div>
       <div class="stage-text">Translating insight into lab spec…</div>
     </div>
+    <div class="stage-row" id="stageLabThink">
+      <div class="stage-dot"></div>
+      <div class="stage-text">Claude thinking about how to build it…</div>
+    </div>
     <div class="stage-row" id="stageCode">
       <div class="stage-dot"></div>
-      <div class="stage-text">Claude is coding your lab from scratch…</div>
+      <div class="stage-text">Writing your lab…</div>
     </div>
   </div>
 </div>
@@ -563,9 +567,10 @@
   const feedbackText = document.getElementById("feedbackText");
   const againBtn     = document.getElementById("againBtn");
 
-  const stageThink  = document.getElementById("stageThink");
-  const stageDesign = document.getElementById("stageDesign");
-  const stageCode   = document.getElementById("stageCode");
+  const stageThink    = document.getElementById("stageThink");
+  const stageDesign   = document.getElementById("stageDesign");
+  const stageLabThink = document.getElementById("stageLabThink");
+  const stageCode     = document.getElementById("stageCode");
   const stageThinkText = document.getElementById("stageThinkText");
 
   let currentPlan = null;
@@ -582,12 +587,10 @@
   });
 
   function setStage(name) {
-    [stageThink, stageDesign, stageCode].forEach(el => el.classList.remove("active"));
-    const map = { think: stageThink, design: stageDesign, code: stageCode };
+    const map = { think: stageThink, design: stageDesign, labthink: stageLabThink, code: stageCode };
+    Object.values(map).forEach(el => el.classList.remove("active"));
     if (map[name]) map[name].classList.add("active");
-
-    // Mark prior stages done
-    const order = ["think", "design", "code"];
+    const order = ["think", "design", "labthink", "code"];
     const idx = order.indexOf(name);
     order.slice(0, idx).forEach(s => { if (map[s]) { map[s].classList.remove("active"); map[s].classList.add("done"); } });
   }
@@ -604,7 +607,7 @@
     loadingEl.style.display = "block";
 
     // Reset stage indicators
-    [stageThink, stageDesign, stageCode].forEach(el => el.classList.remove("active", "done"));
+    [stageThink, stageDesign, stageLabThink, stageCode].forEach(el => el.classList.remove("active", "done"));
     stageThinkText.textContent = `Reasoning about "${topic}"…`;
     setStage("think");
 
@@ -639,9 +642,10 @@
           if (!line.startsWith("data: ")) continue;
           const event = JSON.parse(line.slice(6));
 
-          if (event.stage === "think")  setStage("think");
-          if (event.stage === "design") setStage("design");
-          if (event.stage === "code")   setStage("code");
+          if (event.stage === "think")    setStage("think");
+          if (event.stage === "design")   setStage("design");
+          if (event.stage === "labthink") setStage("labthink");
+          if (event.stage === "code")     setStage("code");
           if (event.stage === "error")  throw new Error(event.msg);
           if (event.stage === "done")   result = event.data;
         }

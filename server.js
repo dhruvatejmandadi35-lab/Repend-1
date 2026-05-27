@@ -97,11 +97,12 @@ async function analyzeImage(base64Image, question) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// FREEFORM LAB PIPELINE
-// Three separate steps so each one can think without format pressure:
-//   1. thinkAboutTopic   — free prose reasoning, NO format constraints, NO archetype menu
-//   2. specFromThinking  — convert reasoning to structured JSON spec
-//   3. codeLab           — Claude writes the full interactive HTML
+// FREEFORM LAB PIPELINE — four steps, each focused on one job:
+//   1. thinkAboutTopic  — GPT-4o-mini prose: core insight, visual metaphor, variables + why
+//   2. specFromThinking — GPT-4o JSON: formalises the prose into a typed spec
+//   3. thinkAboutLab    — claude-opus-4-7 prose: reasons freely about HOW to build it
+//                         (no lab-type labels — describes experience, not UI components)
+//   4. codeFromSpec     — claude-sonnet-4-6 HTML: implements exactly what step 3 described
 // ─────────────────────────────────────────────────────────────────
 
 async function thinkAboutTopic(topic) {
@@ -139,29 +140,39 @@ async function specFromThinking(topic, thinking) {
     messages: [
       {
         role: "system",
-        content: `You convert educational reasoning into an interactive lab spec. Read the reasoning and produce JSON for a self-contained interactive HTML lab. The lab should make the visual metaphor from the reasoning come alive.
+        content: `You convert educational reasoning into an interactive lab spec. Read the reasoning and produce JSON.
 
 Return ONLY JSON with this exact shape:
 {
   "topic": "Display name for the topic",
-  "scenario": "2-3 paragraph immersive 2nd-person scenario. Open with a CONCRETE real-world moment: a real role, place, dollar amount, failure mode. Name it specifically. End by telling the learner exactly what they are about to manipulate and why it matters right now.",
+  "scenario": "2-3 paragraph immersive 2nd-person scenario. Open with a CONCRETE real-world moment: a real role, place, dollar amount, failure mode. End by telling the learner exactly what they are about to manipulate and why it matters right now.",
   "verificationQuestion": "One specific question the learner can only answer correctly AFTER interacting with the lab.",
   "spec": {
     "title": "Short punchy lab title",
     "learning_goal": "One sentence using the exact words of the core insight from the reasoning.",
-    "visual_metaphor": "Copy the visual metaphor from the reasoning verbatim. This is what the lab must look like.",
+    "visualMetaphor": "One vivid sentence describing what the simulation looks and feels like IN MOTION. Not a chart type — a scene. E.g. 'Money piling up in stacks of gold coins, each new coin landing with a clink, the stacks growing taller until they overflow the screen.' Copy from the reasoning verbatim.",
     "variables": [
-      { "name": "variable name", "unit": "unit", "min": 0, "max": 100, "default": 10, "why": "why this variable matters to the insight" }
+      {
+        "name": "variable name",
+        "unit": "unit string or empty",
+        "min": 0,
+        "max": 100,
+        "default": 10,
+        "why_it_matters": "REQUIRED — one sentence explaining why THIS variable matters to the core insight. Not what it is — why changing it reveals something. E.g. 'Rate matters because doubling it doesn\\'t double the outcome — it compounds, so small rate differences explode over time.'"
+      }
     ],
-    "stage_description": "Detailed paragraph: what the stage looks like, what is drawn on it, what moves, what colors. Describe from top to bottom. Reference the visual metaphor. Be specific about positions, sizes, what animates.",
-    "interaction_description": "What the learner does step by step. What they touch first. What happens visually when they move each control. What the aha moment looks like on screen.",
-    "aha_trigger": "The exact screen event that creates the aha moment. E.g. 'When the learner pushes rate past 8%, the bar's growth visibly accelerates — the new amount added each year is larger than the previous year's total, which the bar makes visible by growing faster than linear.'",
-    "success_condition": "Exact programmatic rule. E.g. 'balance >= 10000 with principal=1000 and rate and years set by learner'",
-    "real_world_payoff": "The real-world cost sentence from the reasoning, rewritten as a direct consequence the learner now understands."
+    "stage_description": "Detailed paragraph: what is drawn on screen, what moves, what colors. Reference the visualMetaphor directly. Specific positions, sizes, what animates.",
+    "interaction_description": "What the learner does step by step. What they touch first. What changes visually on each interaction. What the aha moment looks like on screen.",
+    "aha_trigger": "The exact visual event that marks the aha moment. Be specific: what threshold, what visual change, what the learner sees right before vs. right after.",
+    "success_condition": "Exact programmatic rule for completion.",
+    "real_world_payoff": "One sentence: the real-world consequence the learner now understands."
   }
 }
 
-Use the metaphors, variables, and aha moment from the reasoning directly. Do NOT add new interaction categories or format labels.`,
+RULES:
+- visualMetaphor must be a vivid scene description, never a chart type or UI pattern name
+- every variable MUST have why_it_matters — if you can't explain why it matters, remove the variable
+- do NOT include interaction_type, lab_type, or any format label anywhere in the JSON`,
       },
       {
         role: "user",
@@ -172,80 +183,102 @@ Use the metaphors, variables, and aha moment from the reasoning directly. Do NOT
   return JSON.parse(res.choices[0].message.content.trim());
 }
 
-async function codeLab(design) {
+// Step 3 — claude-opus-4-7 reasons freely about HOW to build the lab.
+// No lab-type labels, no UI component names. Pure experience + implementation thinking.
+async function thinkAboutLab(design) {
   const vars = (design.spec.variables || [])
-    .map(v => `  • ${v.name} (${v.unit || ""}): range ${v.min}–${v.max}, default ${v.default}. WHY IT MATTERS: ${v.why}`)
+    .map(v => `  • ${v.name} (${v.unit || ""}), range ${v.min}–${v.max}: ${v.why_it_matters}`)
     .join("\n");
 
-  const prompt = `Build a world-class interactive educational lab as a single self-contained HTML file.
+  const prompt = `You are thinking through how to build a specific interactive learning experience as a self-contained HTML page. All the educational reasoning has been done — your job is to reason about the IMPLEMENTATION: what to draw, what to animate, how to make the aha moment unmissable.
 
 TOPIC: ${design.topic}
 LEARNING GOAL: ${design.spec.learning_goal}
 
-THE VISUAL METAPHOR — this is what the lab must look like in motion:
-"${design.spec.visual_metaphor}"
+VISUAL METAPHOR — this is what it should feel like:
+"${design.spec.visualMetaphor}"
 
-WHAT THE STAGE LOOKS LIKE:
-${design.spec.stage_description}
-
-VARIABLES THE LEARNER CONTROLS:
+VARIABLES AND WHY EACH ONE MATTERS TO THE CONCEPT:
 ${vars}
 
-WHAT THE LEARNER DOES:
-${design.spec.interaction_description}
-
-THE AHA MOMENT — design the lab so this exact thing happens:
+AHA MOMENT TO ENGINEER:
 ${design.spec.aha_trigger}
 
-SUCCESS CONDITION: ${design.spec.success_condition}
-REAL-WORLD PAYOFF (show at success): "${design.spec.real_world_payoff || ""}"
+Reason through these five questions. Write in plain prose — no JSON, no lists, no headers:
 
-═══════════════════════════════════════════════════
-BUILD REQUIREMENTS:
-═══════════════════════════════════════════════════
+1. FIRST FRAME — what does the canvas show the instant it loads, before the learner touches anything? Describe every visual element: shapes, colors, positions, what's already moving.
 
-VISUAL QUALITY — this must look like Brilliant.org or 3Blue1Brown:
-• Dark theme: body bg #0B1220, stage bg #0E1830, panels #131A2A, borders rgba(59,130,246,0.2)
-• Glowing accents: primary #3B82F6 (with box-shadow glow), copper #D4A574, success #22C55E, muted #8899BB
-• Stage: Canvas 2D or SVG. Draw the visual metaphor. Make it look ALIVE — it should move and respond
-• Axes and gridlines wherever spatial context matters (faint, rgba white/blue)
-• Sliders: styled custom (no browser default), with live numeric readouts next to them
-• Draggables: polished cards with subtle shadow, snap with a scale(1.05) pop animation
-• Hover glow on every interactive element
+2. VISUAL MECHANICS — for each variable, describe the exact visual change when it moves. Go beyond "a bar grows" — describe the specific geometry and motion that makes the metaphor real. What does the metaphor look like at the minimum value vs the maximum?
 
-LAYOUT:
-• Header bar (56px): topic title bold left, learning goal muted right
-• Main stage: fills remaining viewport height, Canvas or SVG
-• Controls: floating glass card (backdrop-filter: blur), positioned so it doesn't cover the main visual
-• Footer (48px): "Check Answer" blue pill + "Reset" ghost button + feedback text
+3. AHA ENGINEERING — the aha moment is: "${design.spec.aha_trigger}". How do you make this unmissable? What visual event marks the threshold? Describe what the learner sees in the 2 seconds before and the 2 seconds after.
 
-INTERACTIVITY:
-• Every variable change must update the visual IMMEDIATELY (no lag)
-• Animate with requestAnimationFrame — smooth, continuous
-• When the aha moment condition is met: briefly pulse the relevant visual element with a golden glow
-• On success: green glow across stage, confetti burst, show real_world_payoff in a card
-• On wrong answer: gentle red pulse, show a specific hint
+4. MOTION — what is always in motion, even when the learner isn't interacting? What transitions happen on interaction?
 
-TECHNICAL:
-• Single HTML file — inline <style> and <script>, no external files except CDN libs
-• pointerdown/pointermove/pointerup for all drag interactions
-• Works in sandbox="allow-scripts" — no fetch(), no localStorage
-• KaTeX CDN if equations needed, p5.js CDN if particle simulation, three.js CDN if 3D
-• On final success: window.parent.postMessage({ type: "labCheck", result: { ok: true, score: 1, total: 1 } }, "*")
-• On wrong check: window.parent.postMessage({ type: "labCheck", result: { ok: false, score: 0, total: 1 } }, "*")
+5. UNIQUENESS — what single visual or interaction choice makes this feel like THIS concept and not a generic chart or form?
 
-Return ONLY the complete HTML starting with <!doctype html>. No markdown. No explanation. No code fences.`;
+Do NOT use any of these words: slider, button, input, form, checkbox, select, drag, drop, node, widget, component, UI. Describe experiences and behaviors only.`;
 
   const msg = await claude.messages.create({
     model: "claude-opus-4-7",
-    max_tokens: 8000,
+    max_tokens: 2000,
     thinking: { type: "adaptive" },
     messages: [{ role: "user", content: prompt }],
   });
 
-  // Find the text block (thinking blocks come first)
   const textBlock = msg.content.find(b => b.type === "text");
-  let html = (textBlock ? textBlock.text : msg.content[0].text).trim();
+  return (textBlock ? textBlock.text : msg.content[0].text).trim();
+}
+
+// Step 4 — claude-sonnet-4-6 implements the HTML.
+// The hard reasoning is done — sonnet just executes it.
+async function codeFromSpec(design, labThinking) {
+  const vars = (design.spec.variables || [])
+    .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}`)
+    .join("\n");
+
+  const prompt = `Build a self-contained interactive educational HTML page. The design thinking is already done — implement it exactly.
+
+TOPIC: ${design.topic}
+LEARNING GOAL: ${design.spec.learning_goal}
+VISUAL METAPHOR: "${design.spec.visualMetaphor}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IMPLEMENTATION BRIEF (build exactly this):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${labThinking}
+
+VARIABLES:
+${vars}
+
+SUCCESS CONDITION: ${design.spec.success_condition}
+REAL-WORLD PAYOFF (show at end): "${design.spec.real_world_payoff || ""}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TECHNICAL REQUIREMENTS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Single HTML file — inline <style> and <script> only
+• Dark theme: bg #0B1220, stage #0E1830, panels #131A2A, border rgba(59,130,246,0.2)
+• Glowing accents: blue #3B82F6, copper #D4A574, success #22C55E, muted #8899BB
+• Canvas 2D or SVG for the main visual — make the visual metaphor literal
+• requestAnimationFrame for all animation
+• pointerdown/pointermove/pointerup for any drag interactions
+• Works in sandbox="allow-scripts" — no fetch(), no localStorage
+• Controls: styled, not browser-default — live numeric readouts update as values change
+• When aha moment fires: golden pulse on the relevant element
+• On success: green stage glow + confetti + real_world_payoff card slides in
+• KaTeX via CDN if equations, p5.js via CDN if particles, three.js via CDN if 3D
+• window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success
+• window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on wrong
+
+Return ONLY the complete HTML starting with <!doctype html>. No markdown. No explanation. No code fences.`;
+
+  const msg = await claude.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 8000,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  let html = msg.content[0].text.trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
 }
@@ -301,8 +334,11 @@ const server = http.createServer(async (req, res) => {
           send("design", "Translating insight into lab spec…");
           const design = await specFromThinking(topic, thinking);
 
-          send("code", "Claude is coding your lab from scratch…");
-          const html = await codeLab(design);
+          send("labthink", "Claude is thinking about how to build it…");
+          const labThinking = await thinkAboutLab(design);
+
+          send("code", "Writing your lab…");
+          const html = await codeFromSpec(design, labThinking);
 
           send("done", "Lab ready.", {
             topic: design.topic,
