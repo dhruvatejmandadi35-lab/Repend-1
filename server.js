@@ -218,15 +218,13 @@ Reason through these five questions. Write in plain prose — no JSON, no lists,
 
 Do NOT use any of these words: slider, button, input, form, checkbox, select, drag, drop, node, widget, component, UI. Describe experiences and behaviors only.`;
 
-  const msg = await claude.messages.create({
-    model: "claude-opus-4-7",
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o",
     max_tokens: 2000,
-    thinking: { type: "adaptive" },
     messages: [{ role: "user", content: prompt }],
   });
 
-  const textBlock = msg.content.find(b => b.type === "text");
-  return (textBlock ? textBlock.text : msg.content[0].text).trim();
+  return res.choices[0].message.content.trim();
 }
 
 // Step 4 — claude-sonnet-4-6 implements the HTML.
@@ -272,13 +270,13 @@ TECHNICAL REQUIREMENTS:
 
 Return ONLY the complete HTML starting with <!doctype html>. No markdown. No explanation. No code fences.`;
 
-  const msg = await claude.messages.create({
-    model: "claude-sonnet-4-6",
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o",
     max_tokens: 8000,
     messages: [{ role: "user", content: prompt }],
   });
 
-  let html = msg.content[0].text.trim();
+  let html = res.choices[0].message.content.trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
 }
