@@ -331,6 +331,11 @@
       background: #0B1220;
     }
 
+    /* Step 2 — iframe responsive */
+    @media (max-width: 600px) {
+      #simFrame { height: 480px; }
+    }
+
     /* Step 3 — Verify */
     #stepVerify { margin-bottom: 40px; }
     .verify-card {
@@ -346,6 +351,45 @@
       line-height: 1.6;
       margin-bottom: 24px;
     }
+
+    /* Multi-choice quiz */
+    .quiz-options {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .quiz-option {
+      background: var(--navy3);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 13px 18px;
+      font-size: 0.95rem;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.15s, background 0.15s;
+      font-family: inherit;
+    }
+    .quiz-option:hover:not(:disabled) { border-color: var(--blue); background: rgba(59,130,246,0.07); }
+    .quiz-option.correct-pick {
+      border-color: var(--green);
+      background: rgba(34,197,94,0.08);
+      color: #6EE7B7;
+    }
+    .quiz-option.wrong-pick {
+      border-color: rgba(239,68,68,0.5);
+      background: rgba(239,68,68,0.06);
+      color: #FCA5A5;
+    }
+    .quiz-option.reveal-correct {
+      border-color: var(--green);
+      background: rgba(34,197,94,0.05);
+      color: #6EE7B7;
+      opacity: 0.7;
+    }
+    .quiz-option:disabled { cursor: default; }
+
+    /* Fallback text verify (shown when no reflection data) */
     #answerInput {
       width: 100%;
       background: var(--navy3);
@@ -404,9 +448,30 @@
       text-transform: uppercase;
     }
 
+    /* Payoff card */
+    #payoffCard {
+      display: none;
+      margin-top: 20px;
+      padding: 18px 22px;
+      border-radius: 10px;
+      background: rgba(34,197,94,0.06);
+      border: 1px solid rgba(34,197,94,0.2);
+      font-size: 0.93rem;
+      color: #6EE7B7;
+      line-height: 1.7;
+    }
+    #payoffCard .payoff-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--green);
+      margin-bottom: 6px;
+    }
+
     #againBtn {
       display: none;
-      margin-top: 40px;
+      margin-top: 28px;
       background: none;
       border: 1.5px solid var(--border);
       color: var(--muted);
@@ -572,13 +637,20 @@
     </div>
     <div class="verify-card">
       <div id="questionText"></div>
-      <textarea id="answerInput" placeholder="Use the lab above to find the answer, then describe what you observed…"></textarea>
-      <div>
-        <button id="checkBtn">Check my answer</button>
+      <!-- Multi-choice quiz (shown when reflection data available) -->
+      <div id="quizOptions" class="quiz-options" style="display:none"></div>
+      <!-- Fallback text verify -->
+      <div id="textVerify" style="display:none">
+        <textarea id="answerInput" placeholder="Use the lab above to find the answer, then describe what you observed…"></textarea>
+        <div><button id="checkBtn">Check my answer</button></div>
+        <div id="feedback">
+          <div class="feedback-prefix" id="feedbackPrefix"></div>
+          <div id="feedbackText"></div>
+        </div>
       </div>
-      <div id="feedback">
-        <div class="feedback-prefix" id="feedbackPrefix"></div>
-        <div id="feedbackText"></div>
+      <div id="payoffCard">
+        <div class="payoff-label">Real-world payoff</div>
+        <div id="payoffText"></div>
       </div>
     </div>
     <button id="againBtn" onclick="reset()">← Try a different topic</button>
@@ -599,11 +671,15 @@
   const goalPill     = document.getElementById("goalPill");
   const simFrame     = document.getElementById("simFrame");
   const questionText = document.getElementById("questionText");
+  const quizOptions  = document.getElementById("quizOptions");
+  const textVerify   = document.getElementById("textVerify");
   const answerInput  = document.getElementById("answerInput");
   const checkBtn     = document.getElementById("checkBtn");
   const feedbackEl   = document.getElementById("feedback");
   const feedbackPrefix = document.getElementById("feedbackPrefix");
   const feedbackText = document.getElementById("feedbackText");
+  const payoffCard   = document.getElementById("payoffCard");
+  const payoffText   = document.getElementById("payoffText");
   const againBtn     = document.getElementById("againBtn");
 
   const expandedTopicEl = document.getElementById("expandedTopic");
@@ -624,7 +700,7 @@
 
   topicInput.addEventListener("keydown", (e) => { if (e.key === "Enter") generate(); });
   genBtn.addEventListener("click", generate);
-  checkBtn.addEventListener("click", checkAnswer);
+  checkBtn.addEventListener("click", checkAnswerText);
 
   window.addEventListener("message", (e) => {
     if (e.data && e.data.type === "labCheck") lastLabResult = e.data.result;
@@ -640,6 +716,41 @@
     order.slice(0, idx).forEach(s => { if (map[s]) { map[s].classList.remove("active"); map[s].classList.add("done"); } });
   }
 
+  function renderQuiz(reflection) {
+    quizOptions.innerHTML = "";
+    const options = reflection.options || [];
+    const correct = reflection.correct || "";
+    options.forEach(opt => {
+      const btn = document.createElement("button");
+      btn.className = "quiz-option";
+      btn.textContent = opt;
+      btn.addEventListener("click", () => {
+        // Disable all after pick
+        quizOptions.querySelectorAll(".quiz-option").forEach(b => b.disabled = true);
+        const isCorrect = opt === correct;
+        btn.classList.add(isCorrect ? "correct-pick" : "wrong-pick");
+        if (!isCorrect) {
+          // Highlight correct
+          quizOptions.querySelectorAll(".quiz-option").forEach(b => {
+            if (b.textContent === correct) b.classList.add("reveal-correct");
+          });
+        }
+        // Show explanation
+        feedbackPrefix.textContent = isCorrect ? "✓ Correct" : "Not quite";
+        feedbackText.textContent = reflection.explanation || "";
+        feedbackEl.className = "feedback " + (isCorrect ? "correct" : "wrong");
+        feedbackEl.style.display = "block";
+        // Show payoff
+        if (currentPlan.realWorldPayoff) {
+          payoffText.textContent = currentPlan.realWorldPayoff;
+          payoffCard.style.display = "block";
+        }
+        againBtn.style.display = "block";
+      });
+      quizOptions.appendChild(btn);
+    });
+  }
+
   async function generate() {
     const topic = topicInput.value.trim();
     if (!topic) { topicInput.focus(); return; }
@@ -651,7 +762,6 @@
     topicBadge.style.display = "none";
     loadingEl.style.display = "block";
 
-    // Reset stage indicators
     [stageThink, stageDesign, stageLabThink, stageImage, stageCode].forEach(el => el.classList.remove("active", "done"));
     stageImage.style.display = "none";
     expandedTopicEl.style.display = "none";
@@ -661,7 +771,6 @@
     setStage("think");
 
     try {
-      // Consume SSE stream from /plan-lab
       const response = await fetch("/plan-lab", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -683,27 +792,26 @@
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
 
-        // Parse SSE lines
         const lines = buffer.split("\n");
-        buffer = lines.pop(); // keep incomplete line
+        buffer = lines.pop();
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const event = JSON.parse(line.slice(6));
 
-          if (event.stage === "expand")   { /* spinner only, no stage change */ }
           if (event.stage === "expanded") {
             etTopic.textContent = event.data.topic;
             etWhy.textContent = event.data.why;
             expandedTopicEl.style.display = "block";
+            stageThinkText.textContent = `Reasoning about "${event.data.topic}"…`;
           }
           if (event.stage === "think")    setStage("think");
           if (event.stage === "design")   setStage("design");
           if (event.stage === "labthink") setStage("labthink");
           if (event.stage === "image")    setStage("image");
           if (event.stage === "code")     setStage("code");
-          if (event.stage === "error")  throw new Error(event.msg);
-          if (event.stage === "done")   result = event.data;
+          if (event.stage === "error")    throw new Error(event.msg);
+          if (event.stage === "done")     result = event.data;
         }
       }
 
@@ -713,12 +821,25 @@
       topicBadgeText.textContent = result.topic;
       scenarioText.textContent = result.scenario;
       goalPill.textContent = result.learningGoal || "";
-      questionText.textContent = result.verificationQuestion;
 
+      // Step 3 — quiz or fallback
       feedbackEl.style.display = "none";
       feedbackEl.className = "feedback";
-      answerInput.value = "";
+      payoffCard.style.display = "none";
       againBtn.style.display = "none";
+
+      if (result.reflection && result.reflection.question && (result.reflection.options || []).length >= 2) {
+        questionText.textContent = result.reflection.question;
+        quizOptions.style.display = "flex";
+        textVerify.style.display = "none";
+        renderQuiz(result.reflection);
+      } else {
+        // Fallback: AI text verify
+        questionText.textContent = result.verificationQuestion;
+        quizOptions.style.display = "none";
+        textVerify.style.display = "block";
+        answerInput.value = "";
+      }
 
       loadingEl.style.display = "none";
       topicBadge.style.display = "block";
@@ -738,7 +859,7 @@
     }
   }
 
-  async function checkAnswer() {
+  async function checkAnswerText() {
     const answer = answerInput.value.trim();
     if (!answer || !currentPlan) return;
 
@@ -764,6 +885,10 @@
       feedbackText.textContent = data.feedback;
       feedbackEl.className = "feedback " + (data.correct ? "correct" : "wrong");
       feedbackEl.style.display = "block";
+      if (currentPlan.realWorldPayoff) {
+        payoffText.textContent = currentPlan.realWorldPayoff;
+        payoffCard.style.display = "block";
+      }
       againBtn.style.display = "block";
     } catch (err) {
       feedbackPrefix.textContent = "Error";
@@ -784,6 +909,7 @@
     topicInput.value = "";
     currentPlan = null;
     lastLabResult = null;
+    simFrame.srcdoc = "";
     window.scrollTo({ top: 0, behavior: "smooth" });
     topicInput.focus();
   }

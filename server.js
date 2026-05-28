@@ -171,7 +171,7 @@ Write in plain, direct prose. Be specific to ${topic}. Do not use generic educat
 async function specFromThinking(topic, thinking) {
   const res = await openai.chat.completions.create({
     model: "gpt-4o",
-    max_tokens: 1200,
+    max_tokens: 2200,
     response_format: { type: "json_object" },
     messages: [
       {
@@ -537,6 +537,7 @@ const server = http.createServer(async (req, res) => {
             verificationQuestion: design.verificationQuestion,
             learningGoal: design.spec.learning_goal,
             realWorldPayoff: design.spec.real_world_payoff,
+            reflection: design.spec.reflection || null,
             labHtml: html,
           });
 
