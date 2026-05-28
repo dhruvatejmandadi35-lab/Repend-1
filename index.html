@@ -170,6 +170,36 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    #expandedTopic {
+      display: none;
+      max-width: 400px;
+      margin: 0 auto 24px;
+      background: rgba(212,165,116,0.07);
+      border: 1px solid rgba(212,165,116,0.25);
+      border-radius: 12px;
+      padding: 14px 18px;
+      text-align: left;
+    }
+    #expandedTopic .et-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--copper);
+      margin-bottom: 6px;
+    }
+    #expandedTopic .et-topic {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    #expandedTopic .et-why {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
     .stages {
       display: flex;
       flex-direction: column;
@@ -461,6 +491,11 @@
 <!-- LOADING -->
 <div id="loading">
   <div class="pulse-ring"></div>
+  <div id="expandedTopic">
+    <div class="et-label">Building lab for</div>
+    <div class="et-topic" id="etTopic"></div>
+    <div class="et-why" id="etWhy"></div>
+  </div>
   <div class="stages">
     <div class="stage-row" id="stageThink">
       <div class="stage-dot"></div>
@@ -571,6 +606,10 @@
   const feedbackText = document.getElementById("feedbackText");
   const againBtn     = document.getElementById("againBtn");
 
+  const expandedTopicEl = document.getElementById("expandedTopic");
+  const etTopic         = document.getElementById("etTopic");
+  const etWhy           = document.getElementById("etWhy");
+
   const stageThink    = document.getElementById("stageThink");
   const stageDesign   = document.getElementById("stageDesign");
   const stageLabThink = document.getElementById("stageLabThink");
@@ -615,6 +654,9 @@
     // Reset stage indicators
     [stageThink, stageDesign, stageLabThink, stageImage, stageCode].forEach(el => el.classList.remove("active", "done"));
     stageImage.style.display = "none";
+    expandedTopicEl.style.display = "none";
+    etTopic.textContent = "";
+    etWhy.textContent = "";
     stageThinkText.textContent = `Reasoning about "${topic}"…`;
     setStage("think");
 
@@ -649,6 +691,12 @@
           if (!line.startsWith("data: ")) continue;
           const event = JSON.parse(line.slice(6));
 
+          if (event.stage === "expand")   { /* spinner only, no stage change */ }
+          if (event.stage === "expanded") {
+            etTopic.textContent = event.data.topic;
+            etWhy.textContent = event.data.why;
+            expandedTopicEl.style.display = "block";
+          }
           if (event.stage === "think")    setStage("think");
           if (event.stage === "design")   setStage("design");
           if (event.stage === "labthink") setStage("labthink");

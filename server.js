@@ -97,13 +97,45 @@ async function analyzeImage(base64Image, question) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// FREEFORM LAB PIPELINE — five steps (image step is optional):
+// FREEFORM LAB PIPELINE — six steps (image step is optional):
+//   0. expandTopic        — gpt-4o-mini: sharpens vague input to one specific concept
 //   1. thinkAboutTopic    — gpt-4o-mini prose: insight, metaphor, variables + why
 //   2. specFromThinking   — gpt-4o JSON: typed spec
 //   3. thinkAboutLab      — gpt-4o prose brief: behavior + visuals, no UI words
 //   4. mockupImage        — gpt-image-1: clean UI mockup (OPTIONAL, USE_MOCKUP=1)
 //   5. codeFromImageBrief — gpt-4o vision: image + brief → final HTML
 // ─────────────────────────────────────────────────────────────────
+
+// Step 0 — turns vague topics into one specific, teachable concept.
+// "ML" → "Gradient Descent: how a model finds the bottom of a loss landscape"
+// "Physics" → "Newton's Second Law: why heavier objects need more force to accelerate"
+// "Compound Interest" → passes through unchanged (already specific enough)
+async function expandTopic(rawTopic) {
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_tokens: 200,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `You sharpen vague learning topics into one specific, teachable concept.
+
+Return ONLY JSON:
+{
+  "topic": "The sharpened topic name. 3-8 words. Specific enough that you could build one focused interactive lab around it. NOT a textbook chapter title — a single concept with a single insight. Examples: 'Gradient Descent: chasing the bottom of a loss curve', 'Newton\\'s Second Law: why force, mass, and acceleration trade off', 'DNA Base Pairing: why A always bonds with T'.",
+  "why": "One sentence: why you picked THIS angle over other possible angles. E.g. 'Gradient descent is the moment ML stops being magic and becomes geometry.'"
+}
+
+RULES:
+- If the input is already specific (e.g. 'compound interest', 'Ohm\\'s law', 'mitosis'), return it nearly unchanged — just clean up the phrasing.
+- If the input is a broad field (e.g. 'ML', 'physics', 'biology', 'history', 'economics'), pick the single most visceral, surprising sub-concept — the one where the aha moment is clearest.
+- Never return a chapter title or a definition. Return a concept + the thing that makes it click.`,
+      },
+      { role: "user", content: rawTopic },
+    ],
+  });
+  return JSON.parse(res.choices[0].message.content.trim());
+}
 
 async function thinkAboutTopic(topic) {
   const res = await openai.chat.completions.create({
@@ -385,7 +417,12 @@ const server = http.createServer(async (req, res) => {
             res.write(`data: ${JSON.stringify({ stage, msg, data })}\n\n`);
           };
 
-          const topic = data.topic.trim();
+          const rawTopic = data.topic.trim();
+
+          send("expand", `Sharpening topic…`);
+          const expanded = await expandTopic(rawTopic);
+          const topic = expanded.topic;
+          send("expanded", `Building lab for: ${topic}`, { topic, why: expanded.why });
 
           send("think", `Reasoning about "${topic}"…`);
           const thinking = await thinkAboutTopic(topic);
