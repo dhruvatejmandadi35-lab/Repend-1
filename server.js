@@ -342,7 +342,6 @@ async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const rules = (design.spec.rules || [])
     .map(r => `  • when (${r.when}): ${r.visual_change} — show message "${r.message}"`)
     .join("\n");
-  const reflection = design.spec.reflection || null;
 
   const briefText = `You are building a self-contained interactive learning lab for Repend.
 
@@ -424,18 +423,8 @@ TECHNICAL CONSTRAINTS:
 • window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success.
 • window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on wrong.
 
-${reflection ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REFLECTION QUIZ — show AFTER the learner hits Check Answer:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Once the learner clicks Check Answer (whether right or wrong), slide in a quiz card at the bottom of Zone B:
-Question: "${reflection.question}"
-Options (render as 4 clickable pill buttons):
-${(reflection.options || []).map((o, i) => `  ${o}`).join("\n")}
-Correct answer: "${reflection.correct}"
-On correct selection: show the explanation "${reflection.explanation}" in green.
-On wrong selection: show "Try again" then the explanation after 1 second in amber.
-This quiz replaces the free-text answer field — it IS the verification step.
-` : ""}
+DO NOT render any multiple-choice quiz, reflection question, or "verify your understanding" section inside this lab. The platform shows a separate quiz AFTER the lab. This lab is for HANDS-ON INTERACTION ONLY — manipulating controls and watching the result. Adding a quiz here would duplicate the platform's quiz. The "Check Answer" button checks whether the learner reached the success condition (e.g. produced the target orbit), NOT a multiple-choice answer.
+
 Before returning, verify ALL of these — fix any that fail before responding:
 1. Is Zone B drawing something visible immediately on load (not blank, not waiting for input)?
 2. Are there at least 2 interactive controls, each causing a different visible change in Zone B?
