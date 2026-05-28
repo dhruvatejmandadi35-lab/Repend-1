@@ -127,11 +127,13 @@ Return ONLY JSON:
 }
 
 RULES:
-- If the input names a SPORT or ACTIVITY (tennis, basketball, cooking, driving): find the underlying physics, biology, or math concept that makes that activity surprising. 'Tennis' → 'Topspin: why spin bends a ball's path', not 'racket mechanics'.
-- If the input is a broad FIELD (ML, physics, biology, history): pick the sub-concept with the clearest aha moment — the one that feels like a magic trick until you understand it.
+- If the input names a SPORT or ACTIVITY (tennis, basketball, cooking, driving): find the underlying physics concept. 'Tennis' → 'Topspin: why spin bends a ball's path'.
+- If the input names a MUSICAL INSTRUMENT or MUSIC concept (violin, guitar, piano, sound, music): pick the underlying wave/physics concept that is visually drawable. 'Violin' → 'Standing Waves: why pressing a string at different points produces different pitches'. 'Sound' → 'Wave Interference: why two sound waves can cancel each other out'. Always pick something with a visible waveform or physical motion.
+- If the input is a broad FIELD (ML, physics, biology, history): pick the sub-concept with the clearest aha moment.
 - If the input is already a specific CONCEPT (compound interest, Ohm's law, mitosis): return it nearly unchanged.
-- NEVER pick a concept where all the learner does is set inputs — the concept must have a SURPRISING OUTPUT that contradicts naive intuition.
-- Never return a skill ('how to serve'), a definition ('what topspin is'), or a procedure ('steps to calculate'). Return the INSIGHT.`,
+- NEVER pick abstract/unmeasurable concepts like 'resonance', 'harmony', 'feel', 'balance', 'energy flow' — these cannot be drawn. Always pick something with a concrete visual output (a wave, a trajectory, a curve, a collision, a graph with a kink).
+- NEVER pick a concept where all the learner does is set inputs with no surprising output.
+- Never return a skill, definition, or procedure. Return the INSIGHT.`,
       },
       { role: "user", content: rawTopic },
     ],
@@ -355,19 +357,32 @@ TECHNICAL CONSTRAINTS:
 • Zero console errors on first load.
 • Responsive: usable from 360px wide to full desktop.
 • Dark theme: bg #0B1220, stage #0E1830, panels #131A2A, border rgba(59,130,246,0.2). Accents: blue #3B82F6, copper #D4A574, success #22C55E, muted #8899BB.
-• Canvas 2D or SVG for the main visual — make the visual metaphor literal.
+• CANVAS SAFETY — mandatory pattern for every canvas-based lab:
+  const canvas = document.getElementById('mainCanvas');
+  const ctx = canvas.getContext('2d');
+  function draw() { ctx.clearRect(0,0,canvas.width,canvas.height); /* draw everything */ requestAnimationFrame(draw); }
+  draw(); // called immediately on load — never wait for user input to start drawing
+  If canvas is blank on load, the lab has failed.
+• Zone B must show something meaningful within 100ms of page load — no waiting for interaction.
+• VISUAL DEPTH — make it look alive, not flat:
+  - Gradient backgrounds on canvas (createLinearGradient or createRadialGradient)
+  - Glowing elements: draw a blurred shadow before the main shape (ctx.shadowBlur=20, ctx.shadowColor='#3B82F6')
+  - At least one element that is always animating (wave oscillating, particle moving, value counting) even before interaction
+  - Layered drawing: background grid/gradient first, then physics objects, then labels on top
+• MINIMUM 2 interactive controls — never just one slider.
+• A visible "Check Answer" button in Zone A.
 • requestAnimationFrame for all motion. pointerdown/move/up for drag.
-• On aha moment: golden pulse on the relevant element.
-• On success: green stage glow + real_world_payoff card slides in.
+• On aha moment: golden glow burst (shadowBlur spike) on the key Zone B element.
+• On success: green wave across canvas + real_world_payoff card slides in.
 • window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success.
 • window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on wrong.
 
 Before returning, verify ALL of these — fix any that fail before responding:
-1. Does every visual element teach something when it changes, or is it just decoration? Remove anything decorative.
-2. Is there a live text readout showing the actual value of the concept (not just a shape moving)?
-3. Can the learner reach the aha moment described in the brief through normal interaction within 30 seconds?
-4. Does each variable change produce a visual result that would surprise someone who hasn't studied this topic?
-5. ${imageDataUrl ? "Did you ignore garbled text/fake labels from the image and use real labels from the brief?" : "Does the lab teach the specific insight in the learning goal, not just 'explore this topic'?"}
+1. Is Zone B drawing something visible immediately on load (not blank, not waiting for input)?
+2. Are there at least 2 interactive controls, each causing a different visible change in Zone B?
+3. Is there a live text readout in Zone B showing the output concept value (not the control value)?
+4. Can the learner reach the aha moment within 30 seconds of normal interaction?
+5. Does the canvas use gradients and glow effects — does it look like a polished tool, not a flat grey box?
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
