@@ -238,17 +238,17 @@ ${design.spec.aha_trigger}
 
 Reason through these five questions. Write in plain prose — no JSON, no lists, no headers:
 
-1. FIRST FRAME — what does the canvas show the instant it loads, before the learner touches anything? Describe every visual element: shapes, colors, positions, what's already moving.
+1. FIRST FRAME — what does the canvas show the instant it loads? Describe every element — but for EACH one, state what the learner will learn from watching it. No decorative shapes. If an element doesn't teach something when it moves, remove it.
 
-2. VISUAL MECHANICS — for each variable, describe the exact visual change when it moves. Go beyond "a bar grows" — describe the specific geometry and motion that makes the metaphor real. What does the metaphor look like at the minimum value vs the maximum?
+2. VISUAL MECHANICS — for each variable, describe the exact visual change when it moves AND what that change teaches. The visual change is not just aesthetics — it is the concept made physical. "When rate increases, the stack grows faster than it grew before — this teaches that the growth is not linear, it is self-feeding." Do this for every variable.
 
-3. AHA ENGINEERING — the aha moment is: "${design.spec.aha_trigger}". How do you make this unmissable? What visual event marks the threshold? Describe what the learner sees in the 2 seconds before and the 2 seconds after.
+3. AHA ENGINEERING — the aha moment is: "${design.spec.aha_trigger}". Describe the 2 seconds before: what the learner expects. Then the 2 seconds after: what actually happens and why it surprises them. The visual must make the difference between expectation and reality unmissable.
 
-4. MOTION — what is always in motion, even when the learner isn't interacting? What transitions happen on interaction?
+4. LIVE FEEDBACK — what text or number updates on screen as the learner interacts, so they can read the concept directly? E.g. not just a bar growing, but "Final balance: $12,847" updating live. Every interaction must produce both a visual change AND a readable output that names what changed.
 
-5. UNIQUENESS — what single visual or interaction choice makes this feel like THIS concept and not a generic chart or form?
+5. THE TEST — if a learner interacted with this for 60 seconds and learned nothing, what went wrong? Name the failure mode specific to this topic and design against it.
 
-Do NOT use any of these words: slider, button, input, form, checkbox, select, drag, drop, node, widget, component, UI. Describe experiences and behaviors only.`;
+Do NOT use any of these words: slider, button, input, form, checkbox, select, drag, drop, node, widget, component, UI. Describe learning experiences and behaviors only.`;
 
   const res = await openai.chat.completions.create({
     model: "gpt-4o",
@@ -352,7 +352,12 @@ TECHNICAL CONSTRAINTS:
 • window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success.
 • window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on wrong.
 
-Before returning, verify: Does the lab respond to input immediately? Is the aha moment actually reachable through interaction? ${imageDataUrl ? "Did you ignore the image's garbage text and build real controls? " : ""}If any answer is no, fix it before responding.
+Before returning, verify ALL of these — fix any that fail before responding:
+1. Does every visual element teach something when it changes, or is it just decoration? Remove anything decorative.
+2. Is there a live text readout showing the actual value of the concept (not just a shape moving)?
+3. Can the learner reach the aha moment described in the brief through normal interaction within 30 seconds?
+4. Does each variable change produce a visual result that would surprise someone who hasn't studied this topic?
+5. ${imageDataUrl ? "Did you ignore garbled text/fake labels from the image and use real labels from the brief?" : "Does the lab teach the specific insight in the learning goal, not just 'explore this topic'?"}
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
