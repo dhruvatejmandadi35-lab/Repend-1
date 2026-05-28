@@ -97,12 +97,12 @@ async function analyzeImage(base64Image, question) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// FREEFORM LAB PIPELINE — four steps, each focused on one job:
-//   1. thinkAboutTopic  — GPT-4o-mini prose: core insight, visual metaphor, variables + why
-//   2. specFromThinking — GPT-4o JSON: formalises the prose into a typed spec
-//   3. thinkAboutLab    — claude-opus-4-7 prose: reasons freely about HOW to build it
-//                         (no lab-type labels — describes experience, not UI components)
-//   4. codeFromSpec     — claude-sonnet-4-6 HTML: implements exactly what step 3 described
+// FREEFORM LAB PIPELINE — five steps (image step is optional):
+//   1. thinkAboutTopic    — gpt-4o-mini prose: insight, metaphor, variables + why
+//   2. specFromThinking   — gpt-4o JSON: typed spec
+//   3. thinkAboutLab      — gpt-4o prose brief: behavior + visuals, no UI words
+//   4. mockupImage        — gpt-image-1: clean UI mockup (OPTIONAL, USE_MOCKUP=1)
+//   5. codeFromImageBrief — gpt-4o vision: image + brief → final HTML
 // ─────────────────────────────────────────────────────────────────
 
 async function thinkAboutTopic(topic) {
@@ -227,53 +227,114 @@ Do NOT use any of these words: slider, button, input, form, checkbox, select, dr
   return res.choices[0].message.content.trim();
 }
 
-// Step 4 — GPT-4.5 implements the HTML.
-// The hard reasoning is done — this step just executes it.
-async function codeFromSpec(design, labThinking) {
+// Step 4 (optional) — gpt-image-1 generates a clean UI mockup.
+// Returns a base64 data URL or null on failure (pipeline continues without image).
+async function mockupImage(topic, visualMetaphor) {
+  const prompt = `You are an educational interface designer. Produce a single clean UI mockup — like a screenshot of a finished interactive learning tool, NOT an illustration or artwork.
+
+Subject: an interactive lab teaching "${topic}".
+Core visual metaphor: ${visualMetaphor}.
+
+Depict the tool MID-INTERACTION — show it in a state that makes clear something is being manipulated and something is responding. The viewer should be able to tell this is a live, dynamic tool, not a static diagram.
+
+Layout: one clear focal interaction in the center. A manipulable element on one side, its live visual result on the other. Generous whitespace.
+
+Style: flat, modern, high-contrast, minimal. Clean SaaS dashboard, not textbook. Solid dark background (#0B1220). Clear visual hierarchy. Accent colors: #3B82F6 blue, #D4A574 copper.
+
+Do NOT include: paragraphs of text, labels with real words (use simple shapes and clean iconography instead), fake browser chrome, photorealism, 3D bevels, drop shadows, decorative clutter, watermarks, or anything that isn't part of the actual tool.
+
+Aspect ratio: landscape, fills the frame edge to edge.`;
+
+  try {
+    const res = await openai.images.generate({
+      model: "gpt-image-1",
+      prompt,
+      size: "1536x1024",
+      n: 1,
+    });
+    const b64 = res.data[0].b64_json;
+    if (!b64) return null;
+    return `data:image/png;base64,${b64}`;
+  } catch (err) {
+    console.warn("mockupImage failed, continuing without:", err.message);
+    return null;
+  }
+}
+
+// Step 5 — gpt-4o (vision-capable) writes the HTML.
+// Takes the prose brief (source of truth for behavior) + optional mockup image (look/layout).
+async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}`)
     .join("\n");
 
-  const prompt = `Build a self-contained interactive educational HTML page. The design thinking is already done — implement it exactly.
+  const briefText = `You are building a self-contained interactive learning lab for Repend.
+
+${imageDataUrl ? `You are given two inputs:
+1. A VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement, overall feel.
+2. A BEHAVIORAL BRIEF (below) — source of truth for what the lab actually DOES.
+
+RULES OF PRECEDENCE:
+- Image and brief conflict → the brief wins, every time.
+- The image contains garbled text, fake labels, or nonsensical UI fragments → IGNORE them. Implement real, working controls with real labels derived from the brief. Never reproduce meaningless elements just because they appear in the image.
+` : `You are given a behavioral brief below — the source of truth for what the lab does.`}
 
 TOPIC: ${design.topic}
 LEARNING GOAL: ${design.spec.learning_goal}
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-IMPLEMENTATION BRIEF (build exactly this):
+BEHAVIORAL BRIEF (build exactly this behavior):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${labThinking}
 
-VARIABLES:
+VARIABLES THE LEARNER CONTROLS:
 ${vars}
 
 SUCCESS CONDITION: ${design.spec.success_condition}
-REAL-WORLD PAYOFF (show at end): "${design.spec.real_world_payoff || ""}"
+REAL-WORLD PAYOFF (show on success): "${design.spec.real_world_payoff || ""}"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TECHNICAL REQUIREMENTS:
+INTERACTIVITY REQUIREMENTS (non-negotiable):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Single HTML file — inline <style> and <script> only
-• Dark theme: bg #0B1220, stage #0E1830, panels #131A2A, border rgba(59,130,246,0.2)
-• Glowing accents: blue #3B82F6, copper #D4A574, success #22C55E, muted #8899BB
-• Canvas 2D or SVG for the main visual — make the visual metaphor literal
-• requestAnimationFrame for all animation
-• pointerdown/pointermove/pointerup for any drag interactions
-• Works in sandbox="allow-scripts" — no fetch(), no localStorage
-• Controls: styled, not browser-default — live numeric readouts update as values change
-• When aha moment fires: golden pulse on the relevant element
-• On success: green stage glow + confetti + real_world_payoff card slides in
-• KaTeX via CDN if equations, p5.js via CDN if particles, three.js via CDN if 3D
-• window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success
-• window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on wrong
+• User must be able to manipulate something within 2 seconds of load.
+• Every input produces an immediate, visible response — no lag, no submit step.
+• The lab must contain the specific aha moment described in the brief: a point where the user expects one outcome and the result surprises them.
+• Result updates live and continuously as the user manipulates (unless the concept is inherently discrete).
+• Nothing decorative. Every on-screen element either responds to the user or shows a result.
 
-Return ONLY the complete HTML starting with <!doctype html>. No markdown. No explanation. No code fences.`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TECHNICAL CONSTRAINTS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• ONE complete self-contained HTML file. Inline CSS and JS.
+• Vanilla JS only. CDN allowlist: KaTeX (equations), p5.js (particles), three.js (3D). No other libs.
+• No localStorage / sessionStorage. No fetch().
+• Works in sandbox="allow-scripts".
+• Zero console errors on first load.
+• Responsive: usable from 360px wide to full desktop.
+• Dark theme: bg #0B1220, stage #0E1830, panels #131A2A, border rgba(59,130,246,0.2). Accents: blue #3B82F6, copper #D4A574, success #22C55E, muted #8899BB.
+• Canvas 2D or SVG for the main visual — make the visual metaphor literal.
+• requestAnimationFrame for all motion. pointerdown/move/up for drag.
+• On aha moment: golden pulse on the relevant element.
+• On success: green stage glow + real_world_payoff card slides in.
+• window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success.
+• window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on wrong.
+
+Before returning, verify: Does the lab respond to input immediately? Is the aha moment actually reachable through interaction? ${imageDataUrl ? "Did you ignore the image's garbage text and build real controls? " : ""}If any answer is no, fix it before responding.
+
+Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
+
+  const userContent = imageDataUrl
+    ? [
+        { type: "image_url", image_url: { url: imageDataUrl } },
+        { type: "text", text: briefText },
+      ]
+    : briefText;
 
   const res = await openai.chat.completions.create({
     model: "gpt-4o",
     max_tokens: 8000,
-    messages: [{ role: "user", content: prompt }],
+    messages: [{ role: "user", content: userContent }],
   });
 
   let html = res.choices[0].message.content.trim();
@@ -332,11 +393,17 @@ const server = http.createServer(async (req, res) => {
           send("design", "Translating insight into lab spec…");
           const design = await specFromThinking(topic, thinking);
 
-          send("labthink", "Claude is thinking about how to build it…");
+          send("labthink", "Thinking about how to build it…");
           const labThinking = await thinkAboutLab(design);
 
+          let imageDataUrl = null;
+          if (process.env.USE_MOCKUP === "1") {
+            send("image", "Sketching a visual mockup…");
+            imageDataUrl = await mockupImage(design.topic, design.spec.visualMetaphor);
+          }
+
           send("code", "Writing your lab…");
-          const html = await codeFromSpec(design, labThinking);
+          const html = await codeFromImageBrief(design, labThinking, imageDataUrl);
 
           send("done", "Lab ready.", {
             topic: design.topic,

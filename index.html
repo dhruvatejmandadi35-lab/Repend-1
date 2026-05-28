@@ -472,7 +472,11 @@
     </div>
     <div class="stage-row" id="stageLabThink">
       <div class="stage-dot"></div>
-      <div class="stage-text">Claude thinking about how to build it…</div>
+      <div class="stage-text">Thinking about how to build it…</div>
+    </div>
+    <div class="stage-row" id="stageImage" style="display:none">
+      <div class="stage-dot"></div>
+      <div class="stage-text">Sketching a visual mockup…</div>
     </div>
     <div class="stage-row" id="stageCode">
       <div class="stage-dot"></div>
@@ -570,6 +574,7 @@
   const stageThink    = document.getElementById("stageThink");
   const stageDesign   = document.getElementById("stageDesign");
   const stageLabThink = document.getElementById("stageLabThink");
+  const stageImage    = document.getElementById("stageImage");
   const stageCode     = document.getElementById("stageCode");
   const stageThinkText = document.getElementById("stageThinkText");
 
@@ -587,10 +592,11 @@
   });
 
   function setStage(name) {
-    const map = { think: stageThink, design: stageDesign, labthink: stageLabThink, code: stageCode };
+    const map = { think: stageThink, design: stageDesign, labthink: stageLabThink, image: stageImage, code: stageCode };
     Object.values(map).forEach(el => el.classList.remove("active"));
+    if (name === "image") stageImage.style.display = "flex";
     if (map[name]) map[name].classList.add("active");
-    const order = ["think", "design", "labthink", "code"];
+    const order = ["think", "design", "labthink", "image", "code"];
     const idx = order.indexOf(name);
     order.slice(0, idx).forEach(s => { if (map[s]) { map[s].classList.remove("active"); map[s].classList.add("done"); } });
   }
@@ -607,7 +613,8 @@
     loadingEl.style.display = "block";
 
     // Reset stage indicators
-    [stageThink, stageDesign, stageLabThink, stageCode].forEach(el => el.classList.remove("active", "done"));
+    [stageThink, stageDesign, stageLabThink, stageImage, stageCode].forEach(el => el.classList.remove("active", "done"));
+    stageImage.style.display = "none";
     stageThinkText.textContent = `Reasoning about "${topic}"…`;
     setStage("think");
 
@@ -645,6 +652,7 @@
           if (event.stage === "think")    setStage("think");
           if (event.stage === "design")   setStage("design");
           if (event.stage === "labthink") setStage("labthink");
+          if (event.stage === "image")    setStage("image");
           if (event.stage === "code")     setStage("code");
           if (event.stage === "error")  throw new Error(event.msg);
           if (event.stage === "done")   result = event.data;
