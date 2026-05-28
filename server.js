@@ -197,6 +197,22 @@ Return ONLY JSON with this exact shape:
         "why_it_matters": "REQUIRED — one sentence explaining why THIS variable matters to the core insight. Not what it is — why changing it reveals something. E.g. 'Rate matters because doubling it doesn\\'t double the outcome — it compounds, so small rate differences explode over time.'"
       }
     ],
+    "formulas": {
+      "output_name": "exact math expression using variable names from the variables array. Use JS-style syntax. E.g. 'emitted_wavelength': '1240 / (bandgap * Math.pow(dotSize, 2))', 'interest_total': 'principal * Math.pow(1 + rate/100, years)'"
+    },
+    "rules": [
+      {
+        "when": "exact JS condition using variable names, e.g. 'dotSize < 3'",
+        "visual_change": "what visually changes on canvas at this threshold",
+        "message": "short insight text shown to learner, e.g. 'Quantum confinement regime — size controls color!'"
+      }
+    ],
+    "reflection": {
+      "question": "One specific question testable only after interacting with the lab. E.g. 'What happens to emitted wavelength when dot size is halved?'",
+      "options": ["A: it doubles", "B: it quadruples", "C: it halves", "D: nothing changes"],
+      "correct": "B: it quadruples",
+      "explanation": "Because wavelength ∝ 1/size², halving size means wavelength × 4."
+    },
     "stage_description": "Detailed paragraph: what is drawn on screen, what moves, what colors. Reference the visualMetaphor directly. Specific positions, sizes, what animates.",
     "interaction_description": "What the learner does step by step. What they touch first. What changes visually on each interaction. What the aha moment looks like on screen.",
     "aha_trigger": "The exact visual event that marks the aha moment. Be specific: what threshold, what visual change, what the learner sees right before vs. right after.",
@@ -208,6 +224,9 @@ Return ONLY JSON with this exact shape:
 RULES:
 - visualMetaphor must be a vivid scene description, never a chart type or UI pattern name
 - every variable MUST have why_it_matters — if you can't explain why it matters, remove the variable
+- formulas MUST be real math — look up the actual equation for this concept. Every output shown in Zone B must have a formula entry.
+- rules MUST include at least one threshold that triggers the aha moment visually
+- reflection question must be answerable only AFTER interacting — not a definition lookup
 - do NOT include interaction_type, lab_type, or any format label anywhere in the JSON`,
       },
       {
@@ -317,6 +336,14 @@ async function codeFromImageBrief(design, labThinking, imageDataUrl) {
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}`)
     .join("\n");
 
+  const formulas = design.spec.formulas
+    ? Object.entries(design.spec.formulas).map(([k, v]) => `  ${k} = ${v}`).join("\n")
+    : "";
+  const rules = (design.spec.rules || [])
+    .map(r => `  • when (${r.when}): ${r.visual_change} — show message "${r.message}"`)
+    .join("\n");
+  const reflection = design.spec.reflection || null;
+
   const briefText = `You are building a self-contained interactive learning lab for Repend.
 
 ${imageDataUrl ? `You are given two inputs:
@@ -340,6 +367,20 @@ ${labThinking}
 VARIABLES THE LEARNER CONTROLS:
 ${vars}
 
+${formulas ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FORMULAS — implement these EXACTLY in JS (no approximations):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${formulas}
+
+Every live readout in Zone B MUST be computed from these formulas. The learner must see the output value changing as a real number.
+` : ""}
+${rules ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THRESHOLD RULES — trigger these exact visual events:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${rules}
+
+When a rule triggers: animate a golden glow burst on the key canvas element AND show the message text prominently in Zone B for 2-3 seconds.
+` : ""}
 SUCCESS CONDITION: ${design.spec.success_condition}
 REAL-WORLD PAYOFF (show on success): "${design.spec.real_world_payoff || ""}"
 
@@ -383,6 +424,18 @@ TECHNICAL CONSTRAINTS:
 • window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success.
 • window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on wrong.
 
+${reflection ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFLECTION QUIZ — show AFTER the learner hits Check Answer:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Once the learner clicks Check Answer (whether right or wrong), slide in a quiz card at the bottom of Zone B:
+Question: "${reflection.question}"
+Options (render as 4 clickable pill buttons):
+${(reflection.options || []).map((o, i) => `  ${o}`).join("\n")}
+Correct answer: "${reflection.correct}"
+On correct selection: show the explanation "${reflection.explanation}" in green.
+On wrong selection: show "Try again" then the explanation after 1 second in amber.
+This quiz replaces the free-text answer field — it IS the verification step.
+` : ""}
 Before returning, verify ALL of these — fix any that fail before responding:
 1. Is Zone B drawing something visible immediately on load (not blank, not waiting for input)?
 2. Are there at least 2 interactive controls, each causing a different visible change in Zone B?
