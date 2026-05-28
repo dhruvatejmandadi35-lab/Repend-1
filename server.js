@@ -122,14 +122,16 @@ async function expandTopic(rawTopic) {
 
 Return ONLY JSON:
 {
-  "topic": "The sharpened topic name. 3-8 words. Specific enough that you could build one focused interactive lab around it. NOT a textbook chapter title — a single concept with a single insight. Examples: 'Gradient Descent: chasing the bottom of a loss curve', 'Newton\\'s Second Law: why force, mass, and acceleration trade off', 'DNA Base Pairing: why A always bonds with T'.",
-  "why": "One sentence: why you picked THIS angle over other possible angles. E.g. 'Gradient descent is the moment ML stops being magic and becomes geometry.'"
+  "topic": "The sharpened topic. 3-10 words. Must be a CONCEPT with a surprising insight, not a skill or activity. Examples: 'Topspin: why a spinning tennis ball curves downward faster than gravity', 'Gradient Descent: why loss curves have valleys a model can slide down', 'Newton\\'s Second Law: why doubling mass halves acceleration for the same force'.",
+  "why": "One sentence: the specific aha moment this concept produces. E.g. 'The moment you see the ball curve MORE than expected is when you understand that spin changes the effective gravity on the ball.'"
 }
 
 RULES:
-- If the input is already specific (e.g. 'compound interest', 'Ohm\\'s law', 'mitosis'), return it nearly unchanged — just clean up the phrasing.
-- If the input is a broad field (e.g. 'ML', 'physics', 'biology', 'history', 'economics'), pick the single most visceral, surprising sub-concept — the one where the aha moment is clearest.
-- Never return a chapter title or a definition. Return a concept + the thing that makes it click.`,
+- If the input names a SPORT or ACTIVITY (tennis, basketball, cooking, driving): find the underlying physics, biology, or math concept that makes that activity surprising. 'Tennis' → 'Topspin: why spin bends a ball's path', not 'racket mechanics'.
+- If the input is a broad FIELD (ML, physics, biology, history): pick the sub-concept with the clearest aha moment — the one that feels like a magic trick until you understand it.
+- If the input is already a specific CONCEPT (compound interest, Ohm's law, mitosis): return it nearly unchanged.
+- NEVER pick a concept where all the learner does is set inputs — the concept must have a SURPRISING OUTPUT that contradicts naive intuition.
+- Never return a skill ('how to serve'), a definition ('what topspin is'), or a procedure ('steps to calculate'). Return the INSIGHT.`,
       },
       { role: "user", content: rawTopic },
     ],
@@ -238,15 +240,22 @@ ${design.spec.aha_trigger}
 
 Reason through these five questions. Write in plain prose — no JSON, no lists, no headers:
 
-1. FIRST FRAME — what does the canvas show the instant it loads? Describe every element — but for EACH one, state what the learner will learn from watching it. No decorative shapes. If an element doesn't teach something when it moves, remove it.
+MANDATORY STRUCTURE — the lab must have exactly two zones:
+ZONE A (controls): where the learner changes things. Keep this small and to one side.
+ZONE B (result): the large central visual that REACTS and shows the OUTCOME. This is where learning happens.
+If you only describe Zone A, the lab fails. Zone B is more important than Zone A.
 
-2. VISUAL MECHANICS — for each variable, describe the exact visual change when it moves AND what that change teaches. The visual change is not just aesthetics — it is the concept made physical. "When rate increases, the stack grows faster than it grew before — this teaches that the growth is not linear, it is self-feeding." Do this for every variable.
+Answer these five questions:
 
-3. AHA ENGINEERING — the aha moment is: "${design.spec.aha_trigger}". Describe the 2 seconds before: what the learner expects. Then the 2 seconds after: what actually happens and why it surprises them. The visual must make the difference between expectation and reality unmissable.
+1. ZONE B — THE RESULT VISUAL: What is the large central thing that reacts? Not a control, not a label — the visual outcome. Describe it in motion: what does it look like when the concept is working vs not working? What shape, color, motion shows the insight? For "${design.topic}" specifically, what would make a first-time learner say "oh — THAT's why"?
 
-4. LIVE FEEDBACK — what text or number updates on screen as the learner interacts, so they can read the concept directly? E.g. not just a bar growing, but "Final balance: $12,847" updating live. Every interaction must produce both a visual change AND a readable output that names what changed.
+2. ZONE A — THE CONTROLS: For each variable, what does the learner do to change it, and what in Zone B changes immediately as a result? The connection between Zone A action and Zone B reaction must be instant and obvious. Describe the exact Zone B change for each variable.
 
-5. THE TEST — if a learner interacted with this for 60 seconds and learned nothing, what went wrong? Name the failure mode specific to this topic and design against it.
+3. AHA ENGINEERING — the aha moment is: "${design.spec.aha_trigger}". Describe the 2 seconds before: what the learner naively expects Zone B to do. Then the 2 seconds after: what Zone B actually does that contradicts that expectation. The surprise IS the learning.
+
+4. LIVE READOUTS — what numbers or text update live in Zone B as the learner interacts? Not in Zone A (not the control values) — in Zone B, as a consequence. E.g. for compound interest: "Final balance: $12,847" growing in Zone B. For topspin: "Curve angle: 34°" changing in Zone B. Name the exact readout for this concept.
+
+5. THE FAILURE MODE — what would make this lab useless? E.g. "If the ball just moves right without curving, nothing is learned." Name the specific failure and state what you're doing to prevent it.
 
 Do NOT use any of these words: slider, button, input, form, checkbox, select, drag, drop, node, widget, component, UI. Describe learning experiences and behaviors only.`;
 
@@ -327,13 +336,14 @@ SUCCESS CONDITION: ${design.spec.success_condition}
 REAL-WORLD PAYOFF (show on success): "${design.spec.real_world_payoff || ""}"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-INTERACTIVITY REQUIREMENTS (non-negotiable):
+LAYOUT — TWO ZONES (non-negotiable):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• User must be able to manipulate something within 2 seconds of load.
-• Every input produces an immediate, visible response — no lag, no submit step.
-• The lab must contain the specific aha moment described in the brief: a point where the user expects one outcome and the result surprises them.
-• Result updates live and continuously as the user manipulates (unless the concept is inherently discrete).
-• Nothing decorative. Every on-screen element either responds to the user or shows a result.
+• ZONE A — controls: compact panel, max 30% of screen, one side or bottom.
+• ZONE B — result: large central canvas/SVG, min 60% of screen. THIS is where the concept lives.
+• Zone B must react to every Zone A change within 16ms. No submit button. No lag.
+• Zone B must have at least one live text readout of the OUTPUT value (not the control value). E.g. "Curve: 34°" not "Angle: 45°". The readout names the concept, not the input.
+• Nothing in Zone B is decorative. Every element either reacts to input or displays a result.
+• The aha moment from the brief must be visually unmissable in Zone B — a sudden change, a curve bending, a value jumping past a threshold.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TECHNICAL CONSTRAINTS:
