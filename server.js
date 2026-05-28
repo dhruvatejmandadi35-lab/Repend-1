@@ -271,7 +271,7 @@ TECHNICAL REQUIREMENTS:
 Return ONLY the complete HTML starting with <!doctype html>. No markdown. No explanation. No code fences.`;
 
   const res = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-5.5",
     max_tokens: 8000,
     messages: [{ role: "user", content: prompt }],
   });
