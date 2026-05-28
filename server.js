@@ -219,51 +219,57 @@ RULES:
   return JSON.parse(res.choices[0].message.content.trim());
 }
 
-// Step 3 — claude-opus-4-7 reasons freely about HOW to build the lab.
-// No lab-type labels, no UI component names. Pure experience + implementation thinking.
+// Step 3 — reasons concretely about what to draw and how.
+// Output is a structured visual brief the coder can follow exactly.
 async function thinkAboutLab(design) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}), range ${v.min}–${v.max}: ${v.why_it_matters}`)
     .join("\n");
 
-  const prompt = `You are thinking through how to build a specific interactive learning experience as a self-contained HTML page. All the educational reasoning has been done — your job is to reason about the IMPLEMENTATION: what to draw, what to animate, how to make the aha moment unmissable.
+  const prompt = `You are a senior creative coder designing an interactive learning lab. You will produce a CONCRETE VISUAL BRIEF that another developer can implement directly in HTML Canvas 2D.
 
 TOPIC: ${design.topic}
 LEARNING GOAL: ${design.spec.learning_goal}
+VISUAL METAPHOR: "${design.spec.visualMetaphor}"
 
-VISUAL METAPHOR — this is what it should feel like:
-"${design.spec.visualMetaphor}"
-
-VARIABLES AND WHY EACH ONE MATTERS TO THE CONCEPT:
+VARIABLES:
 ${vars}
 
-AHA MOMENT TO ENGINEER:
-${design.spec.aha_trigger}
+AHA MOMENT: ${design.spec.aha_trigger}
 
-Reason through these five questions. Write in plain prose — no JSON, no lists, no headers:
+Write a concrete brief covering these four areas. Be specific enough that a developer can write the drawing code directly from your description — no ambiguity, no "something that represents X".
 
-MANDATORY STRUCTURE — the lab must have exactly two zones:
-ZONE A (controls): where the learner changes things. Keep this small and to one side.
-ZONE B (result): the large central visual that REACTS and shows the OUTCOME. This is where learning happens.
-If you only describe Zone A, the lab fails. Zone B is more important than Zone A.
+━━━ 1. WHAT DRAWS ON LOAD (before any interaction) ━━━
+Describe exactly what the canvas shows at startup. Name every drawn element with its approximate position, size, color, and whether it's animated. The canvas must look interesting and alive before the user touches anything. Include: a background (gradient or pattern), at least one always-moving element, and axis/grid lines if the concept involves quantities.
 
-Answer these five questions:
+Example level of detail: "A dark navy canvas (#0E1830). Faint blue grid lines every 50px. A glowing copper sine wave drawn across the full width, oscillating slowly — amplitude 80px, one full cycle visible. A white dot riding the wave, moving left to right continuously. Label 'frequency: 1 Hz' in the top-right in #8899BB."
 
-1. ZONE B — THE RESULT VISUAL: What is the large central thing that reacts? Not a control, not a label — the visual outcome. Describe it in motion: what does it look like when the concept is working vs not working? What shape, color, motion shows the insight? For "${design.topic}" specifically, what would make a first-time learner say "oh — THAT's why"?
+━━━ 2. HOW EACH VARIABLE CHANGES THE CANVAS ━━━
+For each variable, describe the EXACT canvas change when its value changes. Name the specific drawing operations: what shape changes size/position/color/shape, what equation drives it, what the visual looks like at min vs max value.
 
-2. ZONE A — THE CONTROLS: For each variable, what does the learner do to change it, and what in Zone B changes immediately as a result? The connection between Zone A action and Zone B reaction must be instant and obvious. Describe the exact Zone B change for each variable.
+Example: "Frequency (1–10 Hz): the sine wave's horizontal compression changes — at 1Hz one full wave spans the canvas, at 10Hz ten waves are crammed in. The white dot's speed increases proportionally. The label updates to 'frequency: N Hz'."
 
-3. AHA ENGINEERING — the aha moment is: "${design.spec.aha_trigger}". Describe the 2 seconds before: what the learner naively expects Zone B to do. Then the 2 seconds after: what Zone B actually does that contradicts that expectation. The surprise IS the learning.
+━━━ 3. THE AHA MOMENT VISUAL ━━━
+Describe the specific canvas state right before and right after the aha moment. What threshold triggers it? What visual event makes it unmissable? Use a concrete trigger: a value crossing a number, a wave doing something specific, two lines intersecting.
 
-4. LIVE READOUTS — what numbers or text update live in Zone B as the learner interacts? Not in Zone A (not the control values) — in Zone B, as a consequence. E.g. for compound interest: "Final balance: $12,847" growing in Zone B. For topspin: "Curve angle: 34°" changing in Zone B. Name the exact readout for this concept.
+Example: "When frequency crosses 5Hz, the wave peaks start overlapping with the reflected wave — destructive interference appears as the amplitude suddenly drops to near-zero. A golden ring pulses around the wave for 1 second. Label flashes 'Destructive interference!' in #D4A574."
 
-5. THE FAILURE MODE — what would make this lab useless? E.g. "If the ball just moves right without curving, nothing is learned." Name the specific failure and state what you're doing to prevent it.
+━━━ 4. LIVE READOUTS IN ZONE B ━━━
+List every text label that updates live on the canvas as values change. Each readout must show the OUTPUT of the concept (what the concept produces), not just the input value. Format: "Label text: [formula or description], position on canvas, color."
 
-Do NOT use any of these words: slider, button, input, form, checkbox, select, drag, drop, node, widget, component, UI. Describe learning experiences and behaviors only.`;
+Example: "• 'Wavelength: X m' — top-left, #8899BB, updates as frequency changes (wavelength = speed/frequency)
+• 'Interference: constructive / destructive' — center-top, color shifts green→red based on phase overlap"
+
+RULES:
+- Every element you describe must be drawable with Canvas 2D API calls (fillRect, arc, bezierCurveTo, etc.)
+- Minimum 2 variables with distinct visual effects
+- Zone B (the canvas) takes at least 65% of the screen height
+- Zone A (controls) is a compact panel — max 35% height on mobile, right-side panel on desktop
+- No decorative elements that don't respond to or show the concept`;
 
   const res = await openai.chat.completions.create({
     model: "gpt-4o",
-    max_tokens: 2000,
+    max_tokens: 2500,
     messages: [{ role: "user", content: prompt }],
   });
 
