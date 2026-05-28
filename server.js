@@ -194,7 +194,8 @@ Return ONLY JSON with this exact shape:
         "min": 0,
         "max": 100,
         "default": 10,
-        "why_it_matters": "REQUIRED — one sentence explaining why THIS variable matters to the core insight. Not what it is — why changing it reveals something. E.g. 'Rate matters because doubling it doesn\\'t double the outcome — it compounds, so small rate differences explode over time.'"
+        "why_it_matters": "REQUIRED — one sentence explaining why THIS variable matters to the core insight. Not what it is — why changing it reveals something. E.g. 'Rate matters because doubling it doesn\\'t double the outcome — it compounds, so small rate differences explode over time.'",
+        "regimes_note": "REQUIRED for the PRIMARY variable — describe the distinct regimes this variable spans across its range, and set min/max/default so ALL regimes are reachable. E.g. for orbital velocity: 'Below 6 = spirals in and crashes; 6-8 = stable circular/elliptical orbit; above 8 = escapes off-screen. min 3, max 11, default 6.5 (just below circular so a small nudge reveals the ellipse).' Set default NEAR the most surprising boundary so a tiny move flips the outcome."
       }
     ],
     "formulas": {
@@ -224,8 +225,10 @@ Return ONLY JSON with this exact shape:
 RULES:
 - visualMetaphor must be a vivid scene description, never a chart type or UI pattern name
 - every variable MUST have why_it_matters — if you can't explain why it matters, remove the variable
+- the PRIMARY variable (the one that produces the aha) MUST have regimes_note describing the distinct outcomes across its range, with min/max/default chosen so EVERY regime is reachable and the default sits just below the most surprising boundary
 - formulas MUST be real math — look up the actual equation for this concept. Every output shown in Zone B must have a formula entry.
 - rules MUST include at least one threshold that triggers the aha moment visually
+- the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
 - reflection question must be answerable only AFTER interacting — not a definition lookup
 - do NOT include interaction_type, lab_type, or any format label anywhere in the JSON`,
       },
@@ -242,7 +245,7 @@ RULES:
 // Output is a structured visual brief the coder can follow exactly.
 async function thinkAboutLab(design) {
   const vars = (design.spec.variables || [])
-    .map(v => `  • ${v.name} (${v.unit || ""}), range ${v.min}–${v.max}: ${v.why_it_matters}`)
+    .map(v => `  • ${v.name} (${v.unit || ""}), range ${v.min}–${v.max}, default ${v.default}: ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES: ${v.regimes_note}` : ""}`)
     .join("\n");
 
   const prompt = `You are a senior creative coder designing an interactive learning lab. You will produce a CONCRETE VISUAL BRIEF that another developer can implement directly in HTML Canvas 2D.
@@ -279,11 +282,21 @@ List every text label that updates live on the canvas as values change. Each rea
 Example: "• 'Wavelength: X m' — top-left, #8899BB, updates as frequency changes (wavelength = speed/frequency)
 • 'Interference: constructive / destructive' — center-top, color shifts green→red based on phase overlap"
 
+━━━ 5. MAKE THE INVISIBLE VISIBLE ━━━
+This is the most important section. Real understanding comes from SEEING the hidden mechanism, not just the surface. Describe:
+- The TRACE/TRAIL: what path or history persists on screen so the learner compares "before vs now" without remembering? (e.g. the orbit trail that morphs circle→ellipse→escape as velocity changes; the ghost of the previous curve faded behind the current one). This morphing trace is usually the single most important visual — describe it precisely.
+- The HIDDEN VECTORS/FORCES: what arrows, fields, or quantities that you can't see in reality should be drawn? (velocity arrow, gravity-force arrow pointing inward, energy bars). Name each, its color, what it attaches to, how it changes.
+- The LINKED REPRESENTATIONS: the same quantity shown two+ ways at once that update together (a number AND a bar AND the physical motion). Name which quantity and which representations.
+
+Example: "A continuously drawn orbital trail (copper, fading older segments to 20% alpha) traces the satellite's path — at default velocity it's a near-circle, drop velocity and the trail spirals inward to a crash, raise it and the trail opens into an ellipse then a hyperbola that flies off-screen. A blue velocity arrow extends from the satellite in its direction of motion, length ∝ speed. A red gravity arrow always points from satellite to planet, length ∝ 1/r². An energy bar (top-left) splits kinetic (blue) vs potential (orange) and shifts live."
+
 RULES:
 - Every element you describe must be drawable with Canvas 2D API calls (fillRect, arc, bezierCurveTo, etc.)
 - Minimum 2 variables with distinct visual effects
+- The PRIMARY variable must let the learner reach EVERY regime from its REGIMES note — the morphing visual across those regimes is the core of the lab
 - Zone B (the canvas) takes at least 65% of the screen height
 - Zone A (controls) is a compact panel — max 35% height on mobile, right-side panel on desktop
+- The central visual element must be LARGE — fill the stage, not a tiny dot in an empty field
 - No decorative elements that don't respond to or show the concept`;
 
   const res = await openai.chat.completions.create({
@@ -333,7 +346,7 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // Takes the prose brief (source of truth for behavior) + optional mockup image (look/layout).
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
-    .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}`)
+    .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
     .join("\n");
 
   const formulas = design.spec.formulas
@@ -394,6 +407,18 @@ LAYOUT — TWO ZONES (non-negotiable):
 • The aha moment from the brief must be visually unmissable in Zone B — a sudden change, a curve bending, a value jumping past a threshold.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PEDAGOGY RULES (from research on effective learning sims — PhET):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• THE CENTRAL VISUAL MUST BE LARGE — it fills the stage. Never a tiny dot or shape floating in empty space. If the concept has a small object (a planet, a particle), the IMPORTANT thing (its path, field, or behavior) fills the canvas.
+• PERSISTENT TRACE: draw a trail/path/history that stays on screen so the learner compares before-vs-now without remembering. Fade older segments. This morphing trace is usually the single most important visual — implement the one from section 5 of the brief precisely.
+• MAKE THE INVISIBLE VISIBLE: draw the hidden vectors/forces/energy from section 5 of the brief — velocity arrows, force arrows, energy bars, fields. These explain WHY the behavior happens.
+• LINKED REPRESENTATIONS: show the key quantity in 2+ ways at once (a number AND a bar AND the motion), all updating together.
+• DEFAULT NEAR THE BOUNDARY: initialize the primary control at its default value, which sits just below the most surprising threshold — so the learner's first small nudge flips the outcome and reveals the aha. The sim opens mid-phenomenon, already showing interesting motion.
+• REACH EVERY REGIME: the primary control's range must let the learner reach every regime in its REGIMES note (e.g. crash / orbit / escape). Let the learner fail safely and visibly — the failure states ARE part of the lesson, show them vividly, don't block them.
+• PRESET BUTTONS: add 2-3 small preset buttons in Zone A that jump to interesting regimes (e.g. "Circular", "Comet", "Crash") plus a "Reset" button. One tap puts the learner in a meaningful state.
+• IMPLICIT GUIDANCE: don't write "now drag the slider" instructions. Make the productive action obvious through layout and defaults. Controls look grabbable (clear handles, hover highlight).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TECHNICAL CONSTRAINTS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • ONE complete self-contained HTML file. Inline CSS and JS.
@@ -426,11 +451,15 @@ TECHNICAL CONSTRAINTS:
 DO NOT render any multiple-choice quiz, reflection question, or "verify your understanding" section inside this lab. The platform shows a separate quiz AFTER the lab. This lab is for HANDS-ON INTERACTION ONLY — manipulating controls and watching the result. Adding a quiz here would duplicate the platform's quiz. The "Check Answer" button checks whether the learner reached the success condition (e.g. produced the target orbit), NOT a multiple-choice answer.
 
 Before returning, verify ALL of these — fix any that fail before responding:
-1. Is Zone B drawing something visible immediately on load (not blank, not waiting for input)?
-2. Are there at least 2 interactive controls, each causing a different visible change in Zone B?
-3. Is there a live text readout in Zone B showing the output concept value (not the control value)?
-4. Can the learner reach the aha moment within 30 seconds of normal interaction?
-5. Does the canvas use gradients and glow effects — does it look like a polished tool, not a flat grey box?
+1. Is Zone B drawing something visible AND in motion immediately on load (not blank, not a tiny dot in empty space)?
+2. Is the central visual LARGE — filling the stage rather than floating small in a big empty field?
+3. Is there a persistent trail/trace that morphs as the primary control changes, letting the learner compare before-vs-now?
+4. Are the hidden vectors/forces/energy from section 5 drawn (arrows, bars, fields) — is the invisible mechanism made visible?
+5. Are there at least 2 interactive controls plus preset + reset buttons, each causing a visible change?
+6. Can the learner reach the aha within one or two nudges of the primary control (because its default sits near the boundary)?
+7. Can the learner reach EVERY regime (e.g. crash / orbit / escape) — including the failure states, shown vividly not blocked?
+8. Is there a live text readout in Zone B showing the output concept value (not just the control value)?
+9. Does the canvas use gradients and glow — does it look like a polished tool, not a flat grey box?
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
