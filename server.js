@@ -427,12 +427,24 @@ REAL-WORLD PAYOFF (show on success): "${design.spec.real_world_payoff || ""}"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LAYOUT — TWO ZONES (non-negotiable):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• ZONE A — controls: compact panel, max 30% of screen, one side or bottom.
-• ZONE B — result: large central canvas/SVG, min 60% of screen. THIS is where the concept lives.
+• ZONE A — controls: compact panel. On mobile (width ≤ 500px) Zone A sits at the TOP as a horizontal strip, max 160px tall. On desktop Zone A sits on the LEFT, max 220px wide. Zone B fills all remaining space. Use CSS flex column on mobile, row on desktop. Zone A must NEVER overlap Zone B — set explicit widths/heights so they are cleanly separated.
+• ZONE B — result canvas: fills all remaining space after Zone A. The canvas element's width and height attributes must be set dynamically from its actual rendered pixel size (use ResizeObserver or set after layout). Never hardcode canvas.width/height to values that differ from the element's CSS size — that causes stretched/blank output.
 • Zone B must react to every Zone A change within 16ms. No submit button. No lag.
-• Zone B must have at least one live text readout of the OUTPUT value (not the control value). E.g. "Curve: 34°" not "Angle: 45°". The readout names the concept, not the input.
+• Zone B must have at least one live text readout of the OUTPUT value (not the control value). "Surface damage: HIGH" not "Friction: 0.9". The readout names the EFFECT, not the input. Draw it ON the canvas, not as an HTML element on top.
 • Nothing in Zone B is decorative. Every element either reacts to input or displays a result.
-• The aha moment from the brief must be visually unmissable in Zone B — a sudden change, a curve bending, a value jumping past a threshold.
+• The aha moment from the brief must be visually unmissable in Zone B — a sudden change, a shape snapping, a value jumping.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CANVAS MUST DRAW SHAPES — NOT JUST TEXT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Zone B must show a DRAWN SIMULATION — actual shapes, motion, and physics drawn with Canvas 2D primitives. It is NOT acceptable to output a canvas that only contains ctx.fillText() calls showing slider values. The canvas must contain:
+• At least 3 distinct drawn shapes (fillRect, arc, lineTo, bezierCurveTo, etc.) that represent the actual concept, not labels
+• At least one shape that MOVES or ANIMATES continuously even before interaction (a plate sliding, a particle oscillating, a wave propagating)
+• At least one shape that CHANGES SIZE, POSITION, COLOR, or SHAPE as each slider moves
+• Simulation-style visuals: cross-sections of earth, orbiting bodies, wave patterns, circuit diagrams, growing curves — not a blank grid with floating text
+
+BAD (do not do): canvas showing only "Slip Rate: 3 cm/year\nFriction: 0.9\nSurface Damage: Low" as text on a grid
+GOOD: a canvas showing two tectonic plate layers (filled rectangles) sliding in opposite directions, a glowing stress indicator building up, seismic waves radiating outward when a threshold is crossed
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PEDAGOGY RULES (from research on effective learning sims — PhET):
@@ -456,12 +468,19 @@ TECHNICAL CONSTRAINTS:
 • Zero console errors on first load.
 • Responsive: usable from 360px wide to full desktop.
 • Dark theme: bg #0B1220, stage #0E1830, panels #131A2A, border rgba(59,130,246,0.2). Accents: blue #3B82F6, copper #D4A574, success #22C55E, muted #8899BB.
-• CANVAS SAFETY — mandatory pattern for every canvas-based lab:
+• CANVAS SIZING — mandatory pattern to prevent stretched/blank canvas:
   const canvas = document.getElementById('mainCanvas');
   const ctx = canvas.getContext('2d');
+  function resizeCanvas() {
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+  // Then start the draw loop:
   function draw() { ctx.clearRect(0,0,canvas.width,canvas.height); /* draw everything */ requestAnimationFrame(draw); }
   draw(); // called immediately on load — never wait for user input to start drawing
-  If canvas is blank on load, the lab has failed.
+  If canvas is blank on load, the lab has failed. A common cause: canvas.width/height not matching the element's CSS size.
 • Zone B must show something meaningful within 100ms of page load — no waiting for interaction.
 • VISUAL DEPTH — make it look alive, not flat:
   - Gradient backgrounds on canvas (createLinearGradient or createRadialGradient)
@@ -479,15 +498,16 @@ TECHNICAL CONSTRAINTS:
 DO NOT render any multiple-choice quiz, reflection question, or "verify your understanding" section inside this lab. The platform shows a separate quiz AFTER the lab. This lab is for HANDS-ON INTERACTION ONLY — manipulating controls and watching the result. Adding a quiz here would duplicate the platform's quiz. The "Check Answer" button checks whether the learner reached the success condition (e.g. produced the target orbit), NOT a multiple-choice answer.
 
 Before returning, verify ALL of these — fix any that fail before responding:
-1. Is Zone B drawing something visible AND in motion immediately on load (not blank, not a tiny dot in empty space)?
-2. Is the central visual LARGE — filling the stage rather than floating small in a big empty field?
-3. Is there a persistent trail/trace that morphs as the primary control changes, letting the learner compare before-vs-now?
-4. Are the hidden vectors/forces/energy from section 5 drawn (arrows, bars, fields) — is the invisible mechanism made visible?
-5. Are there at least 2 interactive controls plus preset + reset buttons, each causing a visible change?
-6. Can the learner reach the aha within one or two nudges of the primary control (because its default sits near the boundary)?
-7. Can the learner reach EVERY regime (e.g. crash / orbit / escape) — including the failure states, shown vividly not blocked?
-8. Is there a live text readout in Zone B showing the output concept value (not just the control value)?
-9. Does the canvas use gradients and glow — does it look like a polished tool, not a flat grey box?
+1. Does Zone B contain actual drawn SHAPES (fillRect, arc, lineTo, etc.) that represent the concept — NOT just a grid with ctx.fillText() labels?
+2. Is Zone B drawing something visible AND in motion immediately on load (not blank, not a tiny dot in empty space)?
+3. Is the central visual LARGE — filling the stage rather than floating small in a big empty field?
+4. Is Zone A on TOP (mobile) or LEFT (desktop), cleanly separated from Zone B with no overlap?
+5. Does canvas.width and canvas.height match the element's actual rendered pixel size (set via offsetWidth/offsetHeight)?
+6. Is there a persistent trail/trace that morphs as the primary control changes?
+7. Are hidden vectors/forces/energy drawn (arrows, bars, fields)?
+8. Are there at least 2 interactive controls plus preset + reset buttons?
+9. Is the output readout showing the EFFECT (e.g. "Earthquake Magnitude: 7.2"), not just echoing the input value?
+10. Does the canvas use gradients and glow — does it look like a polished simulation, not a flat grey box?
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
