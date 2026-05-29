@@ -502,7 +502,7 @@ PEDAGOGY RULES (from research on effective learning sims — PhET):
 TECHNICAL CONSTRAINTS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • ONE complete self-contained HTML file. Inline CSS and JS.
-• Vanilla JS only. CDN allowlist: KaTeX (equations), p5.js (particles), three.js (3D). No other libs.
+• Vanilla JS only. NO external libraries, NO CDN links, NO import statements, NO require(). The lab runs inside sandbox="allow-scripts" which blocks all network requests — any <script src="..."> or fetch() will silently fail and break the lab. Everything must be inline in the single HTML file.
 • No localStorage / sessionStorage. No fetch().
 • Works in sandbox="allow-scripts".
 • Zero console errors on first load.
