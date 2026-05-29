@@ -4,6 +4,7 @@ const path = require("path");
 const OpenAI = require("openai");
 const Anthropic = require("@anthropic-ai/sdk");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { AnthropicVertex } = require("@anthropic-ai/vertex-sdk");
 
 // Load .env locally (Railway injects env vars directly, so this is a no-op there).
 try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
@@ -16,6 +17,10 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const vertex = new AnthropicVertex({
+  projectId: process.env.GCP_PROJECT_ID,
+  region: process.env.GCP_REGION || "us-east5",
+});
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
@@ -423,11 +428,10 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // Step 5 — writes the final HTML lab.
 // Takes the prose brief (source of truth for behavior) + optional mockup image (look/layout).
 //
-// NOTE: This step originally ran on Claude (claude-opus-4-7), then OpenAI gpt-4o.
-// It is currently wired to Google Gemini (gemini-2.5-flash) because no Anthropic
-// key is available. To revert to Claude/OpenAI later, change LAB_MODEL and the
-// API-call block at the bottom of this function back to the OpenAI call.
-const LAB_MODEL = "gemini-2.5-flash";
+// NOTE: This step originally ran on Claude (claude-opus-4-7), then OpenAI gpt-4o,
+// then Google Gemini (gemini-2.5-flash). Now uses Claude on Google Vertex AI.
+// Change LAB_MODEL here to swap models.
+const LAB_MODEL = "claude-sonnet-4-6";
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -567,21 +571,39 @@ Before returning, verify ALL of these — fix any that fail before responding:
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
-  // Gemini 2.5 Flash (vision-capable). Build the parts array: text brief plus,
-  // if present, the mockup image as inline base64 data.
-  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
-  const parts = [{ text: briefText }];
+  // --- GEMINI FALLBACK (commented out) ---
+  // const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
+  // const parts = [{ text: briefText }];
+  // if (imageDataUrl) {
+  //   const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
+  //   if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
+  // }
+  // const res = await model.generateContent({
+  //   contents: [{ role: "user", parts }],
+  //   generationConfig: { maxOutputTokens: 12000, temperature: 0.7 },
+  // });
+  // let html = res.response.text().trim();
+  // html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  // return html;
+  // --- END GEMINI FALLBACK ---
+
+  // AnthropicVertex (claude-sonnet-4-6 on Google Vertex AI)
+  const messageContent = [{ type: "text", text: briefText }];
   if (imageDataUrl) {
     const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
-    if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
+    if (m) messageContent.push({
+      type: "image",
+      source: { type: "base64", media_type: m[1], data: m[2] },
+    });
   }
 
-  const res = await model.generateContent({
-    contents: [{ role: "user", parts }],
-    generationConfig: { maxOutputTokens: 12000, temperature: 0.7 },
+  const response = await vertex.messages.create({
+    model: LAB_MODEL,
+    max_tokens: 12000,
+    messages: [{ role: "user", content: messageContent }],
   });
 
-  let html = res.response.text().trim();
+  let html = response.content[0].text.trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
 }
