@@ -384,7 +384,7 @@ async function codeFromImageBrief(design, labThinking, imageDataUrl) {
     .map(r => `  • when (${r.when}): ${r.visual_change} — show message "${r.message}"`)
     .join("\n");
 
-  const briefText = `You are building a self-contained interactive learning lab for Repend.
+  const briefText = `You are building a self-contained interactive learning lab for Repend. You MUST output a complete, working HTML file — no summaries, no outlines, no explanations, no apologies, no "this is complex" disclaimers. If you do not output a full <!doctype html> file, the platform breaks and learners see nothing. Output the HTML file directly, right now.
 
 ${imageDataUrl ? `You are given two inputs:
 1. A VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement, overall feel.
@@ -500,7 +500,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
 
   const res = await openai.chat.completions.create({
     model: "gpt-4o",
-    max_tokens: 8000,
+    max_tokens: 12000,
     messages: [{ role: "user", content: userContent }],
   });
 
