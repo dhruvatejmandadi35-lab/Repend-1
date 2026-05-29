@@ -623,7 +623,7 @@ const server = http.createServer(async (req, res) => {
           // ── Cache hit: serve instantly, zero AI cost ──────────────────
           const cached = await getCachedLab(key);
           if (cached) {
-            send("done", "Lab ready.", cached);
+            send("done", "Lab ready.", { ...cached, source: "cached" });
             res.end();
             return;
           }
@@ -657,7 +657,7 @@ const server = http.createServer(async (req, res) => {
             labHtml: html,
           };
 
-          send("done", "Lab ready.", labData);
+          send("done", "Lab ready.", { ...labData, source: "generated" });
           res.end();
 
           // Fire-and-forget save — don't block the response
