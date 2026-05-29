@@ -238,7 +238,35 @@ RULES:
       },
     ],
   });
-  return JSON.parse(res.choices[0].message.content.trim());
+  const parsed = JSON.parse(res.choices[0].message.content.trim());
+  normalizeReflection(parsed);
+  return parsed;
+}
+
+// Guard the reflection quiz so Step 3 never lands in a broken state.
+// The frontend matches the picked option to `correct` by exact string equality,
+// so `correct` MUST be one of `options` verbatim. If the model drifts (extra
+// whitespace, a paraphrase, a missing letter prefix), repair it or drop the
+// quiz entirely so the frontend falls back to the AI text-verify path.
+function normalizeReflection(design) {
+  const r = design && design.spec && design.spec.reflection;
+  if (!r) return;
+  const opts = Array.isArray(r.options) ? r.options.map(o => String(o).trim()) : [];
+  r.options = opts;
+  if (opts.length < 2 || !r.question) { design.spec.reflection = null; return; }
+
+  const correct = String(r.correct == null ? "" : r.correct).trim();
+  if (opts.includes(correct)) { r.correct = correct; return; }
+
+  // Try a forgiving match: ignore case, punctuation, and any "A:" style prefix.
+  const strip = s => s.toLowerCase().replace(/^[a-d]\s*[:.)-]\s*/i, "").replace(/[^a-z0-9 ]/g, "").trim();
+  const target = strip(correct);
+  const hit = opts.find(o => strip(o) === target) || (target && opts.find(o => strip(o).includes(target)));
+  if (hit) { r.correct = hit; return; }
+
+  // No reliable match — drop the quiz rather than show a question with no
+  // correct answer. Frontend falls back to free-text verify.
+  design.spec.reflection = null;
 }
 
 // Step 3 — reasons concretely about what to draw and how.
