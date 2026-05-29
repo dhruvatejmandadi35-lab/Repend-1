@@ -7,6 +7,46 @@ const Anthropic = require("@anthropic-ai/sdk");
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
+
+function topicKey(topic) {
+  return topic.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+async function getCachedLab(key) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/labs?topic_key=eq.${encodeURIComponent(key)}&select=lab_data&limit=1`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+    );
+    const rows = await res.json();
+    return Array.isArray(rows) && rows.length > 0 ? rows[0].lab_data : null;
+  } catch (err) {
+    console.warn('getCachedLab failed:', err.message);
+    return null;
+  }
+}
+
+async function saveLab(key, topic, labData) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/labs`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates',
+      },
+      body: JSON.stringify({ topic_key: key, topic, lab_data: labData }),
+    });
+  } catch (err) {
+    console.warn('saveLab failed:', err.message);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────
 // OLD RECIPE ENGINE (kept for /plan + /simulate routes)
 // ─────────────────────────────────────────────────────────────────
@@ -577,8 +617,18 @@ const server = http.createServer(async (req, res) => {
           send("expand", `Sharpening topic…`);
           const expanded = await expandTopic(rawTopic);
           const topic = expanded.topic;
+          const key = topicKey(topic);
           send("expanded", `Building lab for: ${topic}`, { topic, why: expanded.why });
 
+          // ── Cache hit: serve instantly, zero AI cost ──────────────────
+          const cached = await getCachedLab(key);
+          if (cached) {
+            send("done", "Lab ready.", cached);
+            res.end();
+            return;
+          }
+
+          // ── Cache miss: run full pipeline then save ───────────────────
           send("think", `Reasoning about "${topic}"…`);
           const thinking = await thinkAboutTopic(topic);
 
@@ -597,7 +647,7 @@ const server = http.createServer(async (req, res) => {
           send("code", "Writing your lab…");
           const html = await codeFromImageBrief(design, labThinking, imageDataUrl);
 
-          send("done", "Lab ready.", {
+          const labData = {
             topic: design.topic,
             scenario: design.scenario,
             verificationQuestion: design.verificationQuestion,
@@ -605,9 +655,13 @@ const server = http.createServer(async (req, res) => {
             realWorldPayoff: design.spec.real_world_payoff,
             reflection: design.spec.reflection || null,
             labHtml: html,
-          });
+          };
 
+          send("done", "Lab ready.", labData);
           res.end();
+
+          // Fire-and-forget save — don't block the response
+          saveLab(key, design.topic, labData);
 
         } else if (req.url === "/plan") {
           if (!data.topic?.trim()) {
