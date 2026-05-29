@@ -3,9 +3,19 @@ const fs = require("fs");
 const path = require("path");
 const OpenAI = require("openai");
 const Anthropic = require("@anthropic-ai/sdk");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+
+// Load .env locally (Railway injects env vars directly, so this is a no-op there).
+try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
+  .split("\n").forEach(line => {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+  });
+} catch (_) { /* no .env file — fine in production */ }
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
@@ -410,8 +420,14 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
   }
 }
 
-// Step 5 — gpt-4o (vision-capable) writes the HTML.
+// Step 5 — writes the final HTML lab.
 // Takes the prose brief (source of truth for behavior) + optional mockup image (look/layout).
+//
+// NOTE: This step originally ran on Claude (claude-opus-4-7), then OpenAI gpt-4o.
+// It is currently wired to Google Gemini (gemini-2.5-flash) because no Anthropic
+// key is available. To revert to Claude/OpenAI later, change LAB_MODEL and the
+// API-call block at the bottom of this function back to the OpenAI call.
+const LAB_MODEL = "gemini-2.5-flash";
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -551,20 +567,21 @@ Before returning, verify ALL of these — fix any that fail before responding:
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
-  const userContent = imageDataUrl
-    ? [
-        { type: "image_url", image_url: { url: imageDataUrl } },
-        { type: "text", text: briefText },
-      ]
-    : briefText;
+  // Gemini 2.5 Flash (vision-capable). Build the parts array: text brief plus,
+  // if present, the mockup image as inline base64 data.
+  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
+  const parts = [{ text: briefText }];
+  if (imageDataUrl) {
+    const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
+    if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
+  }
 
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: 12000,
-    messages: [{ role: "user", content: userContent }],
+  const res = await model.generateContent({
+    contents: [{ role: "user", parts }],
+    generationConfig: { maxOutputTokens: 12000, temperature: 0.7 },
   });
 
-  let html = res.choices[0].message.content.trim();
+  let html = res.response.text().trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
 }
