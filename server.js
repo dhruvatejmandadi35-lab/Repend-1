@@ -17,6 +17,15 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+// On Railway there's no filesystem for GOOGLE_APPLICATION_CREDENTIALS.
+// Instead, paste the service account JSON contents into GOOGLE_CREDENTIALS_JSON.
+if (process.env.GOOGLE_CREDENTIALS_JSON) {
+  const tmpPath = "/tmp/gcp-credentials.json";
+  require("fs").writeFileSync(tmpPath, process.env.GOOGLE_CREDENTIALS_JSON);
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = tmpPath;
+}
+
 const vertex = new AnthropicVertex({
   projectId: process.env.GCP_PROJECT_ID,
   region: process.env.GCP_REGION || "us-east5",
