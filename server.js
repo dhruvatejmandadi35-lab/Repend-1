@@ -28,7 +28,9 @@ if (process.env.GOOGLE_CREDENTIALS_JSON) {
 
 const vertex = new AnthropicVertex({
   projectId: process.env.GCP_PROJECT_ID,
-  region: process.env.GCP_REGION || "us-east5",
+  // "global" endpoint: max availability, no regional pricing premium, and it
+  // serves claude-sonnet-4-6 (regional endpoints like us-east5 may 404).
+  region: process.env.GCP_REGION || "global",
 });
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
