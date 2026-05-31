@@ -5,6 +5,7 @@ const OpenAI = require("openai");
 const Anthropic = require("@anthropic-ai/sdk");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { AnthropicVertex } = require("@anthropic-ai/vertex-sdk");
+const { Ollama } = require("ollama");
 
 // Load .env locally (Railway injects env vars directly, so this is a no-op there).
 try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
@@ -31,6 +32,12 @@ const vertex = new AnthropicVertex({
   // "global" endpoint: max availability, no regional pricing premium, and it
   // serves claude-sonnet-4-5@20250929 (regional endpoints like us-east5 may 404).
   region: process.env.GCP_REGION || "global",
+});
+
+// Ollama Cloud — used by codeFromImageBrief for the final HTML build step.
+const ollama = new Ollama({
+  host: "https://ollama.com",
+  headers: { Authorization: "Bearer " + (process.env.OLLAMA_API_KEY || "") },
 });
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -442,7 +449,10 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // NOTE: This step originally ran on Claude (claude-opus-4-7), then OpenAI gpt-4o,
 // then Google Gemini (gemini-2.5-flash). Now uses Claude on Google Vertex AI.
 // Change LAB_MODEL here to swap models.
-const LAB_MODEL = "claude-sonnet-4-5@20250929";
+// Ollama Cloud model for the final HTML build. Swap here to try others
+// (e.g. "gpt-oss:120b", "deepseek-v3.1:671b"). Must match a model your
+// Ollama Cloud account has access to.
+const LAB_MODEL = "qwen3-coder:480b";
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -598,23 +608,40 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   // return html;
   // --- END GEMINI FALLBACK ---
 
-  // AnthropicVertex (claude-sonnet-4-5@20250929 on Google Vertex AI)
-  const messageContent = [{ type: "text", text: briefText }];
+  // --- VERTEX FALLBACK (commented out) ---
+  // const messageContent = [{ type: "text", text: briefText }];
+  // if (imageDataUrl) {
+  //   const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
+  //   if (m) messageContent.push({
+  //     type: "image",
+  //     source: { type: "base64", media_type: m[1], data: m[2] },
+  //   });
+  // }
+  // const response = await vertex.messages.create({
+  //   model: "claude-sonnet-4-5@20250929",
+  //   max_tokens: 12000,
+  //   messages: [{ role: "user", content: messageContent }],
+  // });
+  // let html = response.content[0].text.trim();
+  // html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  // return html;
+  // --- END VERTEX FALLBACK ---
+
+  // Ollama Cloud. The message carries the text brief; if a mockup image is
+  // present, attach it as base64 (the chosen model must be vision-capable).
+  const message = { role: "user", content: briefText };
   if (imageDataUrl) {
     const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
-    if (m) messageContent.push({
-      type: "image",
-      source: { type: "base64", media_type: m[1], data: m[2] },
-    });
+    if (m) message.images = [m[2]];
   }
 
-  const response = await vertex.messages.create({
+  const response = await ollama.chat({
     model: LAB_MODEL,
-    max_tokens: 12000,
-    messages: [{ role: "user", content: messageContent }],
+    messages: [message],
+    options: { num_predict: 12000, temperature: 0.7 },
   });
 
-  let html = response.content[0].text.trim();
+  let html = response.message.content.trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
 }
