@@ -29,7 +29,7 @@ if (process.env.GOOGLE_CREDENTIALS_JSON) {
 const vertex = new AnthropicVertex({
   projectId: process.env.GCP_PROJECT_ID,
   // "global" endpoint: max availability, no regional pricing premium, and it
-  // serves claude-sonnet-4-6 (regional endpoints like us-east5 may 404).
+  // serves claude-sonnet-4-5@20250929 (regional endpoints like us-east5 may 404).
   region: process.env.GCP_REGION || "global",
 });
 
@@ -442,7 +442,7 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // NOTE: This step originally ran on Claude (claude-opus-4-7), then OpenAI gpt-4o,
 // then Google Gemini (gemini-2.5-flash). Now uses Claude on Google Vertex AI.
 // Change LAB_MODEL here to swap models.
-const LAB_MODEL = "claude-sonnet-4-6";
+const LAB_MODEL = "claude-sonnet-4-5@20250929";
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -598,7 +598,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   // return html;
   // --- END GEMINI FALLBACK ---
 
-  // AnthropicVertex (claude-sonnet-4-6 on Google Vertex AI)
+  // AnthropicVertex (claude-sonnet-4-5@20250929 on Google Vertex AI)
   const messageContent = [{ type: "text", text: briefText }];
   if (imageDataUrl) {
     const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
