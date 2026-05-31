@@ -635,11 +635,26 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
     if (m) message.images = [m[2]];
   }
 
-  const response = await ollama.chat({
-    model: LAB_MODEL,
-    messages: [message],
-    options: { num_predict: 12000, temperature: 0.7 },
-  });
+  let response;
+  try {
+    response = await ollama.chat({
+      model: LAB_MODEL,
+      messages: [message],
+      options: { num_predict: 12000, temperature: 0.7 },
+    });
+  } catch (err) {
+    // TEMP DEBUG: surface the exact Ollama error so we can tell auth-key vs
+    // model-access/plan issues apart. Logs status code + raw response body.
+    console.error("OLLAMA CHAT ERROR — model:", LAB_MODEL);
+    console.error("  message:", err && err.message);
+    console.error("  status:", err && (err.status_code || err.status));
+    try {
+      console.error("  body:", JSON.stringify(err && (err.error || err.response || err), null, 2));
+    } catch (_) {
+      console.error("  body (raw):", err && (err.error || err.response));
+    }
+    throw err;
+  }
 
   let html = response.message.content.trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
