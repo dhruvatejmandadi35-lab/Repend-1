@@ -4,7 +4,6 @@ const path = require("path");
 const OpenAI = require("openai");
 const Anthropic = require("@anthropic-ai/sdk");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { AnthropicVertex } = require("@anthropic-ai/vertex-sdk");
 const { Ollama } = require("ollama");
 
 // Load .env locally (Railway injects env vars directly, so this is a no-op there).
@@ -18,21 +17,6 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-
-// On Railway there's no filesystem for GOOGLE_APPLICATION_CREDENTIALS.
-// Instead, paste the service account JSON contents into GOOGLE_CREDENTIALS_JSON.
-if (process.env.GOOGLE_CREDENTIALS_JSON) {
-  const tmpPath = "/tmp/gcp-credentials.json";
-  require("fs").writeFileSync(tmpPath, process.env.GOOGLE_CREDENTIALS_JSON);
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = tmpPath;
-}
-
-const vertex = new AnthropicVertex({
-  projectId: process.env.GCP_PROJECT_ID,
-  // "global" endpoint: max availability, no regional pricing premium, and it
-  // serves claude-sonnet-4-5@20250929 (regional endpoints like us-east5 may 404).
-  region: process.env.GCP_REGION || "global",
-});
 
 // Ollama Cloud — used by codeFromImageBrief for the final HTML build step.
 const ollama = new Ollama({
@@ -447,7 +431,7 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // Takes the prose brief (source of truth for behavior) + optional mockup image (look/layout).
 //
 // NOTE: This step originally ran on Claude (claude-opus-4-7), then OpenAI gpt-4o,
-// then Google Gemini (gemini-2.5-flash). Now uses Claude on Google Vertex AI.
+// then Google Gemini (gemini-2.5-flash), then Vertex. Now uses Ollama Cloud.
 // Change LAB_MODEL here to swap models.
 // Ollama Cloud model for the final HTML build. Swap here to try others
 // (e.g. "gpt-oss:120b", "deepseek-v3.1:671b"). Must match a model your
@@ -607,25 +591,6 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   // html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   // return html;
   // --- END GEMINI FALLBACK ---
-
-  // --- VERTEX FALLBACK (commented out) ---
-  // const messageContent = [{ type: "text", text: briefText }];
-  // if (imageDataUrl) {
-  //   const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
-  //   if (m) messageContent.push({
-  //     type: "image",
-  //     source: { type: "base64", media_type: m[1], data: m[2] },
-  //   });
-  // }
-  // const response = await vertex.messages.create({
-  //   model: "claude-sonnet-4-5@20250929",
-  //   max_tokens: 12000,
-  //   messages: [{ role: "user", content: messageContent }],
-  // });
-  // let html = response.content[0].text.trim();
-  // html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
-  // return html;
-  // --- END VERTEX FALLBACK ---
 
   // Ollama Cloud. The message carries the text brief; if a mockup image is
   // present, attach it as base64 (the chosen model must be vision-capable).
