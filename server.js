@@ -13,7 +13,7 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
   });
 } catch (_) { /* no .env file — fine in production */ }
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "" });
 const geminiOpenAI = new OpenAI({
   apiKey: process.env.GEMINI_API_KEY || "",
   baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
