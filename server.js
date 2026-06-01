@@ -501,6 +501,17 @@ BAD (do not do): canvas showing only "Slip Rate: 3 cm/year\nFriction: 0.9\nSurfa
 GOOD: a canvas showing two tectonic plate layers (filled rectangles) sliding in opposite directions, a glowing stress indicator building up, seismic waves radiating outward when a threshold is crossed
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ANIMATION & MOTION REQUIREMENTS (non-negotiable):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• ANIMATE THE CORE MECHANISM — the visual must show the concept's actual process in motion, not a static chart or decorative image. If the concept is about change over time or one-becoming-many, the user must literally watch that transformation happening on screen.
+• SLIDERS PRODUCE CONTINUOUS ANIMATED CHANGE — moving any slider must immediately produce visible, ongoing animated change in the visual. No static states. No requiring a button press to see motion. The animation responds to the current slider value on every frame.
+• ONE CLEAR "AHA" MOMENT — there must be a point where adjusting an input produces a surprising, visible result the user wouldn't have predicted. This is the concept's insight made visceral. Design the default slider positions so the first nudge the user makes hits or approaches this moment.
+• MOTION + MEANINGFUL COLOR + SMOOTH TRANSITIONS — use animation, color that encodes information (hotter = redder, faster = brighter, more dangerous = more saturated), and smooth easing. The visual must feel alive, not like a labeled diagram.
+
+BAD: slider moves, a number updates, a bar changes height, nothing else happens
+GOOD: slider moves → particles accelerate, colors shift from cool to hot, a threshold is crossed and the entire visual snaps into a new regime with a visible burst
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PEDAGOGY RULES (from research on effective learning sims — PhET):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • THE CENTRAL VISUAL MUST BE LARGE — it fills the stage. Never a tiny dot or shape floating in empty space. If the concept has a small object (a planet, a particle), the IMPORTANT thing (its path, field, or behavior) fills the canvas.
