@@ -14,6 +14,10 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 } catch (_) { /* no .env file — fine in production */ }
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const geminiOpenAI = new OpenAI({
+  apiKey: process.env.GEMINI_API_KEY || "",
+  baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+});
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -425,7 +429,7 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 //
 // NOTE: This step originally ran on Claude (claude-opus-4-7), then Gemini, then Vertex, then Ollama. Now uses OpenAI.
 // Change LAB_MODEL here to swap models.
-const LAB_MODEL = "gpt-4o";
+const LAB_MODEL = "gemini-2.5-pro";
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -600,14 +604,14 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
 
   let response;
   try {
-    response = await openai.chat.completions.create({
+    response = await geminiOpenAI.chat.completions.create({
       model: LAB_MODEL,
       max_tokens: 12000,
       temperature: 0.7,
       messages: [{ role: "user", content: userContent }],
     });
   } catch (err) {
-    console.error("GPT-4o LAB GENERATION ERROR — model:", LAB_MODEL);
+    console.error("GEMINI LAB GENERATION ERROR — model:", LAB_MODEL);
     console.error("  message:", err && err.message);
     console.error("  status:", err && (err.status || err.statusCode));
     console.error("  body:", JSON.stringify(err && (err.error || err.response?.data || err), null, 2));
