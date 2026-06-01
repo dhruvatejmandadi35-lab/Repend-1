@@ -598,12 +598,21 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
     userContent.push({ type: "image_url", image_url: { url: imageDataUrl } });
   }
 
-  const response = await openai.chat.completions.create({
-    model: LAB_MODEL,
-    max_tokens: 12000,
-    temperature: 0.7,
-    messages: [{ role: "user", content: userContent }],
-  });
+  let response;
+  try {
+    response = await openai.chat.completions.create({
+      model: LAB_MODEL,
+      max_tokens: 12000,
+      temperature: 0.7,
+      messages: [{ role: "user", content: userContent }],
+    });
+  } catch (err) {
+    console.error("GPT-4o LAB GENERATION ERROR — model:", LAB_MODEL);
+    console.error("  message:", err && err.message);
+    console.error("  status:", err && (err.status || err.statusCode));
+    console.error("  body:", JSON.stringify(err && (err.error || err.response?.data || err), null, 2));
+    throw err;
+  }
 
   let html = response.choices[0].message.content.trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
@@ -755,4 +764,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+server.timeout = 120_000; // 120 s — lab generation is multi-step and long
 server.listen(PORT, "0.0.0.0", () => console.log(`Repend running at http://0.0.0.0:${PORT}`));

@@ -815,7 +815,44 @@
         }
       }
 
-      if (!result) throw new Error("No result received from server");
+      // One automatic retry if the stream completed without a result (timeout /
+      // transient empty response). Resets UI stage indicators then tries again.
+      if (!result) {
+        console.warn("No result on first attempt — retrying once...");
+        setStage("think");
+        const retry = await fetch("/plan-lab", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topic }),
+        });
+        if (!retry.ok) {
+          const err = await retry.json().catch(() => ({ error: "Request failed" }));
+          throw new Error(err.error || "Request failed on retry");
+        }
+        const retryReader = retry.body.getReader();
+        const retryDecoder = new TextDecoder();
+        let retryBuffer = "";
+        while (true) {
+          const { done, value } = await retryReader.read();
+          if (done) break;
+          retryBuffer += retryDecoder.decode(value, { stream: true });
+          const lines = retryBuffer.split("\n");
+          retryBuffer = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const event = JSON.parse(line.slice(6));
+            if (event.stage === "expanded") { etTopic.textContent = event.data.topic; etWhy.textContent = event.data.why; expandedTopicEl.style.display = "block"; }
+            if (event.stage === "think")    setStage("think");
+            if (event.stage === "design")   setStage("design");
+            if (event.stage === "labthink") setStage("labthink");
+            if (event.stage === "image")    setStage("image");
+            if (event.stage === "code")     setStage("code");
+            if (event.stage === "error")    throw new Error(event.msg);
+            if (event.stage === "done")     result = event.data;
+          }
+        }
+      }
+      if (!result) throw new Error("No result received from server after retry");
 
       currentPlan = result;
       topicBadgeText.textContent = result.topic;
