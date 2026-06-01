@@ -436,7 +436,7 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // Ollama Cloud model for the final HTML build. Swap here to try others
 // (e.g. "gpt-oss:120b", "deepseek-v3.1:671b"). Must match a model your
 // Ollama Cloud account has access to.
-const LAB_MODEL = "kimi-k2.6:cloud";
+const LAB_MODEL = "qwen3.5:cloud";
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
