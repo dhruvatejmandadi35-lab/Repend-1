@@ -596,7 +596,8 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   // return html;
   // --- END GEMINI FALLBACK ---
 
-  // OpenAI (gpt-4o). Builds the text content array; attaches image if present.
+  // Gemini 2.5 Pro via OpenAI-compatible endpoint. Builds the text content
+  // array; attaches image if present.
   const userContent = [{ type: "text", text: briefText }];
   if (imageDataUrl) {
     userContent.push({ type: "image_url", image_url: { url: imageDataUrl } });
@@ -606,7 +607,10 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   try {
     response = await geminiOpenAI.chat.completions.create({
       model: LAB_MODEL,
-      max_tokens: 12000,
+      // Pro is a thinking model: reasoning tokens count against this budget
+      // before the HTML is written. Keep it high so a long animated lab file
+      // isn't truncated mid-output.
+      max_tokens: 32000,
       temperature: 0.7,
       messages: [{ role: "user", content: userContent }],
     });
