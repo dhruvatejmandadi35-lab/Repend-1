@@ -528,6 +528,69 @@ PEDAGOGY RULES (from research on effective learning sims — PhET):
 • IMPLICIT GUIDANCE: don't write "now drag the slider" instructions. Make the productive action obvious through layout and defaults. Controls look grabbable (clear handles, hover highlight).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHYSICS SIMULATION ARCHITECTURE — MANDATORY PATTERN:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your simulation MUST be built on this exact architecture. Do not draw static frames. Do not recalculate only on slider input. Physics runs every frame via requestAnimationFrame.
+
+REQUIRED STRUCTURE:
+// 1. State object — all simulation variables live here, updated every frame
+const state = {
+  // position, velocity, angle, energy — whatever the concept needs
+  x: 0, y: 0, vx: 0, vy: 0,
+  trail: [],        // array of past positions for persistent trace
+  t: 0,             // simulation time in seconds
+};
+
+// 2. Controls object — slider values, read each frame (never cached)
+const controls = { speed: 1.0, mass: 1.0 }; // replace with your variables
+sliderEl.addEventListener('input', e => { controls.speed = +e.target.value; });
+
+// 3. Physics update — runs every frame with delta-time
+let lastTime = null;
+function update(timestamp) {
+  const dt = lastTime ? Math.min((timestamp - lastTime) / 1000, 0.05) : 0.016;
+  lastTime = timestamp;
+
+  // READ controls here, every frame — sliders always take effect immediately
+  const speed = controls.speed;
+
+  // APPLY physics equations here — real formulas, not approximations
+  // e.g. for orbit: angle += speed * dt; x = cx + r * Math.cos(angle);
+  state.t += dt;
+
+  // TRAIL — push current position, cap length
+  state.trail.push({ x: state.x, y: state.y });
+  if (state.trail.length > 120) state.trail.shift();
+}
+
+// 4. Draw — pure rendering, reads from state
+function draw(ctx, canvas) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Draw trail first (oldest = most transparent)
+  state.trail.forEach((pt, i) => {
+    ctx.globalAlpha = i / state.trail.length;
+    // draw pt
+  });
+  ctx.globalAlpha = 1;
+  // Draw physics objects, force arrows, readouts on top
+}
+
+// 5. Loop — update then draw every frame, forever
+function loop(timestamp) {
+  update(timestamp);
+  draw(ctx, canvas);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop); // starts immediately on page load
+
+CRITICAL RULES FROM THIS ARCHITECTURE:
+• dt (delta-time) MUST be used in all position/velocity updates — never hardcode pixel offsets like x += 2
+• Slider values are read from the controls object INSIDE update(), every frame — a slider change takes effect on the very next frame with zero lag
+• The trail array accumulates real positions from the physics, not a decorative effect
+• Force arrows and field lines are computed from the same physics state, not drawn separately
+• Every regime the learner can reach (fast/slow, stable/unstable, crash/orbit/escape) is produced by the same physics equations — not by if/else branches that swap out different animations
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TECHNICAL CONSTRAINTS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • ONE complete self-contained HTML file. Inline CSS and JS.
