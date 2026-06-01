@@ -4,7 +4,6 @@ const path = require("path");
 const OpenAI = require("openai");
 const Anthropic = require("@anthropic-ai/sdk");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { Ollama } = require("ollama");
 
 // Load .env locally (Railway injects env vars directly, so this is a no-op there).
 try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
@@ -17,12 +16,6 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-
-// Ollama Cloud — used by codeFromImageBrief for the final HTML build step.
-const ollama = new Ollama({
-  host: "https://ollama.com",
-  headers: { Authorization: "Bearer " + (process.env.OLLAMA_API_KEY || "") },
-});
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
@@ -430,13 +423,9 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // Step 5 — writes the final HTML lab.
 // Takes the prose brief (source of truth for behavior) + optional mockup image (look/layout).
 //
-// NOTE: This step originally ran on Claude (claude-opus-4-7), then OpenAI gpt-4o,
-// then Google Gemini (gemini-2.5-flash), then Vertex. Now uses Ollama Cloud.
+// NOTE: This step originally ran on Claude (claude-opus-4-7), then Gemini, then Vertex, then Ollama. Now uses OpenAI.
 // Change LAB_MODEL here to swap models.
-// Ollama Cloud model for the final HTML build. Swap here to try others
-// (e.g. "gpt-oss:120b", "deepseek-v3.1:671b"). Must match a model your
-// Ollama Cloud account has access to.
-const LAB_MODEL = "qwen3.5:cloud";
+const LAB_MODEL = "gpt-4o";
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -592,36 +581,20 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   // return html;
   // --- END GEMINI FALLBACK ---
 
-  // Ollama Cloud. The message carries the text brief; if a mockup image is
-  // present, attach it as base64 (the chosen model must be vision-capable).
-  const message = { role: "user", content: briefText };
+  // OpenAI (gpt-4o). Builds the text content array; attaches image if present.
+  const userContent = [{ type: "text", text: briefText }];
   if (imageDataUrl) {
-    const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
-    if (m) message.images = [m[2]];
+    userContent.push({ type: "image_url", image_url: { url: imageDataUrl } });
   }
 
-  let response;
-  try {
-    response = await ollama.chat({
-      model: LAB_MODEL,
-      messages: [message],
-      options: { num_predict: 12000, temperature: 0.7 },
-    });
-  } catch (err) {
-    // TEMP DEBUG: surface the exact Ollama error so we can tell auth-key vs
-    // model-access/plan issues apart. Logs status code + raw response body.
-    console.error("OLLAMA CHAT ERROR — model:", LAB_MODEL);
-    console.error("  message:", err && err.message);
-    console.error("  status:", err && (err.status_code || err.status));
-    try {
-      console.error("  body:", JSON.stringify(err && (err.error || err.response || err), null, 2));
-    } catch (_) {
-      console.error("  body (raw):", err && (err.error || err.response));
-    }
-    throw err;
-  }
+  const response = await openai.chat.completions.create({
+    model: LAB_MODEL,
+    max_tokens: 12000,
+    temperature: 0.7,
+    messages: [{ role: "user", content: userContent }],
+  });
 
-  let html = response.message.content.trim();
+  let html = response.choices[0].message.content.trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
 }
