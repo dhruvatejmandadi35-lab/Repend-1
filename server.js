@@ -428,7 +428,7 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 //
 // NOTE: This step originally ran on Claude (claude-opus-4-7), then Gemini, then Vertex, then Ollama. Now uses OpenAI.
 // Change LAB_MODEL here to swap models.
-const LAB_MODEL = "gemini-2.5-pro";
+const LAB_MODEL = "gemini-2.5-flash";
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
