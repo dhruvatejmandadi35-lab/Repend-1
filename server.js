@@ -17,10 +17,6 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 // (it rejects empty strings too). A real request will still fail with an auth
 // error if the key is genuinely missing — but the server boots.
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
-const geminiOpenAI = new OpenAI({
-  apiKey: process.env.GEMINI_API_KEY || "missing-gemini-key",
-  baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
-});
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -662,33 +658,35 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   // return html;
   // --- END GEMINI FALLBACK ---
 
-  // Gemini 2.5 Pro via OpenAI-compatible endpoint. Builds the text content
-  // array; attaches image if present.
-  const userContent = [{ type: "text", text: briefText }];
+  // Gemini 2.5 Pro via the native @google/generative-ai SDK. Build the parts
+  // array: text brief plus, if present, the mockup image as inline base64.
+  // (The OpenAI-compatible endpoint returns opaque "400 no body" errors, so we
+  // use the native SDK which surfaces the real error message.)
+  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
+  const parts = [{ text: briefText }];
   if (imageDataUrl) {
-    userContent.push({ type: "image_url", image_url: { url: imageDataUrl } });
+    const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
+    if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
   }
 
-  let response;
+  let res;
   try {
-    response = await geminiOpenAI.chat.completions.create({
-      model: LAB_MODEL,
+    res = await model.generateContent({
+      contents: [{ role: "user", parts }],
       // Pro is a thinking model: reasoning tokens count against this budget
       // before the HTML is written. Keep it high so a long animated lab file
       // isn't truncated mid-output.
-      max_tokens: 32000,
-      temperature: 0.7,
-      messages: [{ role: "user", content: userContent }],
+      generationConfig: { maxOutputTokens: 32000, temperature: 0.7 },
     });
   } catch (err) {
     console.error("GEMINI LAB GENERATION ERROR — model:", LAB_MODEL);
     console.error("  message:", err && err.message);
     console.error("  status:", err && (err.status || err.statusCode));
-    console.error("  body:", JSON.stringify(err && (err.error || err.response?.data || err), null, 2));
+    console.error("  details:", JSON.stringify(err && (err.errorDetails || err.response || err), null, 2));
     throw err;
   }
 
-  let html = response.choices[0].message.content.trim();
+  let html = res.response.text().trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
 }
