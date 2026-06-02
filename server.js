@@ -13,9 +13,12 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
   });
 } catch (_) { /* no .env file — fine in production */ }
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "" });
+// Placeholder keys avoid the SDK throwing at construction when a key is unset
+// (it rejects empty strings too). A real request will still fail with an auth
+// error if the key is genuinely missing — but the server boots.
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
 const geminiOpenAI = new OpenAI({
-  apiKey: process.env.GEMINI_API_KEY || "",
+  apiKey: process.env.GEMINI_API_KEY || "missing-gemini-key",
   baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
 });
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
