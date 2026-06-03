@@ -282,6 +282,7 @@ Return ONLY JSON with this exact shape:
     "stage_description": "Detailed paragraph: what is drawn on screen, what moves, what colors. Reference the visualMetaphor directly. Specific positions, sizes, what animates.",
     "interaction_description": "What the learner does step by step. What they touch first. What changes visually on each interaction. What the aha moment looks like on screen.",
     "aha_trigger": "The exact visual event that marks the aha moment. Be specific: what threshold, what visual change, what the learner sees right before vs. right after.",
+    "mission": "One action sentence starting with a verb — the specific thing the learner must accomplish in the sim. Starts with what to do, ends with the goal state. E.g. 'Drag the satellite to escape velocity and watch it break free of orbit.' or 'Find the interest rate that triples your money before year 30.' or 'Mark every carrier in the family tree until the inheritance pattern becomes clear.' Never use 'explore' or 'observe' — the learner must be trying to achieve something specific.",
     "success_condition": "Exact programmatic rule for completion.",
     "real_world_payoff": "One sentence: the real-world consequence the learner now understands."
   }
@@ -297,6 +298,7 @@ RULES:
 - reflection question must be answerable only AFTER interacting — not a definition lookup
 - do NOT include interaction_type, lab_type, or any format label anywhere in the JSON
 - prediction: phrased as a guess BEFORE interaction — about the aha moment. 2-4 options with plausible wrong answers a smart person would make before seeing the sim. correct must be verbatim one of the options.
+- mission: one action sentence, starts with a verb, names a specific goal state. NEVER "explore" or "observe". The learner must be trying to accomplish something.
 - interaction_palette: 2-3 entries. MUST include at least one non-slider type. Match type to the concept:
   • draggable — when POSITION matters (a body, a charge, an endpoint, a source). The thing the learner moves IS the variable.
   • click-spawn — when the learner should CREATE or TRIGGER an instance (fire a projectile, spawn a particle, inject energy, apply a force at a point).
@@ -495,6 +497,7 @@ RULES OF PRECEDENCE:
 ` : `You are given a behavioral brief below — the source of truth for what the lab does.`}
 
 TOPIC: ${design.topic}
+MISSION (show this prominently in Zone A — always visible while the learner plays): "${design.spec.mission || design.spec.success_condition}"
 LEARNING GOAL: ${design.spec.learning_goal}
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
 
@@ -579,7 +582,12 @@ REAL-WORLD PAYOFF (show on success): "${design.spec.real_world_payoff || ""}"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LAYOUT — TWO ZONES (non-negotiable):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• ZONE A — controls: compact panel. On mobile (width ≤ 500px) Zone A sits at the TOP as a horizontal strip, max 160px tall. On desktop Zone A sits on the LEFT, max 220px wide. Zone B fills all remaining space. Use CSS flex column on mobile, row on desktop. Zone A must NEVER overlap Zone B — set explicit widths/heights so they are cleanly separated.
+• MISSION BANNER: at the very top of Zone A, show the MISSION text in a styled box — copper/amber border, small label "YOUR MISSION", mission text in white. This stays visible the entire time. It is the first thing the learner reads when the sim loads. Example HTML:
+  <div style="background:rgba(212,165,116,0.08);border:1px solid rgba(212,165,116,0.4);border-radius:8px;padding:10px 12px;margin-bottom:12px">
+    <div style="font-size:0.62rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#D4A574;margin-bottom:4px">YOUR MISSION</div>
+    <div style="font-size:0.82rem;color:#F0F2F8;line-height:1.5">[mission text here]</div>
+  </div>
+• ZONE A — controls: compact panel below the mission banner. On mobile (width ≤ 500px) Zone A sits at the TOP as a horizontal strip, max 200px tall. On desktop Zone A sits on the LEFT, max 220px wide. Zone B fills all remaining space. Use CSS flex column on mobile, row on desktop. Zone A must NEVER overlap Zone B — set explicit widths/heights so they are cleanly separated.
 • ZONE B — result canvas: fills all remaining space after Zone A. The canvas element's width and height attributes must be set dynamically from its actual rendered pixel size (use ResizeObserver or set after layout). Never hardcode canvas.width/height to values that differ from the element's CSS size — that causes stretched/blank output.
 • Zone B must react to every Zone A change within 16ms. No submit button. No lag.
 • Zone B must have at least one live text readout of the OUTPUT value (not the control value). "Surface damage: HIGH" not "Friction: 0.9". The readout names the EFFECT, not the input. Draw it ON the canvas, not as an HTML element on top.
@@ -870,6 +878,7 @@ const server = http.createServer(async (req, res) => {
             verificationQuestion: design.verificationQuestion,
             learningGoal: design.spec.learning_goal,
             realWorldPayoff: design.spec.real_world_payoff,
+            mission: design.spec.mission || null,
             reflection: design.spec.reflection || null,
             prediction: design.spec.prediction || null,
             labHtml: html,

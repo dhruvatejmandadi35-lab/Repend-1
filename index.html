@@ -611,6 +611,38 @@
     .unlock-btn:active { transform: scale(0.97); }
 
     /* ── PLAY STEP ───────────────────────────── */
+    /* ── MISSION BANNER ─────────────────────────── */
+    #missionBanner {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      background: rgba(212,165,116,0.07);
+      border: 1.5px solid rgba(212,165,116,0.35);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 18px;
+    }
+    .mission-icon {
+      font-size: 1.3rem;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .mission-inner { flex: 1; }
+    .mission-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--copper);
+      margin-bottom: 5px;
+    }
+    .mission-text {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.5;
+    }
+
     .play-guide {
       font-size: 0.97rem;
       color: var(--muted);
@@ -796,6 +828,13 @@
         <div class="step-title">Explore — test your prediction</div>
       </div>
     </div>
+    <div id="missionBanner" style="display:none">
+      <div class="mission-icon">🎯</div>
+      <div class="mission-inner">
+        <div class="mission-label">Your Mission</div>
+        <div class="mission-text" id="missionText"></div>
+      </div>
+    </div>
     <div class="play-guide" id="playGuide">Explore freely. Was your prediction right?</div>
     <div class="sim-frame-wrap">
       <iframe id="simFrame" sandbox="allow-scripts" title="Interactive Lab"></iframe>
@@ -884,6 +923,8 @@
   const stepVerify      = document.getElementById("stepVerify");
   const explainDivider  = document.getElementById("explainDivider");
   const explainCard     = document.getElementById("explainCard");
+  const missionBanner   = document.getElementById("missionBanner");
+  const missionText     = document.getElementById("missionText");
 
   // ── State ─────────────────────────────────────────────────────────
   let currentPlan        = null;
@@ -952,14 +993,19 @@
   }
 
   function unlockLab() {
-    simDivider.style.display = "flex";
-    stepSim.style.display = "block";
-    simFrame.srcdoc = currentPlan.labHtml;
+    showSim();
     stepSim.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function unlockLabImmediate() {
-    // Fallback when there's no prediction data — skip straight to sim
+    showSim();
+  }
+
+  function showSim() {
+    if (currentPlan.mission) {
+      missionText.textContent = currentPlan.mission;
+      missionBanner.style.display = "flex";
+    }
     simDivider.style.display = "flex";
     stepSim.style.display = "block";
     simFrame.srcdoc = currentPlan.labHtml;
@@ -1224,6 +1270,7 @@
     userConfidence = null;
     predictionCorrect = null;
     simFrame.srcdoc = "";
+    missionBanner.style.display = "none";
     window.scrollTo({ top: 0, behavior: "smooth" });
     topicInput.focus();
   }
