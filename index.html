@@ -469,9 +469,14 @@
       margin-bottom: 6px;
     }
 
-    #againBtn {
-      display: none;
+    #endActions {
       margin-top: 28px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    #againBtn, #deeperBtn {
       background: none;
       border: 1.5px solid var(--border);
       color: var(--muted);
@@ -480,8 +485,15 @@
       font-size: 0.9rem;
       cursor: pointer;
       transition: all 0.15s;
+      font-family: inherit;
     }
     #againBtn:hover { border-color: var(--copper); color: var(--copper); }
+    #deeperBtn {
+      border-color: var(--blue);
+      color: var(--blue2);
+      font-weight: 700;
+    }
+    #deeperBtn:hover { background: rgba(59,130,246,0.1); }
 
     .step-divider {
       display: flex;
@@ -703,6 +715,27 @@
     }
     .pq-skip:hover, .pq-skipall:hover { color: var(--copper); }
     .pq-skipall { font-size: 0.78rem; opacity: 0.7; }
+
+    /* ── TOAST ──────────────────────────────────── */
+    #toast {
+      position: fixed;
+      left: 50%;
+      bottom: 32px;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(34,197,94,0.12);
+      border: 1.5px solid rgba(34,197,94,0.5);
+      color: #6EE7B7;
+      padding: 14px 24px;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      z-index: 300;
+      opacity: 0;
+      pointer-events: none;
+      backdrop-filter: blur(10px);
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
     /* ── MISSION BANNER ─────────────────────────── */
     #missionBanner {
@@ -968,7 +1001,10 @@
         <div id="payoffText"></div>
       </div>
     </div>
-    <button id="againBtn" onclick="reset()">← Try a different topic</button>
+    <div id="endActions" style="display:none">
+      <button id="deeperBtn" onclick="goDeeper()">Go deeper — harder version ↑</button>
+      <button id="againBtn" onclick="reset()">← Try a different topic</button>
+    </div>
   </div>
 
 </div>
@@ -1015,6 +1051,7 @@
   const payoffCard     = document.getElementById("payoffCard");
   const payoffText     = document.getElementById("payoffText");
   const againBtn       = document.getElementById("againBtn");
+  const endActions     = document.getElementById("endActions");
   const expandedTopicEl = document.getElementById("expandedTopic");
   const etTopic        = document.getElementById("etTopic");
   const etWhy          = document.getElementById("etWhy");
@@ -1043,6 +1080,7 @@
   let userPrediction     = null;   // text of option picked
   let userConfidence     = null;   // "Not sure" | "Fairly sure" | "Certain"
   let predictionCorrect  = null;   // boolean, set when option picked
+  let difficulty         = 0;      // 0 = normal; bumped by "Go deeper"
 
   // Learner profile — remembered for the session only (sessionStorage),
   // so we never ask twice in one sitting but a fresh tab starts clean.
@@ -1068,8 +1106,41 @@
   genBtn.addEventListener("click", startGenerate);
   checkBtn.addEventListener("click", checkAnswerText);
   window.addEventListener("message", (e) => {
-    if (e.data && e.data.type === "labCheck") lastLabResult = e.data.result;
+    if (e.data && e.data.type === "labCheck") {
+      lastLabResult = e.data.result;
+      if (e.data.result && e.data.result.ok) onMissionComplete();
+    }
   });
+
+  let missionCelebrated = false;
+  function onMissionComplete() {
+    if (missionCelebrated) return;
+    missionCelebrated = true;
+    if (missionBanner.style.display !== "none") {
+      missionBanner.style.borderColor = "rgba(34,197,94,0.5)";
+      missionBanner.style.background = "rgba(34,197,94,0.08)";
+      missionBanner.querySelector(".mission-icon").textContent = "✅";
+      const lbl = missionBanner.querySelector(".mission-label");
+      lbl.textContent = "Mission Complete";
+      lbl.style.color = "var(--green)";
+    }
+    showToast("🎯 Mission complete — now find out why it works");
+    const seenBtn = document.querySelector(".seen-btn");
+    if (seenBtn) {
+      seenBtn.style.borderColor = "var(--green)";
+      seenBtn.style.color = "#6EE7B7";
+      seenBtn.textContent = "✓ Mission done — explain it →";
+    }
+  }
+
+  function showToast(msg) {
+    let t = document.getElementById("toast");
+    if (!t) { t = document.createElement("div"); t.id = "toast"; document.body.appendChild(t); }
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove("show"), 3400);
+  }
 
   // Questionnaire control buttons
   document.getElementById("pqSkip").addEventListener("click", () => pqNext(null));
@@ -1221,9 +1292,17 @@
   }
 
   function showSim() {
+    missionCelebrated = false;
     if (currentPlan.mission) {
       missionText.textContent = currentPlan.mission;
       missionBanner.style.display = "flex";
+      // reset any prior "complete" styling
+      missionBanner.style.borderColor = "";
+      missionBanner.style.background = "";
+      missionBanner.querySelector(".mission-icon").textContent = "🎯";
+      const lbl = missionBanner.querySelector(".mission-label");
+      lbl.textContent = "Your Mission";
+      lbl.style.color = "";
     }
     simDivider.style.display = "flex";
     stepSim.style.display = "block";
@@ -1251,7 +1330,7 @@
     feedbackEl.style.display = "none";
     feedbackEl.className = "feedback";
     payoffCard.style.display = "none";
-    againBtn.style.display = "none";
+    endActions.style.display = "none";
 
     if (reflection && reflection.question && (reflection.options || []).length >= 2) {
       questionText.textContent = reflection.question;
@@ -1294,7 +1373,7 @@
           payoffText.textContent = currentPlan.realWorldPayoff;
           payoffCard.style.display = "block";
         }
-        againBtn.style.display = "block";
+        endActions.style.display = "flex";
       });
       quizOptions.appendChild(btn);
     });
@@ -1329,7 +1408,7 @@
       const response = await fetch("/plan-lab", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, profile: learnerProfile }),
+        body: JSON.stringify({ topic, profile: learnerProfile, difficulty }),
       });
       if (!response.ok) {
         const err = await response.json().catch(() => ({ error: "Request failed" }));
@@ -1373,7 +1452,7 @@
         const retry = await fetch("/plan-lab", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ topic, profile: learnerProfile }),
+          body: JSON.stringify({ topic, profile: learnerProfile, difficulty }),
         });
         if (!retry.ok) {
           const err = await retry.json().catch(() => ({ error: "Request failed" }));
@@ -1464,7 +1543,7 @@
         payoffText.textContent = currentPlan.realWorldPayoff;
         payoffCard.style.display = "block";
       }
-      againBtn.style.display = "block";
+      endActions.style.display = "flex";
     } catch (err) {
       feedbackPrefix.textContent = "Error";
       feedbackText.textContent = err.message;
@@ -1476,8 +1555,17 @@
     }
   }
 
+  // ── Go deeper — regenerate the same topic harder ───────────────────
+  function goDeeper() {
+    difficulty++;
+    // Keep the topic in the input (generate reads it) and re-run the pipeline.
+    // Skip the questionnaire — we already know the learner this session.
+    generate();
+  }
+
   // ── Reset ──────────────────────────────────────────────────────────
   function reset() {
+    difficulty = 0;
     experienceEl.style.display = "none";
     topicBadge.style.display = "none";
     errorBox.style.display = "none";

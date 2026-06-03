@@ -243,7 +243,10 @@ Write in plain, direct prose. Be specific to ${topic}. Do not use generic educat
   return res.choices[0].message.content.trim();
 }
 
-async function specFromThinking(topic, thinking, profText) {
+async function specFromThinking(topic, thinking, profText, difficulty) {
+  const diffNote = difficulty > 0
+    ? `\nDIFFICULTY: The learner already completed the basic version and asked to GO DEEPER (level ${difficulty}). Make this HARDER: add 1-2 more variables, introduce a second interacting effect or a subtler regime, ask a more demanding prediction and reflection question, and use a more advanced real-world scenario. Do NOT just rename the same lab — genuinely raise the conceptual depth.\n`
+    : "";
   const res = await openai.chat.completions.create({
     model: "gpt-4o",
     max_tokens: 2200,
@@ -337,7 +340,7 @@ NEVER mention the profile to the learner. Just shape the content. If no profile 
       },
       {
         role: "user",
-        content: `Topic: ${topic}\n\nReasoning:\n${thinking}\n${profText ? `\nLEARNER PROFILE (adapt the lab to this person):\n${profText}\n` : ""}\nNow produce the spec JSON.`,
+        content: `Topic: ${topic}\n\nReasoning:\n${thinking}\n${profText ? `\nLEARNER PROFILE (adapt the lab to this person):\n${profText}\n` : ""}${diffNote}\nNow produce the spec JSON.`,
       },
     ],
   });
@@ -754,9 +757,14 @@ TECHNICAL CONSTRAINTS:
 • A visible "Check Answer" button in Zone A.
 • requestAnimationFrame for all motion. pointerdown/move/up for drag.
 • On aha moment: golden glow burst (shadowBlur spike) on the key Zone B element.
-• On success: green wave across canvas + real_world_payoff card slides in.
-• window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success.
-• window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on wrong.
+• MISSION COMPLETE — when the learner satisfies the SUCCESS CONDITION, fire a real celebration, automatically (do not wait for the Check button — detect it live every frame):
+  - A confetti burst from the center of the canvas: spawn ~40 small colored rects/circles with random velocities and gravity, fading over ~1.2s. Colors: #3B82F6, #D4A574, #22C55E, #E8C49A.
+  - A green wave sweeping across the canvas.
+  - A "🎯 MISSION COMPLETE" banner sliding in at the top of Zone B for 2.5s.
+  - Fire this celebration ONCE per success (guard with a boolean flag); reset the flag if the learner leaves the success state so it can fire again.
+  - On the frame the success first triggers: window.parent.postMessage({ type:"labCheck", result:{ ok:true, score:1, total:1 } }, "*")
+• If the learner is far from the goal and presses Check: a gentle nudge (red shake on the readout, no harsh failure) and window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*").
+• Keep a visible "Check Answer" button in Zone A too, but the celebration must also trigger automatically the moment the success condition is met.
 
 DO NOT render any multiple-choice quiz, reflection question, or "verify your understanding" section inside this lab. The platform shows a separate quiz AFTER the lab. This lab is for HANDS-ON INTERACTION ONLY — manipulating controls and watching the result. Adding a quiz here would duplicate the platform's quiz. The "Check Answer" button checks whether the learner reached the success condition (e.g. produced the target orbit), NOT a multiple-choice answer.
 
@@ -869,13 +877,15 @@ const server = http.createServer(async (req, res) => {
           const rawTopic = data.topic.trim();
           const profile = data.profile || null;
           const profText = profileSummary(profile);
+          const difficulty = Math.max(0, Math.min(3, parseInt(data.difficulty, 10) || 0));
 
           send("expand", `Sharpening topic…`);
           const expanded = await expandTopic(rawTopic);
           const topic = expanded.topic;
           // Cache key includes the profile signature so a high-schooler and a
           // college student studying the same topic get their own lab variants.
-          const key = topicKey(topic) + "::" + profileSig(profile);
+          // Difficulty level is part of the key too — "Go deeper" gets a fresh lab.
+          const key = topicKey(topic) + "::" + profileSig(profile) + (difficulty ? "::d" + difficulty : "");
           send("expanded", `Building lab for: ${topic}`, { topic, why: expanded.why });
 
           // ── Cache hit: serve instantly, zero AI cost ──────────────────
@@ -891,7 +901,7 @@ const server = http.createServer(async (req, res) => {
           const thinking = await thinkAboutTopic(topic);
 
           send("design", "Translating insight into lab spec…");
-          const design = await specFromThinking(topic, thinking, profText);
+          const design = await specFromThinking(topic, thinking, profText, difficulty);
 
           send("labthink", "Thinking about how to build it…");
           const labThinking = await thinkAboutLab(design);
