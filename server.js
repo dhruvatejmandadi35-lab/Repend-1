@@ -198,7 +198,8 @@ async function expandTopic(rawTopic) {
 Return ONLY JSON:
 {
   "topic": "The sharpened topic. 3-10 words. Must be a CONCEPT with a surprising insight, not a skill or activity. Examples: 'Topspin: why a spinning tennis ball curves downward faster than gravity', 'Gradient Descent: why loss curves have valleys a model can slide down', 'Newton\\'s Second Law: why doubling mass halves acceleration for the same force'.",
-  "why": "One sentence: the specific aha moment this concept produces. E.g. 'The moment you see the ball curve MORE than expected is when you understand that spin changes the effective gravity on the ball.'"
+  "why": "One sentence: the specific aha moment this concept produces. E.g. 'The moment you see the ball curve MORE than expected is when you understand that spin changes the effective gravity on the ball.'",
+  "kind": "EXACTLY one of: 'simulation' or 'puzzle'. Choose 'simulation' when the concept is about CONTINUOUS CHANGE OVER TIME or physical motion driven by equations — things that move, grow, oscillate, orbit, accelerate (projectile motion, compound interest, orbital mechanics, wave interference, population growth). Choose 'puzzle' when the concept is about STRUCTURE, RELATIONSHIPS, or PATTERN RECOGNITION that the learner reads or builds rather than watches — things that are mostly static until clicked (pedigree inheritance, circuit diagrams, food webs, the periodic table, supply-demand equilibrium, classification trees, logic gates, chemical bonding). When in doubt: does understanding come from WATCHING something move (simulation) or from ARRANGING/READING a structure (puzzle)?"
 }
 
 RULES:
@@ -243,7 +244,10 @@ Write in plain, direct prose. Be specific to ${topic}. Do not use generic educat
   return res.choices[0].message.content.trim();
 }
 
-async function specFromThinking(topic, thinking, profText, difficulty) {
+async function specFromThinking(topic, thinking, profText, difficulty, kind) {
+  const kindNote = kind === "puzzle"
+    ? `\nLAB TYPE: PUZZLE / STRUCTURE. This concept is understood by ARRANGING or READING a structure, not by watching motion. The interaction_palette should favor draggable, click-spawn, and toggle-button — NOT sliders. The mission must be about reaching a correct configuration or identifying a pattern (e.g. 'Mark every carrier until the inheritance pattern is consistent', 'Wire the circuit so the bulb lights'). The aha_trigger is a moment of recognition when the structure clicks, not a threshold crossing. Do NOT force continuous animation into the spec.\n`
+    : `\nLAB TYPE: SIMULATION. This concept is understood by watching continuous change over time. Animated motion driven by the formulas is central.\n`;
   const diffNote = difficulty > 0
     ? `\nDIFFICULTY: The learner already completed the basic version and asked to GO DEEPER (level ${difficulty}). Make this HARDER: add 1-2 more variables, introduce a second interacting effect or a subtler regime, ask a more demanding prediction and reflection question, and use a more advanced real-world scenario. Do NOT just rename the same lab — genuinely raise the conceptual depth.\n`
     : "";
@@ -340,7 +344,7 @@ NEVER mention the profile to the learner. Just shape the content. If no profile 
       },
       {
         role: "user",
-        content: `Topic: ${topic}\n\nReasoning:\n${thinking}\n${profText ? `\nLEARNER PROFILE (adapt the lab to this person):\n${profText}\n` : ""}${diffNote}\nNow produce the spec JSON.`,
+        content: `Topic: ${topic}\n\nReasoning:\n${thinking}\n${kindNote}${profText ? `\nLEARNER PROFILE (adapt the lab to this person):\n${profText}\n` : ""}${diffNote}\nNow produce the spec JSON.`,
       },
     ],
   });
@@ -393,7 +397,7 @@ function normalizePrediction(design) {
 
 // Step 3 — reasons concretely about what to draw and how.
 // Output is a structured visual brief the coder can follow exactly.
-async function thinkAboutLab(design) {
+async function thinkAboutLab(design, kind) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}), range ${v.min}–${v.max}, default ${v.default}: ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES: ${v.regimes_note}` : ""}`)
     .join("\n");
@@ -402,8 +406,12 @@ async function thinkAboutLab(design) {
     .map(p => `  • [${p.type}] ${p.element} → ${p.effect}`)
     .join("\n");
 
-  const prompt = `You are a senior creative coder designing an interactive learning lab. You will produce a CONCRETE VISUAL BRIEF that another developer can implement directly in HTML Canvas 2D.
+  const kindBrief = kind === "puzzle"
+    ? `\nLAB TYPE: PUZZLE / STRUCTURE. The learner understands this by ARRANGING or READING a structure (a family tree, a circuit, a web of relationships), not by watching motion. Do NOT demand a constantly-moving element. Instead the canvas shows a clear structure the learner builds or marks by clicking/dragging. "Alive on load" means a clean, inviting, well-laid-out structure with subtle ambient motion (a gentle pulse on clickable nodes, a hover glow) — NOT a physics animation. The aha is when the arrangement becomes correct and the pattern is revealed (highlight it, connect it, light it up).\n`
+    : `\nLAB TYPE: SIMULATION. Continuous animated motion is central — the canvas must be alive and moving on load.\n`;
 
+  const prompt = `You are a senior creative coder designing an interactive learning lab. You will produce a CONCRETE VISUAL BRIEF that another developer can implement directly in HTML Canvas 2D.
+${kindBrief}
 TOPIC: ${design.topic}
 LEARNING GOAL: ${design.spec.learning_goal}
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
@@ -505,7 +513,8 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // NOTE: This step originally ran on Claude (claude-opus-4-7), then Gemini, then Vertex, then Ollama. Now uses OpenAI.
 // Change LAB_MODEL here to swap models.
 const LAB_MODEL = "gemini-2.5-flash";
-async function codeFromImageBrief(design, labThinking, imageDataUrl) {
+async function codeFromImageBrief(design, labThinking, imageDataUrl, kind) {
+  const isPuzzle = kind === "puzzle";
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
     .join("\n");
@@ -638,7 +647,18 @@ Zone B must show a DRAWN SIMULATION — actual shapes, motion, and physics drawn
 BAD (do not do): canvas showing only "Slip Rate: 3 cm/year\nFriction: 0.9\nSurface Damage: Low" as text on a grid
 GOOD: a canvas showing two tectonic plate layers (filled rectangles) sliding in opposite directions, a glowing stress indicator building up, seismic waves radiating outward when a threshold is crossed
 
+${isPuzzle ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INTERACTION REQUIREMENTS — THIS IS A PUZZLE/STRUCTURE LAB:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This concept is learned by ARRANGING or READING a structure, not by watching motion. Do NOT force a physics animation loop.
+• THE STRUCTURE IS THE STAR — draw the actual structure clearly: a pedigree tree of circles/squares, a circuit of components and wires, a food web of nodes and arrows. It fills the canvas and is readable at a glance.
+• CLICK / DRAG TO BUILD OR MARK — the core interaction is clicking nodes to change their state (affected/unaffected, on/off), dragging items into place, or connecting things. Each click gives immediate visual feedback.
+• LIVE STATUS READOUT — show the current interpretation as the learner edits: "Pattern: consistent with recessive" / "Circuit: open — bulb off". It updates on every click.
+• THE AHA IS RECOGNITION — when the structure reaches a correct/revealing configuration, make it unmistakable: highlight the path, light up the connection, draw a glowing outline around the pattern, flash the insight message.
+• SUBTLE AMBIENT MOTION ONLY — clickable nodes can gently pulse or glow on hover so the lab feels alive, but do NOT animate the whole scene with physics. Static-but-responsive is correct here.
+
+BAD: forcing planets to orbit in a lab about circuit diagrams just to satisfy an animation rule
+GOOD: a family tree where clicking each person toggles affected/carrier/unaffected, and the moment the carrier pattern is consistent, the inheritance path lights up copper` : `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ANIMATION & MOTION REQUIREMENTS (non-negotiable):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • ANIMATE THE CORE MECHANISM — the visual must show the concept's actual process in motion, not a static chart or decorative image. If the concept is about change over time or one-becoming-many, the user must literally watch that transformation happening on screen.
@@ -647,7 +667,7 @@ ANIMATION & MOTION REQUIREMENTS (non-negotiable):
 • MOTION + MEANINGFUL COLOR + SMOOTH TRANSITIONS — use animation, color that encodes information (hotter = redder, faster = brighter, more dangerous = more saturated), and smooth easing. The visual must feel alive, not like a labeled diagram.
 
 BAD: slider moves, a number updates, a bar changes height, nothing else happens
-GOOD: slider moves → particles accelerate, colors shift from cool to hot, a threshold is crossed and the entire visual snaps into a new regime with a visible burst
+GOOD: slider moves → particles accelerate, colors shift from cool to hot, a threshold is crossed and the entire visual snaps into a new regime with a visible burst`}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PEDAGOGY RULES (from research on effective learning sims — PhET):
@@ -661,7 +681,33 @@ PEDAGOGY RULES (from research on effective learning sims — PhET):
 • PRESET BUTTONS: add 2-3 small preset buttons in Zone A that jump to interesting regimes (e.g. "Circular", "Comet", "Crash") plus a "Reset" button. One tap puts the learner in a meaningful state.
 • IMPLICIT GUIDANCE: don't write "now drag the slider" instructions. Make the productive action obvious through layout and defaults. Controls look grabbable (clear handles, hover highlight).
 
+${isPuzzle ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PUZZLE ARCHITECTURE — CLICK-DRIVEN STATE, NOT A PHYSICS LOOP:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Build on this model. State changes happen on click/drag, then you re-evaluate and redraw. A light rAF loop is fine for hover glows, but the concept does NOT run on physics every frame.
+
+// 1. Model — the structure's data
+const nodes = [ { id:1, x:200, y:80, shape:'circle', state:'unaffected' }, /* ... */ ];
+const edges = [ { from:1, to:3 }, /* parent→child links */ ];
+
+// 2. On click: find the node hit, cycle its state, re-evaluate, redraw
+canvas.addEventListener('click', e => {
+  const {mx,my} = canvasPt(e);
+  const hit = nodes.find(n => Math.hypot(mx-n.x, my-n.y) < 22);
+  if (hit) { hit.state = nextState(hit.state); evaluate(); draw(); }
+});
+
+// 3. evaluate() — derive the live interpretation from the current structure
+function evaluate() {
+  // e.g. check whether the marked pattern is consistent with recessive inheritance
+  status = isConsistentRecessive(nodes, edges) ? 'recessive' : 'unclear';
+  if (status === 'recessive' && !solved) { solved = true; celebrate(); }
+}
+
+// 4. draw() — render edges, then nodes (colored by state), then the status readout + any highlight
+// 5. A light rAF loop ONLY for hover pulse / glow easing — the structure itself is event-driven.
+
+CRITICAL: the success condition is a CONFIGURATION being correct (the right nodes marked, the circuit closed, the web balanced), detected inside evaluate() after each click — not a physics threshold.` : `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PHYSICS SIMULATION ARCHITECTURE — MANDATORY PATTERN:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Your simulation MUST be built on this exact architecture. Do not draw static frames. Do not recalculate only on slider input. Physics runs every frame via requestAnimationFrame.
@@ -722,7 +768,7 @@ CRITICAL RULES FROM THIS ARCHITECTURE:
 • Slider values are read from the controls object INSIDE update(), every frame — a slider change takes effect on the very next frame with zero lag
 • The trail array accumulates real positions from the physics, not a decorative effect
 • Force arrows and field lines are computed from the same physics state, not drawn separately
-• Every regime the learner can reach (fast/slow, stable/unstable, crash/orbit/escape) is produced by the same physics equations — not by if/else branches that swap out different animations
+• Every regime the learner can reach (fast/slow, stable/unstable, crash/orbit/escape) is produced by the same physics equations — not by if/else branches that swap out different animations`}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TECHNICAL CONSTRAINTS:
@@ -751,8 +797,8 @@ TECHNICAL CONSTRAINTS:
 • VISUAL DEPTH — make it look alive, not flat:
   - Gradient backgrounds on canvas (createLinearGradient or createRadialGradient)
   - Glowing elements: draw a blurred shadow before the main shape (ctx.shadowBlur=20, ctx.shadowColor='#3B82F6')
-  - At least one element that is always animating (wave oscillating, particle moving, value counting) even before interaction
-  - Layered drawing: background grid/gradient first, then physics objects, then labels on top
+  - ${isPuzzle ? "A subtle ambient touch (hover glow on clickable nodes, a gentle pulse on the next logical click target) — NOT a full physics animation" : "At least one element that is always animating (wave oscillating, particle moving, value counting) even before interaction"}
+  - Layered drawing: background grid/gradient first, then ${isPuzzle ? "structure (edges then nodes)" : "physics objects"}, then labels on top
 • MINIMUM 2 interactive controls — never just one slider.
 • A visible "Check Answer" button in Zone A.
 • requestAnimationFrame for all motion. pointerdown/move/up for drag.
@@ -882,6 +928,7 @@ const server = http.createServer(async (req, res) => {
           send("expand", `Sharpening topic…`);
           const expanded = await expandTopic(rawTopic);
           const topic = expanded.topic;
+          const kind = expanded.kind === "puzzle" ? "puzzle" : "simulation";
           // Cache key includes the profile signature so a high-schooler and a
           // college student studying the same topic get their own lab variants.
           // Difficulty level is part of the key too — "Go deeper" gets a fresh lab.
@@ -901,10 +948,10 @@ const server = http.createServer(async (req, res) => {
           const thinking = await thinkAboutTopic(topic);
 
           send("design", "Translating insight into lab spec…");
-          const design = await specFromThinking(topic, thinking, profText, difficulty);
+          const design = await specFromThinking(topic, thinking, profText, difficulty, kind);
 
           send("labthink", "Thinking about how to build it…");
-          const labThinking = await thinkAboutLab(design);
+          const labThinking = await thinkAboutLab(design, kind);
 
           let imageDataUrl = null;
           if (process.env.USE_MOCKUP === "1") {
@@ -913,7 +960,7 @@ const server = http.createServer(async (req, res) => {
           }
 
           send("code", "Writing your lab…");
-          const html = await codeFromImageBrief(design, labThinking, imageDataUrl);
+          const html = await codeFromImageBrief(design, labThinking, imageDataUrl, kind);
 
           const labData = {
             topic: design.topic,
