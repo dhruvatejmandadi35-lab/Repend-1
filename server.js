@@ -272,6 +272,13 @@ Return ONLY JSON with this exact shape:
       "options": ["A: ...", "B: ...", "C: ...", "D: ..."],
       "correct": "B: ..."
     },
+    "interaction_palette": [
+      {
+        "type": "one of: slider | draggable | click-spawn | draw | toggle-button",
+        "element": "what specific thing the learner manipulates — name it concretely. E.g. 'planet: drag to set initial position', 'fire button: click to launch projectile', 'gravity toggle: flip gravity on/off'",
+        "effect": "what visually changes immediately when they use this interaction. E.g. 'orbit trail morphs from circle to ellipse as planet is dragged farther from center'"
+      }
+    ],
     "stage_description": "Detailed paragraph: what is drawn on screen, what moves, what colors. Reference the visualMetaphor directly. Specific positions, sizes, what animates.",
     "interaction_description": "What the learner does step by step. What they touch first. What changes visually on each interaction. What the aha moment looks like on screen.",
     "aha_trigger": "The exact visual event that marks the aha moment. Be specific: what threshold, what visual change, what the learner sees right before vs. right after.",
@@ -289,7 +296,13 @@ RULES:
 - the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
 - reflection question must be answerable only AFTER interacting — not a definition lookup
 - do NOT include interaction_type, lab_type, or any format label anywhere in the JSON
-- prediction: phrased as a guess BEFORE interaction — about the aha moment. 2-4 options with plausible wrong answers a smart person would make before seeing the sim. correct must be verbatim one of the options.`,
+- prediction: phrased as a guess BEFORE interaction — about the aha moment. 2-4 options with plausible wrong answers a smart person would make before seeing the sim. correct must be verbatim one of the options.
+- interaction_palette: 2-3 entries. MUST include at least one non-slider type. Match type to the concept:
+  • draggable — when POSITION matters (a body, a charge, an endpoint, a source). The thing the learner moves IS the variable.
+  • click-spawn — when the learner should CREATE or TRIGGER an instance (fire a projectile, spawn a particle, inject energy, apply a force at a point).
+  • draw — when the learner should trace or sketch (a path prediction, a force field, a wave shape).
+  • toggle-button — when a BINARY contrast reveals the concept (gravity on/off, damped vs undamped, before/after a threshold).
+  • slider — for smooth continuous quantities that don't map to a natural physical action. Limit to 1-2 sliders per lab.`,
       },
       {
         role: "user",
@@ -351,6 +364,10 @@ async function thinkAboutLab(design) {
     .map(v => `  • ${v.name} (${v.unit || ""}), range ${v.min}–${v.max}, default ${v.default}: ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES: ${v.regimes_note}` : ""}`)
     .join("\n");
 
+  const palette = (design.spec.interaction_palette || [])
+    .map(p => `  • [${p.type}] ${p.element} → ${p.effect}`)
+    .join("\n");
+
   const prompt = `You are a senior creative coder designing an interactive learning lab. You will produce a CONCRETE VISUAL BRIEF that another developer can implement directly in HTML Canvas 2D.
 
 TOPIC: ${design.topic}
@@ -359,6 +376,9 @@ VISUAL METAPHOR: "${design.spec.visualMetaphor}"
 
 VARIABLES:
 ${vars}
+
+REQUIRED INTERACTIONS (implement ALL of these — not just sliders):
+${palette || "  • at least one draggable or click-spawn interaction"}
 
 AHA MOMENT: ${design.spec.aha_trigger}
 
@@ -485,6 +505,59 @@ ${labThinking}
 
 VARIABLES THE LEARNER CONTROLS:
 ${vars}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUIRED INTERACTIONS — implement EVERY one of these:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${(design.spec.interaction_palette || []).map(p => `  [${p.type}] ${p.element} → ${p.effect}`).join("\n") || "  [draggable] at least one draggable object on canvas\n  [toggle-button] at least one toggle button"}
+
+INTERACTION CODE PATTERNS — use these exact patterns for each type:
+
+[slider] Standard HTML range input wired to controls object — already know how to do this.
+
+[draggable] Drag an object on the canvas:
+  let drag = null;
+  canvas.addEventListener('pointerdown', e => {
+    const {mx, my} = canvasPt(e);
+    if (Math.hypot(mx - state.obj.x, my - state.obj.y) < 24)
+      drag = { ox: state.obj.x - mx, oy: state.obj.y - my };
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const {mx, my} = canvasPt(e);
+    state.obj.x = mx + drag.ox; state.obj.y = my + drag.oy;
+  });
+  canvas.addEventListener('pointerup', () => drag = null);
+  function canvasPt(e) {
+    const r = canvas.getBoundingClientRect();
+    return { mx: (e.clientX-r.left)*(canvas.width/r.width), my: (e.clientY-r.top)*(canvas.height/r.height) };
+  }
+
+[click-spawn] Click canvas to fire or spawn an object:
+  canvas.addEventListener('click', e => {
+    const {mx, my} = canvasPt(e);
+    state.particles.push({ x: mx, y: my, vx: (Math.random()-0.5)*4, vy: -6, life: 1.0 });
+  });
+
+[draw] Freehand draw/trace on canvas:
+  let drawing = false;
+  canvas.addEventListener('pointerdown', e => { drawing = true; state.userPath = []; });
+  canvas.addEventListener('pointermove', e => {
+    if (!drawing) return;
+    const {mx, my} = canvasPt(e);
+    state.userPath.push({x: mx, y: my});
+  });
+  canvas.addEventListener('pointerup', () => { drawing = false; /* compare path to answer */ });
+
+[toggle-button] A styled HTML button that flips a boolean in controls:
+  const btn = document.getElementById('toggleBtn');
+  btn.addEventListener('click', () => {
+    controls.gravityOn = !controls.gravityOn;
+    btn.textContent = controls.gravityOn ? '🌍 Gravity ON' : '🚀 Gravity OFF';
+    btn.style.background = controls.gravityOn ? '#1e3a5f' : '#3a1e1e';
+  });
+
+CRITICAL: Do NOT make the canvas the only interaction surface. Zone A MUST have a mix of the above types — not just range inputs. If the spec calls for a draggable, the draggable is in Zone B (the canvas); toggle buttons go in Zone A.
 
 ${formulas ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMULAS — implement these EXACTLY in JS (no approximations):
