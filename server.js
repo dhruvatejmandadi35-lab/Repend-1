@@ -267,6 +267,11 @@ Return ONLY JSON with this exact shape:
       "correct": "B: it quadruples",
       "explanation": "Because wavelength ∝ 1/size², halving size means wavelength × 4."
     },
+    "prediction": {
+      "question": "One short falsifiable question phrased as 'What happens if you [specific action relating to the aha moment]?' This is asked BEFORE the learner touches the sim. E.g. 'If you double orbital speed from 5 to 10 km/s, what happens to the satellite?'",
+      "options": ["A: ...", "B: ...", "C: ...", "D: ..."],
+      "correct": "B: ..."
+    },
     "stage_description": "Detailed paragraph: what is drawn on screen, what moves, what colors. Reference the visualMetaphor directly. Specific positions, sizes, what animates.",
     "interaction_description": "What the learner does step by step. What they touch first. What changes visually on each interaction. What the aha moment looks like on screen.",
     "aha_trigger": "The exact visual event that marks the aha moment. Be specific: what threshold, what visual change, what the learner sees right before vs. right after.",
@@ -283,7 +288,8 @@ RULES:
 - rules MUST include at least one threshold that triggers the aha moment visually
 - the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
 - reflection question must be answerable only AFTER interacting — not a definition lookup
-- do NOT include interaction_type, lab_type, or any format label anywhere in the JSON`,
+- do NOT include interaction_type, lab_type, or any format label anywhere in the JSON
+- prediction: phrased as a guess BEFORE interaction — about the aha moment. 2-4 options with plausible wrong answers a smart person would make before seeing the sim. correct must be verbatim one of the options.`,
       },
       {
         role: "user",
@@ -293,6 +299,7 @@ RULES:
   });
   const parsed = JSON.parse(res.choices[0].message.content.trim());
   normalizeReflection(parsed);
+  normalizePrediction(parsed);
   return parsed;
 }
 
@@ -320,6 +327,21 @@ function normalizeReflection(design) {
   // No reliable match — drop the quiz rather than show a question with no
   // correct answer. Frontend falls back to free-text verify.
   design.spec.reflection = null;
+}
+
+function normalizePrediction(design) {
+  const p = design && design.spec && design.spec.prediction;
+  if (!p) return;
+  const opts = Array.isArray(p.options) ? p.options.map(o => String(o).trim()) : [];
+  p.options = opts;
+  if (opts.length < 2 || !p.question) { design.spec.prediction = null; return; }
+  const correct = String(p.correct == null ? "" : p.correct).trim();
+  if (opts.includes(correct)) { p.correct = correct; return; }
+  const strip = s => s.toLowerCase().replace(/^[a-d]\s*[:.)-]\s*/i, "").replace(/[^a-z0-9 ]/g, "").trim();
+  const target = strip(correct);
+  const hit = opts.find(o => strip(o) === target) || (target && opts.find(o => strip(o).includes(target)));
+  if (hit) { p.correct = hit; return; }
+  design.spec.prediction = null;
 }
 
 // Step 3 — reasons concretely about what to draw and how.
@@ -776,6 +798,7 @@ const server = http.createServer(async (req, res) => {
             learningGoal: design.spec.learning_goal,
             realWorldPayoff: design.spec.real_world_payoff,
             reflection: design.spec.reflection || null,
+            prediction: design.spec.prediction || null,
             labHtml: html,
           };
 

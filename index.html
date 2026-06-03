@@ -511,6 +511,164 @@
       color: var(--copper);
       font-weight: 600;
     }
+
+    /* ── PREDICT CARD ────────────────────────── */
+    #predictCard {
+      margin-top: 24px;
+      background: rgba(212,165,116,0.05);
+      border: 1.5px solid rgba(212,165,116,0.28);
+      border-radius: var(--r);
+      padding: 28px 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    #predictCard::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--copper), var(--blue));
+    }
+    .predict-eyebrow {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--copper);
+      margin-bottom: 14px;
+    }
+    .predict-question {
+      font-size: 1.08rem;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.6;
+      margin-bottom: 18px;
+    }
+    .predict-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+    .pred-opt {
+      background: var(--navy3);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 13px 18px;
+      font-size: 0.95rem;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.15s, background 0.15s, opacity 0.2s;
+      font-family: inherit;
+    }
+    .pred-opt:hover:not(:disabled) { border-color: var(--copper); background: rgba(212,165,116,0.07); }
+    .pred-opt.pred-picked {
+      border-color: var(--copper);
+      background: rgba(212,165,116,0.12);
+      color: var(--copper2);
+      font-weight: 600;
+    }
+    .pred-opt.pred-other { opacity: 0.38; }
+    .pred-opt:disabled { cursor: default; }
+
+    .confidence-row { margin-bottom: 22px; }
+    .conf-label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 10px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+    }
+    .conf-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .conf-chip {
+      background: var(--navy3);
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      padding: 7px 16px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .conf-chip:hover { border-color: var(--blue2); color: var(--text); }
+    .conf-chip.conf-picked {
+      border-color: var(--blue);
+      background: rgba(59,130,246,0.1);
+      color: var(--blue2);
+      font-weight: 600;
+    }
+
+    .unlock-btn {
+      background: linear-gradient(135deg, #c4894a, #a86c36);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 13px 32px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      font-family: inherit;
+    }
+    .unlock-btn:hover { opacity: 0.88; }
+    .unlock-btn:active { transform: scale(0.97); }
+
+    /* ── PLAY STEP ───────────────────────────── */
+    .play-guide {
+      font-size: 0.97rem;
+      color: var(--muted);
+      margin-bottom: 16px;
+      font-style: italic;
+      text-align: center;
+      padding: 0 4px;
+    }
+    .seen-wrap { text-align: center; margin-top: 22px; }
+    .seen-btn {
+      background: none;
+      border: 1.5px solid var(--border);
+      color: var(--muted);
+      border-radius: 10px;
+      padding: 12px 28px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .seen-btn:hover { border-color: var(--blue); color: var(--blue2); }
+
+    /* ── EXPLAIN CARD ────────────────────────── */
+    .explain-card {
+      padding: 22px 26px;
+      border-radius: 10px;
+      margin-bottom: 28px;
+      font-size: 0.95rem;
+      line-height: 1.75;
+    }
+    .explain-card.was-correct {
+      background: rgba(34,197,94,0.07);
+      border: 1px solid rgba(34,197,94,0.28);
+    }
+    .explain-card.was-wrong {
+      background: rgba(251,191,36,0.06);
+      border: 1px solid rgba(251,191,36,0.2);
+    }
+    .explain-verdict {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 1.1px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .explain-card.was-correct .explain-verdict { color: var(--green); }
+    .explain-card.was-wrong .explain-verdict { color: #F59E0B; }
+    .explain-pred-echo {
+      display: inline-block;
+      font-style: italic;
+      padding: 2px 9px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      font-size: 0.88rem;
+    }
+    .was-correct .explain-pred-echo { background: rgba(34,197,94,0.14); color: #6EE7B7; }
+    .was-wrong .explain-pred-echo { background: rgba(251,191,36,0.14); color: #FDE68A; }
+    .explain-body { color: #C8D4E8; line-height: 1.8; }
   </style>
 </head>
 <body>
@@ -596,48 +754,73 @@
 
 <div id="experience">
 
+  <!-- STEP 1: Read & Predict -->
   <div id="stepScenario">
     <div class="step-header">
       <div class="step-num">1</div>
       <div>
         <div class="step-label">Step 1 of 3</div>
-        <div class="step-title">Why this matters</div>
+        <div class="step-title">Read &amp; Predict</div>
       </div>
     </div>
     <div class="scenario-card">
       <div id="scenarioText"></div>
       <div class="goal-pill" id="goalPill"></div>
     </div>
+
+    <!-- Prediction card — must commit before sim unlocks -->
+    <div id="predictCard">
+      <div class="predict-eyebrow">🔮 Before you touch the sim — make a prediction</div>
+      <div id="predictQuestion" class="predict-question"></div>
+      <div id="predictOptions" class="predict-options"></div>
+      <div id="confidenceRow" class="confidence-row" style="display:none">
+        <div class="conf-label">How confident are you?</div>
+        <div class="conf-chips">
+          <button class="conf-chip" onclick="pickConfidence('Not sure')">🤔 Not sure</button>
+          <button class="conf-chip" onclick="pickConfidence('Fairly sure')">👍 Fairly sure</button>
+          <button class="conf-chip" onclick="pickConfidence('Certain')">🎯 Certain</button>
+        </div>
+      </div>
+      <button id="unlockBtn" class="unlock-btn" style="display:none" onclick="unlockLab()">Let's test it →</button>
+    </div>
   </div>
 
-  <div class="step-divider"><span>Interactive lab</span></div>
+  <div id="simDivider" class="step-divider" style="display:none"><span>Interactive simulation</span></div>
 
-  <div id="stepSim">
+  <!-- STEP 2: Explore -->
+  <div id="stepSim" style="display:none">
     <div class="step-header">
       <div class="step-num">2</div>
       <div>
         <div class="step-label">Step 2 of 3</div>
-        <div class="step-title">Interact with it</div>
+        <div class="step-title">Explore — test your prediction</div>
       </div>
     </div>
+    <div class="play-guide" id="playGuide">Explore freely. Was your prediction right?</div>
     <div class="sim-frame-wrap">
       <iframe id="simFrame" sandbox="allow-scripts" title="Interactive Lab"></iframe>
     </div>
+    <div class="seen-wrap">
+      <button class="seen-btn" onclick="showExplain()">I've seen enough — explain it →</button>
+    </div>
   </div>
 
-  <div class="step-divider"><span>Verify your understanding</span></div>
+  <div id="explainDivider" class="step-divider" style="display:none"><span>What actually happened</span></div>
 
-  <div id="stepVerify">
+  <!-- STEP 3: Understand -->
+  <div id="stepVerify" style="display:none">
     <div class="step-header">
       <div class="step-num">3</div>
       <div>
         <div class="step-label">Step 3 of 3</div>
-        <div class="step-title">Show what you discovered</div>
+        <div class="step-title">Understand why</div>
       </div>
     </div>
     <div class="verify-card">
+      <!-- Personalized explanation referencing their prediction -->
+      <div id="explainCard" class="explain-card" style="display:none"></div>
+      <!-- Reflection quiz -->
       <div id="questionText"></div>
-      <!-- Multi-choice quiz (shown when reflection data available) -->
       <div id="quizOptions" class="quiz-options" style="display:none"></div>
       <!-- Fallback text verify -->
       <div id="textVerify" style="display:none">
@@ -659,53 +842,66 @@
 </div>
 
 <script>
-  const topicInput   = document.getElementById("topicInput");
-  const genBtn       = document.getElementById("genBtn");
-  const loadingEl    = document.getElementById("loading");
-  const errorBox     = document.getElementById("errorBox");
-  const heroSection  = document.getElementById("heroSection");
-  const experienceEl = document.getElementById("experience");
-  const topicBadge   = document.getElementById("topicBadge");
+  // ── DOM refs ──────────────────────────────────────────────────────
+  const topicInput     = document.getElementById("topicInput");
+  const genBtn         = document.getElementById("genBtn");
+  const loadingEl      = document.getElementById("loading");
+  const errorBox       = document.getElementById("errorBox");
+  const heroSection    = document.getElementById("heroSection");
+  const experienceEl   = document.getElementById("experience");
+  const topicBadge     = document.getElementById("topicBadge");
   const topicBadgeText = document.getElementById("topicBadgeText");
-  const scenarioText = document.getElementById("scenarioText");
-  const goalPill     = document.getElementById("goalPill");
-  const simFrame     = document.getElementById("simFrame");
-  const questionText = document.getElementById("questionText");
-  const quizOptions  = document.getElementById("quizOptions");
-  const textVerify   = document.getElementById("textVerify");
-  const answerInput  = document.getElementById("answerInput");
-  const checkBtn     = document.getElementById("checkBtn");
-  const feedbackEl   = document.getElementById("feedback");
+  const scenarioText   = document.getElementById("scenarioText");
+  const goalPill       = document.getElementById("goalPill");
+  const simFrame       = document.getElementById("simFrame");
+  const questionText   = document.getElementById("questionText");
+  const quizOptions    = document.getElementById("quizOptions");
+  const textVerify     = document.getElementById("textVerify");
+  const answerInput    = document.getElementById("answerInput");
+  const checkBtn       = document.getElementById("checkBtn");
+  const feedbackEl     = document.getElementById("feedback");
   const feedbackPrefix = document.getElementById("feedbackPrefix");
-  const feedbackText = document.getElementById("feedbackText");
-  const payoffCard   = document.getElementById("payoffCard");
-  const payoffText   = document.getElementById("payoffText");
-  const againBtn     = document.getElementById("againBtn");
-
+  const feedbackText   = document.getElementById("feedbackText");
+  const payoffCard     = document.getElementById("payoffCard");
+  const payoffText     = document.getElementById("payoffText");
+  const againBtn       = document.getElementById("againBtn");
   const expandedTopicEl = document.getElementById("expandedTopic");
-  const etTopic         = document.getElementById("etTopic");
-  const etWhy           = document.getElementById("etWhy");
-
-  const stageThink    = document.getElementById("stageThink");
-  const stageDesign   = document.getElementById("stageDesign");
-  const stageLabThink = document.getElementById("stageLabThink");
-  const stageImage    = document.getElementById("stageImage");
-  const stageCode     = document.getElementById("stageCode");
+  const etTopic        = document.getElementById("etTopic");
+  const etWhy          = document.getElementById("etWhy");
+  const stageThink     = document.getElementById("stageThink");
+  const stageDesign    = document.getElementById("stageDesign");
+  const stageLabThink  = document.getElementById("stageLabThink");
+  const stageImage     = document.getElementById("stageImage");
+  const stageCode      = document.getElementById("stageCode");
   const stageThinkText = document.getElementById("stageThinkText");
+  const predictCard    = document.getElementById("predictCard");
+  const predictQuestion = document.getElementById("predictQuestion");
+  const predictOptions  = document.getElementById("predictOptions");
+  const confidenceRow   = document.getElementById("confidenceRow");
+  const unlockBtn       = document.getElementById("unlockBtn");
+  const stepSim         = document.getElementById("stepSim");
+  const simDivider      = document.getElementById("simDivider");
+  const stepVerify      = document.getElementById("stepVerify");
+  const explainDivider  = document.getElementById("explainDivider");
+  const explainCard     = document.getElementById("explainCard");
 
-  let currentPlan = null;
-  let lastLabResult = null;
+  // ── State ─────────────────────────────────────────────────────────
+  let currentPlan        = null;
+  let lastLabResult      = null;
+  let userPrediction     = null;   // text of option picked
+  let userConfidence     = null;   // "Not sure" | "Fairly sure" | "Certain"
+  let predictionCorrect  = null;   // boolean, set when option picked
 
+  // ── Setup ─────────────────────────────────────────────────────────
   function setTopic(t) { topicInput.value = t; topicInput.focus(); }
-
   topicInput.addEventListener("keydown", (e) => { if (e.key === "Enter") generate(); });
   genBtn.addEventListener("click", generate);
   checkBtn.addEventListener("click", checkAnswerText);
-
   window.addEventListener("message", (e) => {
     if (e.data && e.data.type === "labCheck") lastLabResult = e.data.result;
   });
 
+  // ── Loading stage indicator ────────────────────────────────────────
   function setStage(name) {
     const map = { think: stageThink, design: stageDesign, labthink: stageLabThink, image: stageImage, code: stageCode };
     Object.values(map).forEach(el => el.classList.remove("active"));
@@ -716,6 +912,98 @@
     order.slice(0, idx).forEach(s => { if (map[s]) { map[s].classList.remove("active"); map[s].classList.add("done"); } });
   }
 
+  // ── Predict step ──────────────────────────────────────────────────
+  function renderPrediction(prediction) {
+    if (!prediction || !prediction.question || (prediction.options || []).length < 2) {
+      // No valid prediction — hide the card and go straight to sim mode
+      predictCard.style.display = "none";
+      unlockLabImmediate();
+      return;
+    }
+    predictQuestion.textContent = prediction.question;
+    predictOptions.innerHTML = "";
+    prediction.options.forEach(opt => {
+      const btn = document.createElement("button");
+      btn.className = "pred-opt";
+      btn.textContent = opt;
+      btn.addEventListener("click", () => pickPrediction(opt, prediction.correct));
+      predictOptions.appendChild(btn);
+    });
+  }
+
+  function pickPrediction(opt, correct) {
+    userPrediction = opt;
+    predictionCorrect = (opt === correct);
+    document.querySelectorAll(".pred-opt").forEach(b => {
+      b.disabled = true;
+      b.classList.add(b.textContent === opt ? "pred-picked" : "pred-other");
+    });
+    confidenceRow.style.display = "block";
+    confidenceRow.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function pickConfidence(conf) {
+    userConfidence = conf;
+    document.querySelectorAll(".conf-chip").forEach(b => {
+      b.classList.toggle("conf-picked", b.textContent.includes(conf.split(" ").slice(1).join(" ")));
+    });
+    unlockBtn.style.display = "block";
+    unlockBtn.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function unlockLab() {
+    simDivider.style.display = "flex";
+    stepSim.style.display = "block";
+    simFrame.srcdoc = currentPlan.labHtml;
+    stepSim.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function unlockLabImmediate() {
+    // Fallback when there's no prediction data — skip straight to sim
+    simDivider.style.display = "flex";
+    stepSim.style.display = "block";
+    simFrame.srcdoc = currentPlan.labHtml;
+  }
+
+  // ── Explain step ──────────────────────────────────────────────────
+  function showExplain() {
+    explainDivider.style.display = "flex";
+    stepVerify.style.display = "block";
+
+    // Build personalized explanation
+    const reflection = currentPlan.reflection;
+    if (userPrediction && reflection && reflection.explanation) {
+      const correct = predictionCorrect;
+      explainCard.className = "explain-card " + (correct ? "was-correct" : "was-wrong");
+      explainCard.innerHTML =
+        `<div class="explain-verdict">${correct ? "✓ Your prediction was right" : "✗ Not quite — here's what really happened"}</div>` +
+        `<div class="explain-pred-echo">You predicted: "${userPrediction}"</div>` +
+        `<div class="explain-body">${reflection.explanation}</div>`;
+      explainCard.style.display = "block";
+    }
+
+    // Show reflection quiz (below the explanation)
+    feedbackEl.style.display = "none";
+    feedbackEl.className = "feedback";
+    payoffCard.style.display = "none";
+    againBtn.style.display = "none";
+
+    if (reflection && reflection.question && (reflection.options || []).length >= 2) {
+      questionText.textContent = reflection.question;
+      quizOptions.style.display = "flex";
+      textVerify.style.display = "none";
+      renderQuiz(reflection);
+    } else {
+      questionText.textContent = currentPlan.verificationQuestion;
+      quizOptions.style.display = "none";
+      textVerify.style.display = "block";
+      answerInput.value = "";
+    }
+
+    stepVerify.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ── Reflection quiz ────────────────────────────────────────────────
   function renderQuiz(reflection) {
     quizOptions.innerHTML = "";
     const options = reflection.options || [];
@@ -725,22 +1013,18 @@
       btn.className = "quiz-option";
       btn.textContent = opt;
       btn.addEventListener("click", () => {
-        // Disable all after pick
         quizOptions.querySelectorAll(".quiz-option").forEach(b => b.disabled = true);
         const isCorrect = opt === correct;
         btn.classList.add(isCorrect ? "correct-pick" : "wrong-pick");
         if (!isCorrect) {
-          // Highlight correct
           quizOptions.querySelectorAll(".quiz-option").forEach(b => {
             if (b.textContent === correct) b.classList.add("reveal-correct");
           });
         }
-        // Show explanation
         feedbackPrefix.textContent = isCorrect ? "✓ Correct" : "Not quite";
         feedbackText.textContent = reflection.explanation || "";
         feedbackEl.className = "feedback " + (isCorrect ? "correct" : "wrong");
         feedbackEl.style.display = "block";
-        // Show payoff
         if (currentPlan.realWorldPayoff) {
           payoffText.textContent = currentPlan.realWorldPayoff;
           payoffCard.style.display = "block";
@@ -751,6 +1035,7 @@
     });
   }
 
+  // ── Main generate ──────────────────────────────────────────────────
   async function generate() {
     const topic = topicInput.value.trim();
     if (!topic) { topicInput.focus(); return; }
@@ -770,13 +1055,17 @@
     stageThinkText.textContent = `Reasoning about "${topic}"…`;
     setStage("think");
 
+    // Reset learn-state
+    userPrediction = null;
+    userConfidence = null;
+    predictionCorrect = null;
+
     try {
       const response = await fetch("/plan-lab", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic }),
       });
-
       if (!response.ok) {
         const err = await response.json().catch(() => ({ error: "Request failed" }));
         throw new Error(err.error || "Request failed");
@@ -791,14 +1080,11 @@
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-
         const lines = buffer.split("\n");
         buffer = lines.pop();
-
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const event = JSON.parse(line.slice(6));
-
           if (event.stage === "expanded") {
             etTopic.textContent = event.data.topic;
             etWhy.textContent = event.data.why;
@@ -815,8 +1101,7 @@
         }
       }
 
-      // One automatic retry if the stream completed without a result (timeout /
-      // transient empty response). Resets UI stage indicators then tries again.
+      // One automatic retry on empty response
       if (!result) {
         console.warn("No result on first attempt — retrying once...");
         setStage("think");
@@ -859,31 +1144,21 @@
       scenarioText.textContent = result.scenario;
       goalPill.textContent = result.learningGoal || "";
 
-      // Step 3 — quiz or fallback
-      feedbackEl.style.display = "none";
-      feedbackEl.className = "feedback";
-      payoffCard.style.display = "none";
-      againBtn.style.display = "none";
-
-      if (result.reflection && result.reflection.question && (result.reflection.options || []).length >= 2) {
-        questionText.textContent = result.reflection.question;
-        quizOptions.style.display = "flex";
-        textVerify.style.display = "none";
-        renderQuiz(result.reflection);
-      } else {
-        // Fallback: AI text verify
-        questionText.textContent = result.verificationQuestion;
-        quizOptions.style.display = "none";
-        textVerify.style.display = "block";
-        answerInput.value = "";
-      }
+      // Reset sim and verify steps (hidden until learner unlocks)
+      stepSim.style.display = "none";
+      simDivider.style.display = "none";
+      stepVerify.style.display = "none";
+      explainDivider.style.display = "none";
+      explainCard.style.display = "none";
+      simFrame.srcdoc = "";
 
       loadingEl.style.display = "none";
       topicBadge.style.display = "block";
       experienceEl.style.display = "block";
       experienceEl.scrollIntoView({ behavior: "smooth", block: "start" });
 
-      simFrame.srcdoc = result.labHtml;
+      // Wire up prediction step (or auto-unlock if no prediction data)
+      renderPrediction(result.prediction);
 
     } catch (err) {
       loadingEl.style.display = "none";
@@ -896,14 +1171,13 @@
     }
   }
 
+  // ── Text verify fallback ───────────────────────────────────────────
   async function checkAnswerText() {
     const answer = answerInput.value.trim();
     if (!answer || !currentPlan) return;
-
     checkBtn.disabled = true;
     checkBtn.textContent = "Checking…";
     feedbackEl.style.display = "none";
-
     try {
       const res = await fetch("/verify", {
         method: "POST",
@@ -917,7 +1191,6 @@
         }),
       });
       const data = await res.json();
-
       feedbackPrefix.textContent = data.correct ? "✓ Correct" : "Not quite";
       feedbackText.textContent = data.feedback;
       feedbackEl.className = "feedback " + (data.correct ? "correct" : "wrong");
@@ -938,6 +1211,7 @@
     }
   }
 
+  // ── Reset ──────────────────────────────────────────────────────────
   function reset() {
     experienceEl.style.display = "none";
     topicBadge.style.display = "none";
@@ -946,6 +1220,9 @@
     topicInput.value = "";
     currentPlan = null;
     lastLabResult = null;
+    userPrediction = null;
+    userConfidence = null;
+    predictionCorrect = null;
     simFrame.srcdoc = "";
     window.scrollTo({ top: 0, behavior: "smooth" });
     topicInput.focus();
