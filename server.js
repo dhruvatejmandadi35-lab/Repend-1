@@ -527,6 +527,87 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // NOTE: This step originally ran on Claude (claude-opus-4-7), then Gemini, then Vertex, then Ollama. Now uses OpenAI.
 // Change LAB_MODEL here to swap models.
 const LAB_MODEL = "gemini-3.5-flash";
+
+// Injected into every generated lab HTML. Two guarantees the model can't be
+// trusted to provide itself:
+//  1. canvasFix — sizes every <canvas> to its CSS box so it never renders blank
+//  2. errorReporter — catches any runtime error and postMessages it to the
+//     parent so the platform can self-repair instead of showing a blank screen
+function injectLabRuntime(html) {
+  const runtime = `
+<script>
+(function(){
+  function fixCanvases(){
+    document.querySelectorAll("canvas").forEach(function(c){
+      var r = c.getBoundingClientRect();
+      if(r.width > 0 && r.height > 0){
+        if(c.width !== Math.round(r.width) || c.height !== Math.round(r.height)){
+          c.width  = Math.round(r.width);
+          c.height = Math.round(r.height);
+        }
+      }
+    });
+  }
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", function(){ requestAnimationFrame(fixCanvases); });
+  } else {
+    requestAnimationFrame(fixCanvases);
+  }
+  window.addEventListener("resize", fixCanvases);
+  if(typeof MutationObserver !== "undefined"){
+    new MutationObserver(fixCanvases).observe(document.documentElement, {childList:true,subtree:true});
+  }
+
+  // Report the first runtime error to the parent so it can repair the lab.
+  var reported = false;
+  function report(msg, src, line, col){
+    if(reported) return;
+    reported = true;
+    try {
+      window.parent.postMessage({
+        type: "labError",
+        error: { message: String(msg||"Unknown error"), line: line||0, col: col||0 }
+      }, "*");
+    } catch(_){}
+  }
+  window.addEventListener("error", function(e){
+    report(e.message, e.filename, e.lineno, e.colno);
+  });
+  window.addEventListener("unhandledrejection", function(e){
+    report((e.reason && e.reason.message) || e.reason || "Unhandled promise rejection", "", 0, 0);
+  });
+})();
+<\/script>`;
+
+  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, runtime + "</head>");
+  if (/<body[^>]*>/i.test(html)) return html.replace(/(<body[^>]*>)/i, "$1" + runtime);
+  return runtime + html;
+}
+
+// Asks the model to fix a specific runtime error in already-generated lab HTML,
+// returning the full corrected document (with runtime re-injected).
+async function repairLab(html, errorMessage) {
+  const prompt = `You generated this interactive HTML lab, but it throws a runtime JavaScript error that leaves the screen blank.
+
+THE ERROR:
+${errorMessage}
+
+THE FULL CURRENT HTML:
+${html}
+
+Fix the bug that causes this error. Common causes: a variable used but never declared (e.g. referencing "gap" without defining it), a typo in a variable name, calling a function before it's defined, or reading a property of null.
+
+Return the COMPLETE corrected HTML document — the entire file, not a diff and not a snippet. Do not change the design, layout, or behavior beyond what's needed to fix the error. Output ONLY the HTML, no markdown fences, no commentary.`;
+
+  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
+  const res = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: 32000, temperature: 0.2 },
+  });
+  let fixed = res.response.text().trim();
+  fixed = fixed.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  return injectLabRuntime(fixed);
+}
 async function codeFromImageBrief(design, labThinking, imageDataUrl, kind) {
   const isPuzzle = kind === "puzzle";
   const vars = (design.spec.variables || [])
@@ -903,45 +984,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
 
   let html = res.response.text().trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
-
-  // Guarantee every canvas is sized to its CSS layout box before any drawing starts.
-  // The model often forgets or does it wrong; this injected script fixes it
-  // unconditionally for ALL canvas elements the moment the DOM is ready.
-  const canvasFix = `
-<script>
-(function(){
-  function fixCanvases(){
-    document.querySelectorAll("canvas").forEach(function(c){
-      var r = c.getBoundingClientRect();
-      if(r.width > 0 && r.height > 0){
-        if(c.width !== Math.round(r.width) || c.height !== Math.round(r.height)){
-          c.width  = Math.round(r.width);
-          c.height = Math.round(r.height);
-        }
-      }
-    });
-  }
-  // Run once after layout, then watch for any late-mounted canvases
-  if(document.readyState === "loading"){
-    document.addEventListener("DOMContentLoaded", function(){ requestAnimationFrame(fixCanvases); });
-  } else {
-    requestAnimationFrame(fixCanvases);
-  }
-  // Also re-fix on resize so fullscreen/mobile don't break
-  window.addEventListener("resize", fixCanvases);
-  // Watch for canvases added after initial render
-  if(typeof MutationObserver !== "undefined"){
-    new MutationObserver(fixCanvases).observe(document.documentElement, {childList:true,subtree:true});
-  }
-})();
-<\/script>`;
-
-  // Inject just before </head>; fall back to prepending if no head tag
-  if (/<\/head>/i.test(html)) {
-    html = html.replace(/<\/head>/i, canvasFix + "</head>");
-  } else {
-    html = canvasFix + html;
-  }
+  html = injectLabRuntime(html);
 
   return html;
 }
@@ -1078,6 +1121,17 @@ const server = http.createServer(async (req, res) => {
           const result = await analyzeImage(image, question);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ description: result }));
+
+        } else if (req.url === "/repair-lab") {
+          const { html, error } = data;
+          if (!html || !error) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "html and error are required" }));
+            return;
+          }
+          const fixed = await repairLab(html, error);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ labHtml: fixed }));
 
         } else {
           res.writeHead(404); res.end("Not found");

@@ -1105,12 +1105,41 @@
   topicInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startGenerate(); });
   genBtn.addEventListener("click", startGenerate);
   checkBtn.addEventListener("click", checkAnswerText);
+  let repairAttempts = 0;
   window.addEventListener("message", (e) => {
-    if (e.data && e.data.type === "labCheck") {
+    if (!e.data) return;
+    if (e.data.type === "labCheck") {
       lastLabResult = e.data.result;
       if (e.data.result && e.data.result.ok) onMissionComplete();
+    } else if (e.data.type === "labError") {
+      handleLabError(e.data.error);
     }
   });
+
+  async function handleLabError(err) {
+    if (!currentPlan || !currentPlan.labHtml) return;
+    if (repairAttempts >= 2) {
+      showToast("⚠️ This sim has a bug we couldn't auto-fix. Try regenerating.");
+      return;
+    }
+    repairAttempts++;
+    showToast("🔧 Fixing the simulation…");
+    try {
+      const r = await fetch("/repair-lab", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ html: currentPlan.labHtml, error: (err && err.message) || "Unknown error" }),
+      });
+      if (!r.ok) throw new Error("repair failed");
+      const data = await r.json();
+      if (data.labHtml) {
+        currentPlan.labHtml = data.labHtml;
+        simFrame.srcdoc = data.labHtml; // reload with fix; reporter re-arms in fresh frame
+      }
+    } catch (_) {
+      showToast("⚠️ Couldn't auto-fix the simulation. Try regenerating.");
+    }
+  }
 
   let missionCelebrated = false;
   function onMissionComplete() {
@@ -1306,6 +1335,7 @@
     }
     simDivider.style.display = "flex";
     stepSim.style.display = "block";
+    repairAttempts = 0;
     simFrame.srcdoc = currentPlan.labHtml;
   }
 
