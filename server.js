@@ -526,7 +526,7 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 //
 // NOTE: This step originally ran on Claude (claude-opus-4-7), then Gemini, then Vertex, then Ollama. Now uses OpenAI.
 // Change LAB_MODEL here to swap models.
-const LAB_MODEL = "gemini-2.5-flash";
+const LAB_MODEL = "gemini-3.5-flash";
 async function codeFromImageBrief(design, labThinking, imageDataUrl, kind) {
   const isPuzzle = kind === "puzzle";
   const vars = (design.spec.variables || [])
