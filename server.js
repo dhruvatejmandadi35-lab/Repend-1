@@ -903,6 +903,46 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
 
   let html = res.response.text().trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+
+  // Guarantee every canvas is sized to its CSS layout box before any drawing starts.
+  // The model often forgets or does it wrong; this injected script fixes it
+  // unconditionally for ALL canvas elements the moment the DOM is ready.
+  const canvasFix = `
+<script>
+(function(){
+  function fixCanvases(){
+    document.querySelectorAll("canvas").forEach(function(c){
+      var r = c.getBoundingClientRect();
+      if(r.width > 0 && r.height > 0){
+        if(c.width !== Math.round(r.width) || c.height !== Math.round(r.height)){
+          c.width  = Math.round(r.width);
+          c.height = Math.round(r.height);
+        }
+      }
+    });
+  }
+  // Run once after layout, then watch for any late-mounted canvases
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", function(){ requestAnimationFrame(fixCanvases); });
+  } else {
+    requestAnimationFrame(fixCanvases);
+  }
+  // Also re-fix on resize so fullscreen/mobile don't break
+  window.addEventListener("resize", fixCanvases);
+  // Watch for canvases added after initial render
+  if(typeof MutationObserver !== "undefined"){
+    new MutationObserver(fixCanvases).observe(document.documentElement, {childList:true,subtree:true});
+  }
+})();
+<\/script>`;
+
+  // Inject just before </head>; fall back to prepending if no head tag
+  if (/<\/head>/i.test(html)) {
+    html = html.replace(/<\/head>/i, canvasFix + "</head>");
+  } else {
+    html = canvasFix + html;
+  }
+
   return html;
 }
 
