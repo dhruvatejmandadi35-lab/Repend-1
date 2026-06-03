@@ -27,6 +27,28 @@ function topicKey(topic) {
   return topic.toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
+// Build a human-readable learner profile summary for prompt injection.
+// Returns "" when no meaningful answers were given (learner skipped all).
+function profileSummary(profile) {
+  if (!profile || typeof profile !== "object") return "";
+  const parts = [];
+  if (profile.level)          parts.push(`Level: ${profile.level}`);
+  if (profile.intent)         parts.push(`Reason for learning: ${profile.intent}`);
+  if (profile.priorKnowledge) parts.push(`Prior knowledge: ${profile.priorKnowledge}`);
+  if (profile.learnStyle)     parts.push(`Learns best by: ${profile.learnStyle}`);
+  return parts.join(" | ");
+}
+
+// A short, stable signature of the profile so different profiles cache
+// to different lab variants (and skipped-profile labs share one cache slot).
+function profileSig(profile) {
+  const s = profileSummary(profile);
+  if (!s) return "default";
+  let h = 0;
+  for (let i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; }
+  return "p" + (h >>> 0).toString(36);
+}
+
 async function getCachedLab(key) {
   if (!SUPABASE_URL || !SUPABASE_KEY) return null;
   try {
@@ -221,7 +243,7 @@ Write in plain, direct prose. Be specific to ${topic}. Do not use generic educat
   return res.choices[0].message.content.trim();
 }
 
-async function specFromThinking(topic, thinking) {
+async function specFromThinking(topic, thinking, profText) {
   const res = await openai.chat.completions.create({
     model: "gpt-4o",
     max_tokens: 2200,
@@ -304,11 +326,18 @@ RULES:
   • click-spawn — when the learner should CREATE or TRIGGER an instance (fire a projectile, spawn a particle, inject energy, apply a force at a point).
   • draw — when the learner should trace or sketch (a path prediction, a force field, a wave shape).
   • toggle-button — when a BINARY contrast reveals the concept (gravity on/off, damped vs undamped, before/after a threshold).
-  • slider — for smooth continuous quantities that don't map to a natural physical action. Limit to 1-2 sliders per lab.`,
+  • slider — for smooth continuous quantities that don't map to a natural physical action. Limit to 1-2 sliders per lab.
+
+ADAPT TO THE LEARNER (if a learner profile is provided below):
+- Level (middle school / high school / college / curious): set vocabulary and math depth. Middle school = everyday words, no jargon, the prediction question is intuitive ("what happens to the ball?"). College = precise terms and real equations in the explanation.
+- Reason for learning: shape the scenario. "Studying for a test" = frame it like an exam scenario with the kind of question they'll be asked. "Curious / for fun" = open with a surprising real-world hook. "For work" = a concrete on-the-job situation. "Helping someone else" = keep it explainable.
+- Prior knowledge: set how many variables. "Never heard of it" / "vague idea" = 1-2 controls, the single clearest aha. "Studied but confused" = include the variable that resolves the common confusion, and make the explanation directly address why it's confusing. "Refresher" = can be denser.
+- Learns best by: "Seeing visually" = richer visualMetaphor. "Hands-on" = frame the mission as an active challenge. "Reading first" = a slightly fuller scenario before the action.
+NEVER mention the profile to the learner. Just shape the content. If no profile is given, target a general high-school+ audience.`,
       },
       {
         role: "user",
-        content: `Topic: ${topic}\n\nReasoning:\n${thinking}\n\nNow produce the spec JSON.`,
+        content: `Topic: ${topic}\n\nReasoning:\n${thinking}\n${profText ? `\nLEARNER PROFILE (adapt the lab to this person):\n${profText}\n` : ""}\nNow produce the spec JSON.`,
       },
     ],
   });
@@ -838,11 +867,15 @@ const server = http.createServer(async (req, res) => {
           };
 
           const rawTopic = data.topic.trim();
+          const profile = data.profile || null;
+          const profText = profileSummary(profile);
 
           send("expand", `Sharpening topic…`);
           const expanded = await expandTopic(rawTopic);
           const topic = expanded.topic;
-          const key = topicKey(topic);
+          // Cache key includes the profile signature so a high-schooler and a
+          // college student studying the same topic get their own lab variants.
+          const key = topicKey(topic) + "::" + profileSig(profile);
           send("expanded", `Building lab for: ${topic}`, { topic, why: expanded.why });
 
           // ── Cache hit: serve instantly, zero AI cost ──────────────────
@@ -858,7 +891,7 @@ const server = http.createServer(async (req, res) => {
           const thinking = await thinkAboutTopic(topic);
 
           send("design", "Translating insight into lab spec…");
-          const design = await specFromThinking(topic, thinking);
+          const design = await specFromThinking(topic, thinking, profText);
 
           send("labthink", "Thinking about how to build it…");
           const labThinking = await thinkAboutLab(design);

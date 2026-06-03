@@ -611,6 +611,99 @@
     .unlock-btn:active { transform: scale(0.97); }
 
     /* ── PLAY STEP ───────────────────────────── */
+    /* ── PERSONALIZATION QUESTIONNAIRE ──────────── */
+    #quizModal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(11,18,32,0.94);
+      backdrop-filter: blur(10px);
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    #quizModal.open { display: flex; }
+    .pq-card {
+      background: var(--navy2);
+      border: 1.5px solid var(--border);
+      border-radius: 18px;
+      padding: 32px 30px 26px;
+      max-width: 460px;
+      width: 100%;
+      position: relative;
+      overflow: hidden;
+      animation: pqIn 0.32s cubic-bezier(0.22,1,0.36,1);
+    }
+    @keyframes pqIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: none; } }
+    .pq-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--blue), var(--copper));
+    }
+    .pq-progress { display: flex; gap: 6px; margin-bottom: 22px; }
+    .pq-dot { flex: 1; height: 4px; border-radius: 2px; background: var(--navy3); transition: background 0.3s; }
+    .pq-dot.active { background: var(--blue); }
+    .pq-dot.done { background: var(--copper); }
+    .pq-topic-chip {
+      display: inline-block;
+      font-size: 0.72rem;
+      color: var(--copper);
+      background: rgba(212,165,116,0.08);
+      border: 1px solid rgba(212,165,116,0.2);
+      border-radius: 14px;
+      padding: 4px 12px;
+      margin-bottom: 16px;
+    }
+    .pq-question {
+      font-size: 1.18rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.4;
+      margin-bottom: 20px;
+    }
+    .pq-options { display: flex; flex-direction: column; gap: 9px; margin-bottom: 18px; }
+    .pq-opt {
+      background: var(--navy3);
+      border: 1.5px solid var(--border);
+      border-radius: 11px;
+      padding: 13px 17px;
+      font-size: 0.94rem;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.15s, background 0.15s, transform 0.1s;
+      font-family: inherit;
+    }
+    .pq-opt:hover { border-color: var(--blue); background: rgba(59,130,246,0.08); }
+    .pq-opt:active { transform: scale(0.98); }
+    .pq-other-wrap { display: flex; gap: 8px; margin-bottom: 18px; }
+    .pq-other-input {
+      flex: 1;
+      background: var(--navy3);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 11px 14px;
+      color: var(--text);
+      font-size: 0.9rem;
+      outline: none;
+      font-family: inherit;
+    }
+    .pq-other-input:focus { border-color: var(--blue); }
+    .pq-other-go {
+      background: var(--blue); color: #fff; border: none;
+      border-radius: 10px; padding: 0 18px; font-weight: 700;
+      cursor: pointer; font-family: inherit; font-size: 0.9rem;
+    }
+    .pq-footer { display: flex; justify-content: space-between; align-items: center; }
+    .pq-skip, .pq-skipall {
+      background: none; border: none; color: var(--muted);
+      font-size: 0.84rem; cursor: pointer; font-family: inherit;
+      padding: 6px 4px; transition: color 0.15s;
+    }
+    .pq-skip:hover, .pq-skipall:hover { color: var(--copper); }
+    .pq-skipall { font-size: 0.78rem; opacity: 0.7; }
+
     /* ── MISSION BANNER ─────────────────────────── */
     #missionBanner {
       display: flex;
@@ -880,6 +973,24 @@
 
 </div>
 
+<!-- PERSONALIZATION QUESTIONNAIRE -->
+<div id="quizModal">
+  <div class="pq-card">
+    <div class="pq-progress" id="pqProgress"></div>
+    <div class="pq-topic-chip" id="pqTopicChip"></div>
+    <div class="pq-question" id="pqQuestion"></div>
+    <div class="pq-options" id="pqOptions"></div>
+    <div class="pq-other-wrap">
+      <input class="pq-other-input" id="pqOther" placeholder="Or type your own…" maxlength="80" />
+      <button class="pq-other-go" id="pqOtherGo">→</button>
+    </div>
+    <div class="pq-footer">
+      <button class="pq-skip" id="pqSkip">Skip this →</button>
+      <button class="pq-skipall" id="pqSkipAll">Skip all &amp; generate</button>
+    </div>
+  </div>
+</div>
+
 <script>
   // ── DOM refs ──────────────────────────────────────────────────────
   const topicInput     = document.getElementById("topicInput");
@@ -933,14 +1044,122 @@
   let userConfidence     = null;   // "Not sure" | "Fairly sure" | "Certain"
   let predictionCorrect  = null;   // boolean, set when option picked
 
+  // Learner profile — remembered for the session only (sessionStorage),
+  // so we never ask twice in one sitting but a fresh tab starts clean.
+  let learnerProfile = loadProfile();
+
+  // ── Questionnaire definition ───────────────────────────────────────
+  const PQ = [
+    { key: "level", q: "What's your level with this?", opts: [
+        "Middle school", "High school", "College / university", "Just curious — no class" ] },
+    { key: "intent", q: "Why are you learning this right now?", opts: [
+        "Studying for a test", "Curious / for fun", "For work or a project", "Helping someone else" ] },
+    { key: "priorKnowledge", q: "How much do you already know?", opts: [
+        "Never heard of it", "I've got a vague idea", "I've studied it but I'm confused", "I know it — just want a refresher" ] },
+    { key: "learnStyle", q: "How do you learn best?", opts: [
+        "Seeing it visually", "Hands-on, by doing", "Reading first, then doing" ] },
+  ];
+  let pqIndex = 0;
+  let pqPendingTopic = null;
+
   // ── Setup ─────────────────────────────────────────────────────────
   function setTopic(t) { topicInput.value = t; topicInput.focus(); }
-  topicInput.addEventListener("keydown", (e) => { if (e.key === "Enter") generate(); });
-  genBtn.addEventListener("click", generate);
+  topicInput.addEventListener("keydown", (e) => { if (e.key === "Enter") startGenerate(); });
+  genBtn.addEventListener("click", startGenerate);
   checkBtn.addEventListener("click", checkAnswerText);
   window.addEventListener("message", (e) => {
     if (e.data && e.data.type === "labCheck") lastLabResult = e.data.result;
   });
+
+  // Questionnaire control buttons
+  document.getElementById("pqSkip").addEventListener("click", () => pqNext(null));
+  document.getElementById("pqSkipAll").addEventListener("click", pqSkipAll);
+  document.getElementById("pqOtherGo").addEventListener("click", pqSubmitOther);
+  document.getElementById("pqOther").addEventListener("keydown", (e) => { if (e.key === "Enter") pqSubmitOther(); });
+
+  // ── Profile persistence (session only) ─────────────────────────────
+  function loadProfile() {
+    try { return JSON.parse(sessionStorage.getItem("repend_profile") || "null"); }
+    catch (_) { return null; }
+  }
+  function saveProfile(p) {
+    learnerProfile = p;
+    try { sessionStorage.setItem("repend_profile", JSON.stringify(p)); } catch (_) {}
+  }
+  function profileIsComplete(p) {
+    // "Complete" = we've asked this session, even if they skipped everything.
+    return p && p.__asked === true;
+  }
+
+  // ── Entry point: questionnaire first, then generate ─────────────────
+  function startGenerate() {
+    const topic = topicInput.value.trim();
+    if (!topic) { topicInput.focus(); return; }
+    if (profileIsComplete(learnerProfile)) { generate(); return; }
+    pqPendingTopic = topic;
+    pqIndex = 0;
+    pqAnswers = {};
+    openQuiz();
+  }
+
+  // ── Questionnaire flow ──────────────────────────────────────────────
+  let pqAnswers = {};
+  const quizModal   = document.getElementById("quizModal");
+  const pqProgress  = document.getElementById("pqProgress");
+  const pqTopicChip = document.getElementById("pqTopicChip");
+  const pqQuestionEl = document.getElementById("pqQuestion");
+  const pqOptionsEl = document.getElementById("pqOptions");
+  const pqOtherInput = document.getElementById("pqOther");
+
+  function openQuiz() {
+    quizModal.classList.add("open");
+    renderPq();
+  }
+  function closeQuiz() { quizModal.classList.remove("open"); }
+
+  function renderPq() {
+    const item = PQ[pqIndex];
+    pqTopicChip.textContent = "Learning: " + pqPendingTopic;
+    pqQuestionEl.textContent = item.q;
+    pqOtherInput.value = "";
+    // progress dots
+    pqProgress.innerHTML = "";
+    PQ.forEach((_, i) => {
+      const d = document.createElement("div");
+      d.className = "pq-dot" + (i < pqIndex ? " done" : i === pqIndex ? " active" : "");
+      pqProgress.appendChild(d);
+    });
+    // options
+    pqOptionsEl.innerHTML = "";
+    item.opts.forEach(opt => {
+      const b = document.createElement("button");
+      b.className = "pq-opt";
+      b.textContent = opt;
+      b.addEventListener("click", () => pqNext(opt));
+      pqOptionsEl.appendChild(b);
+    });
+  }
+
+  function pqSubmitOther() {
+    const v = pqOtherInput.value.trim();
+    if (v) pqNext(v);
+  }
+
+  function pqNext(answer) {
+    if (answer) pqAnswers[PQ[pqIndex].key] = answer;
+    pqIndex++;
+    if (pqIndex >= PQ.length) { finishQuiz(); return; }
+    renderPq();
+  }
+
+  function pqSkipAll() { finishQuiz(); }
+
+  function finishQuiz() {
+    pqAnswers.__asked = true;
+    saveProfile(pqAnswers);
+    closeQuiz();
+    generate();
+  }
 
   // ── Loading stage indicator ────────────────────────────────────────
   function setStage(name) {
@@ -1110,7 +1329,7 @@
       const response = await fetch("/plan-lab", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic }),
+        body: JSON.stringify({ topic, profile: learnerProfile }),
       });
       if (!response.ok) {
         const err = await response.json().catch(() => ({ error: "Request failed" }));
@@ -1154,7 +1373,7 @@
         const retry = await fetch("/plan-lab", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ topic }),
+          body: JSON.stringify({ topic, profile: learnerProfile }),
         });
         if (!retry.ok) {
           const err = await retry.json().catch(() => ({ error: "Request failed" }));
