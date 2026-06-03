@@ -199,8 +199,16 @@ Return ONLY JSON:
 {
   "topic": "The sharpened topic. 3-10 words. Must be a CONCEPT with a surprising insight, not a skill or activity. Examples: 'Topspin: why a spinning tennis ball curves downward faster than gravity', 'Gradient Descent: why loss curves have valleys a model can slide down', 'Newton\\'s Second Law: why doubling mass halves acceleration for the same force'.",
   "why": "One sentence: the specific aha moment this concept produces. E.g. 'The moment you see the ball curve MORE than expected is when you understand that spin changes the effective gravity on the ball.'",
-  "kind": "EXACTLY one of: 'simulation' or 'puzzle'. Choose 'simulation' when the concept is about CONTINUOUS CHANGE OVER TIME or physical motion driven by equations — things that move, grow, oscillate, orbit, accelerate (projectile motion, compound interest, orbital mechanics, wave interference, population growth). Choose 'puzzle' when the concept is about STRUCTURE, RELATIONSHIPS, or PATTERN RECOGNITION that the learner reads or builds rather than watches — things that are mostly static until clicked (pedigree inheritance, circuit diagrams, food webs, the periodic table, supply-demand equilibrium, classification trees, logic gates, chemical bonding). When in doubt: does understanding come from WATCHING something move (simulation) or from ARRANGING/READING a structure (puzzle)?"
+  "kind": "EXACTLY one of: 'simulation' or 'puzzle'. Choose 'simulation' when the concept is about CONTINUOUS CHANGE OVER TIME or physical motion driven by equations — things that move, grow, oscillate, orbit, accelerate (projectile motion, compound interest, orbital mechanics, wave interference, population growth). Choose 'puzzle' when the concept is about STRUCTURE, RELATIONSHIPS, or PATTERN RECOGNITION that the learner reads or builds rather than watches — things that are mostly static until clicked (pedigree inheritance, circuit diagrams, food webs, the periodic table, supply-demand equilibrium, classification trees, logic gates, chemical bonding). When in doubt: does understanding come from WATCHING something move (simulation) or from ARRANGING/READING a structure (puzzle)?",
+  "mechanism": "REQUIRED. The concrete cause→effect chain in one sentence, naming the THING the learner manipulates, the HIDDEN PROCESS it drives, and the MEASURABLE OUTPUT that results. Format: 'When the learner [changes X on a real object], it [drives hidden process Y], which makes [output Z] change in a way you can see and measure.' Example: 'When the learner drags the catapult arm to a steeper angle, it splits the launch force into more vertical and less horizontal velocity, which makes the projectile fly higher but land shorter.' If you cannot write a concrete, physical, measurable mechanism like this, the topic is NOT teachable as an interactive lab — you MUST pivot to a specific sub-concept that has one."
 }
+
+CRITICAL — THE MECHANISM TEST (apply before anything else):
+A valid lab topic MUST have all three: (1) a concrete thing the learner can directly grab/drag/click/place, (2) a hidden process that thing drives, (3) a measurable output that visibly changes as a result. If the raw input is a vague field, tool, or buzzword with no single causal mechanism — 'AI', 'machine learning', 'productivity', 'the economy', 'success', 'leadership' — DO NOT build a lab about the field. Pivot HARD to ONE specific mechanism inside it that passes the test. Examples:
+- 'AI' → 'Gradient Descent: how step size decides whether the model finds the valley bottom or bounces out of it' (drag the step size, watch the ball descend or diverge).
+- 'Machine learning' → 'Overfitting: why a curve that hits every training dot fails on new dots' (drag points / add wiggle, watch test error spike).
+- 'The economy' → 'Supply & Demand: why a price ceiling creates a shortage' (drag the price line, watch the gap open).
+NEVER produce a lab that is just floating nodes, a generic 'network', or a slider that changes a number with no visible causal chain. Those teach nothing.
 
 RULES:
 - If the input names a SPORT or ACTIVITY (tennis, basketball, cooking, driving): find the underlying physics concept. 'Tennis' → 'Topspin: why spin bends a ball's path'.
@@ -217,7 +225,7 @@ RULES:
   return JSON.parse(res.choices[0].message.content.trim());
 }
 
-async function thinkAboutTopic(topic) {
+async function thinkAboutTopic(topic, mechanism) {
   const res = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     max_tokens: 700,
@@ -228,9 +236,9 @@ async function thinkAboutTopic(topic) {
 
 1. THE CORE INSIGHT — what single thing, once felt in the body or seen visually, makes this concept truly click? Not a definition — the moment of understanding.
 
-2. THE VISUAL METAPHOR — what does this concept look like IN MOTION? Use a vivid image. Examples: "money piling up faster and faster, the stack growing so tall it leans", "two curves chasing each other across a graph until they cross and lock", "a planet falling sideways forever, missing the Earth each time". Be specific to THIS topic.
+2. THE CAUSAL MODEL ON SCREEN — describe a picture that SHOWS THE MECHANISM, not a decoration. The picture must contain three visible, linked things: (a) the object the learner grabs/moves, (b) the hidden process it drives drawn so you can SEE it happening, (c) the output that changes as a result. The learner must be able to trace cause→effect with their eyes. BAD: "a tree growing" (decorative — doesn't show stack frames). GOOD for recursion: "a stack of labeled frame-cards that literally push upward as each call is made and pop off as each returns — the tower height IS the stack space, and it visibly overflows the top edge when depth is too high." Describe the causal picture for THIS topic at that level of specificity.
 
-3. THE KEY VARIABLES — what 2-4 things can a learner change? For each one, explain WHY it matters to the core insight (not just what it is). Example: "Rate matters because it controls how fast the pile grows — double it and the pile doesn't just grow twice as fast, it grows faster than that."
+3. THE THING THE LEARNER DIRECTLY MANIPULATES — name the ONE object on screen they grab, drag, or place (NOT an abstract slider). Then 1-2 secondary things they can adjust. For each, explain WHY changing it reveals the core insight. The primary one must be the literal object in the causal picture — e.g. "drag the recursion-depth marker up the stack and watch frames pile past the overflow line", not "a slider labeled depth".
 
 4. THE AHA MOMENT — describe the precise moment in the interaction when the learner says "oh!". What did they just see happen? What did they move or change right before it?
 
@@ -238,13 +246,13 @@ async function thinkAboutTopic(topic) {
 
 Write in plain, direct prose. Be specific to ${topic}. Do not use generic educational language. Do not suggest a lab format or interaction type.`,
       },
-      { role: "user", content: `Topic: ${topic}` },
+      { role: "user", content: `Topic: ${topic}${mechanism ? `\n\nThe core mechanism (build your analysis around this exact cause→effect chain): ${mechanism}` : ""}` },
     ],
   });
   return res.choices[0].message.content.trim();
 }
 
-async function specFromThinking(topic, thinking, profText, difficulty, kind) {
+async function specFromThinking(topic, thinking, profText, difficulty, kind, mechanism) {
   const kindNote = kind === "puzzle"
     ? `\nLAB TYPE: PUZZLE / STRUCTURE. This concept is understood by ARRANGING or READING a structure, not by watching motion. The interaction_palette should favor draggable, click-spawn, and toggle-button — NOT sliders. The mission must be about reaching a correct configuration or identifying a pattern (e.g. 'Mark every carrier until the inheritance pattern is consistent', 'Wire the circuit so the bulb lights'). The aha_trigger is a moment of recognition when the structure clicks, not a threshold crossing. Do NOT force continuous animation into the spec.\n`
     : `\nLAB TYPE: SIMULATION. This concept is understood by watching continuous change over time. Animated motion driven by the formulas is central.\n`;
@@ -269,6 +277,8 @@ Return ONLY JSON with this exact shape:
     "title": "Short punchy lab title",
     "learning_goal": "One sentence using the exact words of the core insight from the reasoning.",
     "visualMetaphor": "One vivid sentence describing what the simulation looks and feels like IN MOTION. Not a chart type — a scene. E.g. 'Money piling up in stacks of gold coins, each new coin landing with a clink, the stacks growing taller until they overflow the screen.' Copy from the reasoning verbatim.",
+    "causal_model": "REQUIRED. Describe the three visible, linked parts of the on-screen picture: (1) CAUSE — the object the learner directly grabs/drags/places; (2) PROCESS — the hidden mechanism drawn so it is literally visible (the thing that connects cause to effect); (3) EFFECT — the measurable output that changes. State how the eye traces cause→process→effect. The visual is INVALID if any part is decorative or missing. E.g. 'CAUSE: drag the angle of the launch ramp. PROCESS: the velocity arrow splits into a tall vertical component and a short horizontal one, redrawn live. EFFECT: the arc height and landing distance change, with a dotted trajectory and a landing marker.'",
+    "direct_manipulation": "REQUIRED. The single object the learner GRABS or CLICKS directly on the canvas to change the primary variable — never an abstract slider for the primary variable. Name the object, the gesture (drag/click/place), and what it visibly does. E.g. 'Grab the planet and fling it — drag distance and direction set its launch velocity vector.'",
     "variables": [
       {
         "name": "variable name",
@@ -318,6 +328,8 @@ Return ONLY JSON with this exact shape:
 }
 
 RULES:
+- causal_model is the MOST IMPORTANT field. The visual must SHOW the mechanism (cause→process→effect all visible and linked), never just decorate the topic. A picture where the manipulated thing does not visibly cause the output through a drawn process is REJECTED. No floating nodes, no generic "network", no pretty scene that doesn't explain.
+- direct_manipulation is REQUIRED: the primary variable is changed by grabbing/dragging/placing a real object on the canvas, NOT by a slider. Sliders are allowed ONLY for secondary continuous parameters.
 - visualMetaphor must be a vivid scene description, never a chart type or UI pattern name
 - every variable MUST have why_it_matters — if you can't explain why it matters, remove the variable
 - the PRIMARY variable (the one that produces the aha) MUST have regimes_note describing the distinct outcomes across its range, with min/max/default chosen so EVERY regime is reachable and the default sits just below the most surprising boundary
@@ -327,7 +339,7 @@ RULES:
 - reflection question must be answerable only AFTER interacting — not a definition lookup
 - do NOT include interaction_type, lab_type, or any format label anywhere in the JSON
 - prediction: phrased as a guess BEFORE interaction — about the aha moment. 2-4 options with plausible wrong answers a smart person would make before seeing the sim. correct must be verbatim one of the options.
-- mission: one action sentence, starts with a verb, names a specific goal state. NEVER "explore" or "observe". The learner must be trying to accomplish something.
+- mission: one action sentence, starts with a verb, names a specific REACHABLE goal STATE that success_condition can check programmatically. It is a goal, NOT a fact. BAD (a fact restated): "AI can process vast amounts of data in seconds." GOOD (a checkable goal): "Tune the step size until the ball settles exactly at the valley bottom in under 10 steps." The learner must be able to know the instant they've achieved it.
 - interaction_palette: 2-3 entries. MUST include at least one non-slider type. Match type to the concept:
   • draggable — when POSITION matters (a body, a charge, an endpoint, a source). The thing the learner moves IS the variable.
   • click-spawn — when the learner should CREATE or TRIGGER an instance (fire a projectile, spawn a particle, inject energy, apply a force at a point).
@@ -344,7 +356,7 @@ NEVER mention the profile to the learner. Just shape the content. If no profile 
       },
       {
         role: "user",
-        content: `Topic: ${topic}\n\nReasoning:\n${thinking}\n${kindNote}${profText ? `\nLEARNER PROFILE (adapt the lab to this person):\n${profText}\n` : ""}${diffNote}\nNow produce the spec JSON.`,
+        content: `Topic: ${topic}\n\nReasoning:\n${thinking}\n${mechanism ? `\nCORE MECHANISM (the causal_model, direct_manipulation, and mission MUST be built around this exact cause→effect chain):\n${mechanism}\n` : ""}${kindNote}${profText ? `\nLEARNER PROFILE (adapt the lab to this person):\n${profText}\n` : ""}${diffNote}\nNow produce the spec JSON.`,
       },
     ],
   });
@@ -415,12 +427,14 @@ ${kindBrief}
 TOPIC: ${design.topic}
 LEARNING GOAL: ${design.spec.learning_goal}
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
-
+${design.spec.causal_model ? `\nCAUSAL MODEL (this is the spine of the lab — the picture MUST show all three parts linked):\n${design.spec.causal_model}\n` : ""}${design.spec.direct_manipulation ? `\nDIRECT MANIPULATION (the learner grabs this real object — NOT a slider — to drive the lab):\n${design.spec.direct_manipulation}\n` : ""}
 VARIABLES:
 ${vars}
 
 REQUIRED INTERACTIONS (implement ALL of these — not just sliders):
 ${palette || "  • at least one draggable or click-spawn interaction"}
+
+NON-NEGOTIABLE: Your brief must make the cause→process→effect chain VISIBLE on the canvas and let the learner drive it by directly grabbing the object named above. Do NOT describe a decorative scene with sliders bolted on the side. The hidden process (the "why") must be drawn, not implied.
 
 AHA MOMENT: ${design.spec.aha_trigger}
 
@@ -541,7 +555,19 @@ TOPIC: ${design.topic}
 MISSION (show this prominently in Zone A — always visible while the learner plays): "${design.spec.mission || design.spec.success_condition}"
 LEARNING GOAL: ${design.spec.learning_goal}
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
-
+${design.spec.causal_model ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE CAUSAL MODEL — THIS IS THE WHOLE POINT OF THE LAB:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${design.spec.causal_model}
+The canvas must draw ALL THREE parts — the cause object, the hidden process, and the output — and they must be visibly linked so the learner SEES why the output changes. A visual where the manipulated thing does not visibly drive the output through a drawn process is a FAILED lab. Do not draw a decorative scene.
+` : ""}${design.spec.direct_manipulation ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DIRECT MANIPULATION — PRIMARY INTERACTION (NOT A SLIDER):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${design.spec.direct_manipulation}
+The learner changes the PRIMARY variable by grabbing/dragging/clicking this object directly on the canvas with pointer events. The object must look grabbable (clear handle, hover cursor, glow on hover). Sliders are allowed ONLY for secondary parameters. If you make the primary interaction a slider, the lab has failed.
+` : ""}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BEHAVIORAL BRIEF (build exactly this behavior):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -825,6 +851,9 @@ Before returning, verify ALL of these — fix any that fail before responding:
 8. Are there at least 2 interactive controls plus preset + reset buttons?
 9. Is the output readout showing the EFFECT (e.g. "Earthquake Magnitude: 7.2"), not just echoing the input value?
 10. Does the canvas use gradients and glow — does it look like a polished simulation, not a flat grey box?
+11. CAUSAL CHAIN: can the learner SEE all three — the object they grab, the hidden process it drives (drawn, not implied), and the output that changes? If the process is invisible, draw it.
+12. DIRECT MANIPULATION: is the PRIMARY variable changed by grabbing/dragging an object on the canvas (not a slider)? If the main interaction is a slider, convert it to a draggable on-canvas object.
+13. Would a learner who finished this be able to explain WHY the output changed — not just THAT it changed? If not, the causal link is too weak; make the mechanism more visible.
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
@@ -929,6 +958,7 @@ const server = http.createServer(async (req, res) => {
           const expanded = await expandTopic(rawTopic);
           const topic = expanded.topic;
           const kind = expanded.kind === "puzzle" ? "puzzle" : "simulation";
+          const mechanism = expanded.mechanism || "";
           // Cache key includes the profile signature so a high-schooler and a
           // college student studying the same topic get their own lab variants.
           // Difficulty level is part of the key too — "Go deeper" gets a fresh lab.
@@ -945,10 +975,10 @@ const server = http.createServer(async (req, res) => {
 
           // ── Cache miss: run full pipeline then save ───────────────────
           send("think", `Reasoning about "${topic}"…`);
-          const thinking = await thinkAboutTopic(topic);
+          const thinking = await thinkAboutTopic(topic, mechanism);
 
           send("design", "Translating insight into lab spec…");
-          const design = await specFromThinking(topic, thinking, profText, difficulty, kind);
+          const design = await specFromThinking(topic, thinking, profText, difficulty, kind, mechanism);
 
           send("labthink", "Thinking about how to build it…");
           const labThinking = await thinkAboutLab(design, kind);
