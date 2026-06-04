@@ -756,6 +756,13 @@
       from { opacity: 0; transform: translateY(-6px); }
       to   { opacity: 1; transform: translateY(0); }
     }
+    #explorationHint.ping {
+      animation: fadeSlideIn 0.5s ease, hintPulse 0.9s ease 0.5s 2;
+    }
+    @keyframes hintPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+      50%      { box-shadow: 0 0 0 5px rgba(99,102,241,0.18); }
+    }
     #missionBanner {
       display: flex;
       align-items: flex-start;
@@ -1125,15 +1132,40 @@
   genBtn.addEventListener("click", startGenerate);
   checkBtn.addEventListener("click", checkAnswerText);
   let repairAttempts = 0;
+  let labCheckFails = 0;
   window.addEventListener("message", (e) => {
     if (!e.data) return;
     if (e.data.type === "labCheck") {
       lastLabResult = e.data.result;
-      if (e.data.result && e.data.result.ok) onMissionComplete();
+      if (e.data.result && e.data.result.ok) {
+        onMissionComplete();
+      } else {
+        // Failed attempt — after 2 misses, whisper the hint immediately
+        labCheckFails++;
+        if (labCheckFails >= 2) showExplorationHint();
+      }
     } else if (e.data.type === "labError") {
       handleLabError(e.data.error);
     }
   });
+
+  // Reveal the Socratic exploration hint. Called by the 15s timer OR early
+  // when the learner has failed the in-sim check twice (the "stuck" signal).
+  function showExplorationHint() {
+    if (stepSim.style.display === "none") return; // already moved to explain
+    const hintEl = document.getElementById("explorationHint");
+    if (!currentPlan || !currentPlan.explorationHint) return;
+    if (hintEl.style.display === "flex") return; // already shown
+    let text = currentPlan.explorationHint;
+    // Socratic confidence: bold-but-wrong predictions get a sharper nudge
+    if (userConfidence === "Certain" && predictionCorrect === false) {
+      text = "Your prediction was bold — now hunt for the one case where it breaks. " + text;
+    }
+    hintEl.textContent = text;
+    hintEl.style.display = "flex";
+    hintEl.classList.remove("ping"); void hintEl.offsetWidth; hintEl.classList.add("ping");
+    hintEl.onclick = () => { hintEl.style.display = "none"; };
+  }
 
   async function handleLabError(err) {
     if (!currentPlan || !currentPlan.labHtml) return;
@@ -1357,18 +1389,15 @@
     repairAttempts = 0;
     simFrame.srcdoc = currentPlan.labHtml;
 
-    // After 15 s of exploring, whisper a Socratic nudge if the hint hasn't
-    // been dismissed and the learner hasn't already moved on to explain.
+    // After 15 s of exploring, whisper a Socratic nudge. Also fires early if
+    // the learner fails the in-sim check twice (see showExplorationHint).
     const hintEl = document.getElementById("explorationHint");
     hintEl.style.display = "none";
     hintEl.textContent = "";
+    hintEl.classList.remove("ping");
+    labCheckFails = 0;
     if (currentPlan.explorationHint) {
-      hintEl._timer = setTimeout(() => {
-        if (stepSim.style.display === "none") return; // already on step 3
-        hintEl.textContent = currentPlan.explorationHint;
-        hintEl.style.display = "flex";
-        hintEl.onclick = () => { hintEl.style.display = "none"; };
-      }, 15000);
+      hintEl._timer = setTimeout(showExplorationHint, 15000);
     }
   }
 
