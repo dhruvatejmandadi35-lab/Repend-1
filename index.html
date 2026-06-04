@@ -875,7 +875,7 @@
     <input
       type="text"
       id="topicInput"
-      placeholder="Try: Compound Interest, Natural Selection, Ohm's Law…"
+      placeholder="A topic, or paste a YouTube link…"
       maxlength="150"
       autocomplete="off"
     />
@@ -1477,9 +1477,16 @@
   }
 
   // ── Main generate ──────────────────────────────────────────────────
+  // Detect a YouTube link so we can send it as a video source instead of a topic.
+  function youtubeUrl(s) {
+    return /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)/i.test(s) ? s : "";
+  }
+
   async function generate() {
-    const topic = topicInput.value.trim();
-    if (!topic) { topicInput.focus(); return; }
+    const raw = topicInput.value.trim();
+    if (!raw) { topicInput.focus(); return; }
+    const vUrl = youtubeUrl(raw);
+    const topic = vUrl ? "" : raw;
 
     genBtn.disabled = true;
     errorBox.style.display = "none";
@@ -1493,7 +1500,7 @@
     expandedTopicEl.style.display = "none";
     etTopic.textContent = "";
     etWhy.textContent = "";
-    stageThinkText.textContent = `Reasoning about "${topic}"…`;
+    stageThinkText.textContent = vUrl ? "Watching the video…" : `Reasoning about "${topic}"…`;
     setStage("think");
 
     // Reset learn-state
@@ -1505,7 +1512,7 @@
       const response = await fetch("/plan-lab", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, profile: learnerProfile, difficulty }),
+        body: JSON.stringify({ topic, videoUrl: vUrl, profile: learnerProfile, difficulty }),
       });
       if (!response.ok) {
         const err = await response.json().catch(() => ({ error: "Request failed" }));
@@ -1532,6 +1539,7 @@
             expandedTopicEl.style.display = "block";
             stageThinkText.textContent = `Reasoning about "${event.data.topic}"…`;
           }
+          if (event.stage === "reading")  { setStage("think"); stageThinkText.textContent = "Watching the video…"; }
           if (event.stage === "think")    setStage("think");
           if (event.stage === "design")   setStage("design");
           if (event.stage === "labthink") setStage("labthink");
@@ -1549,7 +1557,7 @@
         const retry = await fetch("/plan-lab", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ topic, profile: learnerProfile, difficulty }),
+          body: JSON.stringify({ topic, videoUrl: vUrl, profile: learnerProfile, difficulty }),
         });
         if (!retry.ok) {
           const err = await retry.json().catch(() => ({ error: "Request failed" }));

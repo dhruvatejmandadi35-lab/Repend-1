@@ -181,11 +181,48 @@ async function analyzeImage(base64Image, question) {
 //   5. codeFromImageBrief — gpt-4o vision: image + brief → final HTML
 // ─────────────────────────────────────────────────────────────────
 
+// Step -1 (optional) — "watches" a YouTube video with Gemini and distills it
+// into a context blob for the rest of the pipeline. We use Gemini here because
+// it can ingest a YouTube URL natively; OpenAI (steps 0-4) cannot watch video.
+// Returns { topic, terminology, mechanism, summary } — or null on failure so
+// the pipeline can fall back to the user's typed topic.
+async function contextFromVideo(youtubeUrl) {
+  const prompt = `You are watching this educational video to help build an interactive lab from it.
+
+Return ONLY JSON (no markdown):
+{
+  "topic": "The single most important concept this video teaches, 3-10 words. The ONE thing worth turning into a hands-on lab.",
+  "terminology": ["the", "exact", "key", "terms", "the video actually uses", "max 8"],
+  "mechanism": "The core cause→effect chain the video explains, in one sentence: what changes, what hidden process it drives, what measurable output results.",
+  "summary": "2-3 sentences on what the video covers and which part is hardest to grasp (and therefore best to simulate)."
+}
+
+Pick the concept with a concrete, visual, manipulable mechanism — not a vague theme. If the video covers many things, choose the one with the clearest 'aha' moment.`;
+
+  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
+  const res = await model.generateContent({
+    contents: [{
+      role: "user",
+      parts: [
+        { fileData: { fileUri: youtubeUrl, mimeType: "video/mp4" } },
+        { text: prompt },
+      ],
+    }],
+    generationConfig: { maxOutputTokens: 600, temperature: 0.3 },
+  });
+  let txt = res.response.text().trim();
+  txt = txt.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  return JSON.parse(txt);
+}
+
 // Step 0 — turns vague topics into one specific, teachable concept.
 // "ML" → "Gradient Descent: how a model finds the bottom of a loss landscape"
 // "Physics" → "Newton's Second Law: why heavier objects need more force to accelerate"
 // "Compound Interest" → passes through unchanged (already specific enough)
-async function expandTopic(rawTopic) {
+async function expandTopic(rawTopic, context) {
+  const userContent = context
+    ? `Topic: ${rawTopic}\n\nSOURCE MATERIAL (from a video/document the learner is studying — anchor the sharpened topic to THIS, and prefer the exact concept and terminology it uses):\n${context}`
+    : rawTopic;
   const res = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     max_tokens: 200,
@@ -219,7 +256,7 @@ RULES:
 - NEVER pick a concept where all the learner does is set inputs with no surprising output.
 - Never return a skill, definition, or procedure. Return the INSIGHT.`,
       },
-      { role: "user", content: rawTopic },
+      { role: "user", content: userContent },
     ],
   });
   return JSON.parse(res.choices[0].message.content.trim());
@@ -1018,9 +1055,10 @@ const server = http.createServer(async (req, res) => {
         const data = JSON.parse(body);
 
         if (req.url === "/plan-lab") {
-          if (!data.topic?.trim()) {
+          const videoUrl = typeof data.videoUrl === "string" ? data.videoUrl.trim() : "";
+          if (!data.topic?.trim() && !videoUrl) {
             res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "Topic is required" }));
+            res.end(JSON.stringify({ error: "Topic or video URL is required" }));
             return;
           }
 
@@ -1035,13 +1073,37 @@ const server = http.createServer(async (req, res) => {
             res.write(`data: ${JSON.stringify({ stage, msg, data })}\n\n`);
           };
 
-          const rawTopic = data.topic.trim();
+          const rawTopic = (data.topic || "").trim();
           const profile = data.profile || null;
           const profText = profileSummary(profile);
           const difficulty = Math.max(0, Math.min(3, parseInt(data.difficulty, 10) || 0));
 
+          // ── Optional video ingestion: let Gemini watch the YouTube link and
+          // distill it into a context blob that anchors the whole pipeline ──
+          let videoContext = "";
+          if (videoUrl) {
+            send("reading", `Watching the video…`);
+            try {
+              const vc = await contextFromVideo(videoUrl);
+              videoContext = [
+                vc.topic ? `Concept: ${vc.topic}` : "",
+                vc.mechanism ? `Mechanism: ${vc.mechanism}` : "",
+                Array.isArray(vc.terminology) && vc.terminology.length ? `Key terms: ${vc.terminology.join(", ")}` : "",
+                vc.summary ? `Summary: ${vc.summary}` : "",
+              ].filter(Boolean).join("\n");
+            } catch (e) {
+              console.error("VIDEO INGESTION FAILED:", e && e.message);
+              if (!rawTopic) {
+                send("error", "Couldn't read that video. Try a different link or type a topic instead.");
+                res.end();
+                return;
+              }
+              // Have a typed topic to fall back on — continue without context
+            }
+          }
+
           send("expand", `Sharpening topic…`);
-          const expanded = await expandTopic(rawTopic);
+          const expanded = await expandTopic(rawTopic || videoContext, videoContext || null);
           const topic = expanded.topic;
           const kind = expanded.kind === "puzzle" ? "puzzle" : "simulation";
           const mechanism = expanded.mechanism || "";
