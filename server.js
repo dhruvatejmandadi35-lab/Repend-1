@@ -322,6 +322,7 @@ Return ONLY JSON with this exact shape:
     "interaction_description": "What the learner does step by step. What they touch first. What changes visually on each interaction. What the aha moment looks like on screen.",
     "aha_trigger": "The exact visual event that marks the aha moment. Be specific: what threshold, what visual change, what the learner sees right before vs. right after.",
     "mission": "One action sentence starting with a verb — the specific thing the learner must accomplish in the sim. Starts with what to do, ends with the goal state. E.g. 'Drag the satellite to escape velocity and watch it break free of orbit.' or 'Find the interest rate that triples your money before year 30.' or 'Mark every carrier in the family tree until the inheritance pattern becomes clear.' Never use 'explore' or 'observe' — the learner must be trying to achieve something specific.",
+    "exploration_hint": "One Socratic nudge shown to the learner 15 seconds after they start playing — after they've had time to look but before they give up. It should point them toward the surprising regime, like 'What happens when you push it all the way to the extreme?' or 'Try the opposite of what you expect.' Never state the answer. Never say 'explore' — be specific about the direction to push.",
     "success_condition": "Exact programmatic rule for completion.",
     "real_world_payoff": "One sentence: the real-world consequence the learner now understands."
   }
@@ -1084,6 +1085,7 @@ const server = http.createServer(async (req, res) => {
             learningGoal: design.spec.learning_goal,
             realWorldPayoff: design.spec.real_world_payoff,
             mission: design.spec.mission || null,
+            explorationHint: design.spec.exploration_hint || null,
             reflection: design.spec.reflection || null,
             prediction: design.spec.prediction || null,
             labHtml: html,

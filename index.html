@@ -738,6 +738,24 @@
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
     /* ── MISSION BANNER ─────────────────────────── */
+    #explorationHint {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(99,102,241,0.08);
+      border: 1px solid rgba(99,102,241,0.25);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 14px;
+      font-size: 13px;
+      color: #a5b4fc;
+      animation: fadeSlideIn 0.5s ease;
+    }
+    #explorationHint::before { content: "💡"; margin-right: 2px; }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
     #missionBanner {
       display: flex;
       align-items: flex-start;
@@ -962,6 +980,7 @@
       </div>
     </div>
     <div class="play-guide" id="playGuide">Explore freely. Was your prediction right?</div>
+    <div id="explorationHint" style="display:none"></div>
     <div class="sim-frame-wrap">
       <iframe id="simFrame" sandbox="allow-scripts" title="Interactive Lab"></iframe>
     </div>
@@ -1337,12 +1356,31 @@
     stepSim.style.display = "block";
     repairAttempts = 0;
     simFrame.srcdoc = currentPlan.labHtml;
+
+    // After 15 s of exploring, whisper a Socratic nudge if the hint hasn't
+    // been dismissed and the learner hasn't already moved on to explain.
+    const hintEl = document.getElementById("explorationHint");
+    hintEl.style.display = "none";
+    hintEl.textContent = "";
+    if (currentPlan.explorationHint) {
+      hintEl._timer = setTimeout(() => {
+        if (stepSim.style.display === "none") return; // already on step 3
+        hintEl.textContent = currentPlan.explorationHint;
+        hintEl.style.display = "flex";
+        hintEl.onclick = () => { hintEl.style.display = "none"; };
+      }, 15000);
+    }
   }
 
   // ── Explain step ──────────────────────────────────────────────────
   function showExplain() {
     explainDivider.style.display = "flex";
     stepVerify.style.display = "block";
+
+    // Clear the exploration hint + its pending timer
+    const hintEl = document.getElementById("explorationHint");
+    if (hintEl._timer) { clearTimeout(hintEl._timer); hintEl._timer = null; }
+    hintEl.style.display = "none";
 
     // Build personalized explanation
     const reflection = currentPlan.reflection;
