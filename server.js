@@ -1095,12 +1095,22 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
-          // Stream progress via SSE
+          // Stream progress via SSE. NB: no "Connection" header — it's a
+          // hop-by-hop HTTP/1.1 header that is illegal over HTTP/2 (Railway)
+          // and triggers ERR_HTTP2_PROTOCOL_ERROR. X-Accel-Buffering disables
+          // proxy buffering so events flush immediately.
           res.writeHead(200, {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
           });
+
+          // Heartbeat: SSE comment every 15s keeps the connection alive during
+          // long silent awaits (esp. video watching) so proxies don't reset it.
+          const heartbeat = setInterval(() => {
+            try { res.write(`: ping\n\n`); } catch (_) {}
+          }, 15000);
+          res.on("close", () => clearInterval(heartbeat));
 
           const send = (stage, msg, data) => {
             res.write(`data: ${JSON.stringify({ stage, msg, data })}\n\n`);
@@ -1277,5 +1287,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.timeout = 120_000; // 120 s — lab generation is multi-step and long
+server.timeout = 300_000; // 300 s — video watching + multi-step lab gen is long
 server.listen(PORT, "0.0.0.0", () => console.log(`Repend running at http://0.0.0.0:${PORT}`));
