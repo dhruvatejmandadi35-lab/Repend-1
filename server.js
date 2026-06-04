@@ -181,6 +181,39 @@ async function analyzeImage(base64Image, question) {
 //   5. codeFromImageBrief — gpt-4o vision: image + brief → final HTML
 // ─────────────────────────────────────────────────────────────────
 
+// Step -2 (optional) — finds a relevant educational YouTube video for a topic
+// via the YouTube Data API. Returns a watch URL, or "" if no key / no result.
+// Requires YOUTUBE_API_KEY (YouTube Data API v3 enabled). Free quota ~100
+// searches/day. Biased toward medium-length (4-20 min) English explainers.
+async function findYouTubeVideo(topic) {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) return "";
+  const params = new URLSearchParams({
+    part: "snippet",
+    q: `${topic} explained`,
+    type: "video",
+    videoEmbeddable: "true",
+    videoDuration: "medium",
+    relevanceLanguage: "en",
+    safeSearch: "strict",
+    maxResults: "1",
+    key,
+  });
+  try {
+    const r = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
+    if (!r.ok) {
+      console.error("YOUTUBE SEARCH FAILED:", r.status, await r.text().catch(() => ""));
+      return "";
+    }
+    const j = await r.json();
+    const id = j.items && j.items[0] && j.items[0].id && j.items[0].id.videoId;
+    return id ? `https://www.youtube.com/watch?v=${id}` : "";
+  } catch (e) {
+    console.error("YOUTUBE SEARCH ERROR:", e && e.message);
+    return "";
+  }
+}
+
 // Step -1 (optional) — "watches" a YouTube video with Gemini and distills it
 // into a context blob for the rest of the pipeline. We use Gemini here because
 // it can ingest a YouTube URL natively; OpenAI (steps 0-4) cannot watch video.
@@ -1077,14 +1110,35 @@ const server = http.createServer(async (req, res) => {
           const profile = data.profile || null;
           const profText = profileSummary(profile);
           const difficulty = Math.max(0, Math.min(3, parseInt(data.difficulty, 10) || 0));
+          const profSig = profileSig(profile);
+          const diffSuffix = difficulty ? "::d" + difficulty : "";
 
-          // ── Optional video ingestion: let Gemini watch the YouTube link and
-          // distill it into a context blob that anchors the whole pipeline ──
+          // ── Early cache check (typed topics): serve before paying for video
+          // search + watching, which is the expensive part of auto-find. ──
+          let rawKey = "";
+          if (rawTopic && !videoUrl) {
+            rawKey = "raw:" + topicKey(rawTopic) + "::" + profSig + diffSuffix;
+            const earlyHit = await getCachedLab(rawKey);
+            if (earlyHit) {
+              send("done", "Lab ready.", { ...earlyHit, source: "cached" });
+              res.end();
+              return;
+            }
+          }
+
+          // ── Optional video ingestion: let Gemini watch a YouTube video and
+          // distill it into a context blob that anchors the whole pipeline.
+          // The video is either pasted by the user OR auto-found from the topic.
           let videoContext = "";
-          if (videoUrl) {
+          let useUrl = videoUrl;
+          if (!useUrl && rawTopic) {
+            const found = await findYouTubeVideo(rawTopic);
+            if (found) { useUrl = found; send("reading", `Found a video — watching it…`); }
+          }
+          if (useUrl) {
             send("reading", `Watching the video…`);
             try {
-              const vc = await contextFromVideo(videoUrl);
+              const vc = await contextFromVideo(useUrl);
               videoContext = [
                 vc.topic ? `Concept: ${vc.topic}` : "",
                 vc.mechanism ? `Mechanism: ${vc.mechanism}` : "",
@@ -1110,7 +1164,7 @@ const server = http.createServer(async (req, res) => {
           // Cache key includes the profile signature so a high-schooler and a
           // college student studying the same topic get their own lab variants.
           // Difficulty level is part of the key too — "Go deeper" gets a fresh lab.
-          const key = topicKey(topic) + "::" + profileSig(profile) + (difficulty ? "::d" + difficulty : "");
+          const key = topicKey(topic) + "::" + profSig + diffSuffix;
           send("expanded", `Building lab for: ${topic}`, { topic, why: expanded.why });
 
           // ── Cache hit: serve instantly, zero AI cost ──────────────────
@@ -1156,8 +1210,10 @@ const server = http.createServer(async (req, res) => {
           send("done", "Lab ready.", { ...labData, source: "generated" });
           res.end();
 
-          // Fire-and-forget save — don't block the response
+          // Fire-and-forget save — don't block the response. Also save under
+          // the raw-topic key so repeat typed topics skip the video step.
           saveLab(key, design.topic, labData);
+          if (rawKey) saveLab(rawKey, design.topic, labData);
 
         } else if (req.url === "/plan") {
           if (!data.topic?.trim()) {
