@@ -535,7 +535,7 @@ const LAB_MODEL = "gemini-3.5-flash";
 //     parent so the platform can self-repair instead of showing a blank screen
 function injectLabRuntime(html) {
   const runtime = `
-<script>
+<script data-repend-runtime="1">
 (function(){
   function fixCanvases(){
     document.querySelectorAll("canvas").forEach(function(c){
@@ -606,6 +606,8 @@ Return the COMPLETE corrected HTML document — the entire file, not a diff and 
   });
   let fixed = res.response.text().trim();
   fixed = fixed.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  // Strip previously injected runtime (identified by sentinel attr) before re-injecting
+  fixed = fixed.replace(/<script data-repend-runtime="1">[\s\S]*?<\/script>/i, "");
   return injectLabRuntime(fixed);
 }
 async function codeFromImageBrief(design, labThinking, imageDataUrl, kind) {
