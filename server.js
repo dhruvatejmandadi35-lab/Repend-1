@@ -2,9 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const OpenAI = require("openai");
-const Anthropic = require("@anthropic-ai/sdk");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { AnthropicVertex } = require("@anthropic-ai/vertex-sdk");
 
 // Load .env locally (Railway injects env vars directly, so this is a no-op there).
 try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
@@ -14,13 +12,8 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
   });
 } catch (_) { /* no .env file — fine in production */ }
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const vertex = new AnthropicVertex({
-  projectId: process.env.GCP_PROJECT_ID,
-  region: process.env.GCP_REGION || "us-east5",
-});
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
@@ -269,6 +262,12 @@ Return ONLY JSON with this exact shape:
       "correct": "B: it quadruples",
       "explanation": "Because wavelength ∝ 1/size², halving size means wavelength × 4."
     },
+    "direct_manipulation": "Describe one thing the learner grabs/drags directly ON the canvas — the PRIMARY variable must be controllable by dragging an object, not just a slider. E.g. 'Drag the planet closer or farther from the star to change orbital radius. The planet snaps to pointer on drag.' Be concrete about the visual object being grabbed.",
+    "interaction_palette": [
+      { "type": "draggable", "element": "name of draggable canvas object", "effect": "what changes in the simulation when dragged" },
+      { "type": "click-spawn", "element": "what clicking the canvas does", "effect": "immediate visual result" },
+      { "type": "toggle-button", "element": "button label", "effect": "what boolean flips and what visually changes" }
+    ],
     "stage_description": "Detailed paragraph: what is drawn on screen, what moves, what colors. Reference the visualMetaphor directly. Specific positions, sizes, what animates.",
     "interaction_description": "What the learner does step by step. What they touch first. What changes visually on each interaction. What the aha moment looks like on screen.",
     "aha_trigger": "The exact visual event that marks the aha moment. Be specific: what threshold, what visual change, what the learner sees right before vs. right after.",
@@ -285,6 +284,8 @@ RULES:
 - rules MUST include at least one threshold that triggers the aha moment visually
 - the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
 - reflection question must be answerable only AFTER interacting — not a definition lookup
+- direct_manipulation MUST describe a canvas object the learner grabs with their finger/mouse — not a slider. The primary variable is controlled by dragging something on the canvas.
+- interaction_palette MUST include at least one "draggable" and one "toggle-button" entry — the lab needs multiple interaction types, not just sliders
 - do NOT include interaction_type, lab_type, or any format label anywhere in the JSON`,
       },
       {
@@ -458,6 +459,65 @@ RULES OF PRECEDENCE:
 TOPIC: ${design.topic}
 LEARNING GOAL: ${design.spec.learning_goal}
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
+${design.spec.direct_manipulation ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PRIMARY DIRECT MANIPULATION (NOT a slider — the learner grabs this on the canvas):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${design.spec.direct_manipulation}
+` : ""}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUIRED INTERACTIONS — implement every one of these:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${(design.spec.interaction_palette || []).map(p => `  [${p.type}] ${p.element} → ${p.effect}`).join("\n") || `  [draggable] at least one canvas object the learner grabs and drags
+  [click-spawn] clicking the canvas creates a visible effect
+  [toggle-button] at least one toggle that flips a boolean and changes the visual`}
+
+INTERACTION CODE PATTERNS — copy these exact patterns for each type:
+
+[draggable] Grab and drag a canvas object:
+  let drag = null;
+  canvas.addEventListener('pointerdown', e => {
+    const {mx, my} = canvasPt(e);
+    if (Math.hypot(mx - state.obj.x, my - state.obj.y) < 30) {
+      drag = { ox: state.obj.x - mx, oy: state.obj.y - my };
+      canvas.setPointerCapture(e.pointerId);
+    }
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (drag) { const {mx,my}=canvasPt(e); state.obj.x=mx+drag.ox; state.obj.y=my+drag.oy; }
+    else { /* update hover: is pointer near obj? change cursor */ const {mx,my}=canvasPt(e); canvas.style.cursor = Math.hypot(mx-state.obj.x,my-state.obj.y)<30?'grab':'default'; }
+  });
+  canvas.addEventListener('pointerup', () => { drag=null; canvas.style.cursor='default'; });
+  function canvasPt(e) { const r=canvas.getBoundingClientRect(); return { mx:(e.clientX-r.left)*(canvas.width/r.width), my:(e.clientY-r.top)*(canvas.height/r.height) }; }
+
+[click-spawn] Click canvas to fire/spawn an object:
+  canvas.addEventListener('click', e => {
+    const {mx,my}=canvasPt(e);
+    state.particles.push({ x:mx, y:my, vx:(Math.random()-.5)*4, vy:-6, life:1.0 });
+  });
+
+[toggle-button] Button that flips a boolean:
+  const btn = document.getElementById('toggleBtn');
+  btn.addEventListener('click', () => {
+    controls.active = !controls.active;
+    btn.textContent = controls.active ? '⏸ Pause' : '▶ Play';
+    btn.style.background = controls.active ? '#1e3a5f' : '#3a1e1e';
+  });
+
+[keyboard] Spacebar + arrow keys for power users:
+  window.addEventListener('keydown', e => {
+    if (e.code==='Space') { controls.paused=!controls.paused; e.preventDefault(); }
+    if (e.code==='ArrowUp')   { controls.primaryVar = Math.min(controls.primaryVar+1, maxVal); syncSlider(); }
+    if (e.code==='ArrowDown') { controls.primaryVar = Math.max(controls.primaryVar-1, minVal); syncSlider(); }
+  });
+
+HOVER GLOW — every draggable object MUST glow when hovered:
+  // In the draw function, check if pointer is near the object:
+  if (state.hovered) {
+    ctx.save(); ctx.shadowBlur=20; ctx.shadowColor='rgba(99,102,241,0.8)';
+    // redraw the object shape here
+    ctx.restore();
+  }
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BEHAVIORAL BRIEF (build exactly this behavior):
@@ -487,7 +547,9 @@ REAL-WORLD PAYOFF (show on success): "${design.spec.real_world_payoff || ""}"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LAYOUT — TWO ZONES (non-negotiable):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• ZONE A — controls: compact panel. On mobile (width ≤ 500px) Zone A sits at the TOP as a horizontal strip, max 160px tall. On desktop Zone A sits on the LEFT, max 220px wide. Zone B fills all remaining space. Use CSS flex column on mobile, row on desktop. Zone A must NEVER overlap Zone B — set explicit widths/heights so they are cleanly separated.
+• MISSION BANNER: at the very top of Zone A, show the SUCCESS CONDITION text in a styled box — copper/amber border, small label "YOUR MISSION", text in white. Stays visible the entire time.
+  Example: <div style="background:rgba(212,165,116,0.08);border:1px solid rgba(212,165,116,0.4);border-radius:8px;padding:10px 12px;margin-bottom:12px"><div style="font-size:0.62rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#D4A574;margin-bottom:4px">YOUR MISSION</div><div style="font-size:0.82rem;color:#F0F2F8;line-height:1.5">[mission]</div></div>
+• ZONE A — controls: compact panel below the mission banner. On mobile (width ≤ 500px) Zone A sits at the TOP as a horizontal strip, max 200px tall. On desktop Zone A sits on the LEFT, max 220px wide. Zone B fills all remaining space. Use CSS flex column on mobile, row on desktop. Zone A must NEVER overlap Zone B — set explicit widths/heights so they are cleanly separated.
 • ZONE B — result canvas: fills all remaining space after Zone A. The canvas element's width and height attributes must be set dynamically from its actual rendered pixel size (use ResizeObserver or set after layout). Never hardcode canvas.width/height to values that differ from the element's CSS size — that causes stretched/blank output.
 • Zone B must react to every Zone A change within 16ms. No submit button. No lag.
 • Zone B must have at least one live text readout of the OUTPUT value (not the control value). "Surface damage: HIGH" not "Friction: 0.9". The readout names the EFFECT, not the input. Draw it ON the canvas, not as an HTML element on top.
