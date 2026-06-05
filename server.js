@@ -428,10 +428,10 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // Step 5 — writes the final HTML lab.
 // Takes the prose brief (source of truth for behavior) + optional mockup image (look/layout).
 //
-// NOTE: This step originally ran on Claude (claude-opus-4-7), then OpenAI gpt-4o,
-// then Google Gemini (gemini-2.5-flash). Now uses Claude on Google Vertex AI.
+// NOTE: This step originally ran on Claude (claude-opus-4-7), then OpenAI gpt-4o.
+// Now uses Google Gemini (gemini-2.5-flash).
 // Change LAB_MODEL here to swap models.
-const LAB_MODEL = "claude-sonnet-4-6";
+const LAB_MODEL = "gemini-2.5-flash";
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -571,39 +571,17 @@ Before returning, verify ALL of these — fix any that fail before responding:
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
-  // --- GEMINI FALLBACK (commented out) ---
-  // const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
-  // const parts = [{ text: briefText }];
-  // if (imageDataUrl) {
-  //   const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
-  //   if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
-  // }
-  // const res = await model.generateContent({
-  //   contents: [{ role: "user", parts }],
-  //   generationConfig: { maxOutputTokens: 12000, temperature: 0.7 },
-  // });
-  // let html = res.response.text().trim();
-  // html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
-  // return html;
-  // --- END GEMINI FALLBACK ---
-
-  // AnthropicVertex (claude-sonnet-4-6 on Google Vertex AI)
-  const messageContent = [{ type: "text", text: briefText }];
+  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
+  const parts = [{ text: briefText }];
   if (imageDataUrl) {
     const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
-    if (m) messageContent.push({
-      type: "image",
-      source: { type: "base64", media_type: m[1], data: m[2] },
-    });
+    if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
   }
-
-  const response = await vertex.messages.create({
-    model: LAB_MODEL,
-    max_tokens: 12000,
-    messages: [{ role: "user", content: messageContent }],
+  const res = await model.generateContent({
+    contents: [{ role: "user", parts }],
+    generationConfig: { maxOutputTokens: 16000, temperature: 0.7 },
   });
-
-  let html = response.content[0].text.trim();
+  let html = res.response.text().trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
 }
