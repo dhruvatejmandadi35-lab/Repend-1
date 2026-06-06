@@ -457,6 +457,39 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // Now uses Google Gemini (gemini-2.5-flash).
 // Change LAB_MODEL here to swap models.
 const LAB_MODEL = "gemini-2.5-flash";
+// Fallback model tried if LAB_MODEL is overloaded (503) after retries.
+const LAB_MODEL_FALLBACK = "gemini-1.5-flash";
+
+// Gemini's free tier 503s under load. Retry with exponential backoff, then
+// fall back to a secondary model. Returns the generateContent result.
+async function geminiGenerate(request, { label = "gemini" } = {}) {
+  const models = [LAB_MODEL, LAB_MODEL_FALLBACK];
+  let lastErr;
+  for (const modelName of models) {
+    const model = gemini.getGenerativeModel({ model: modelName });
+    // Backoff schedule: ~1s, 2s, 4s, 8s
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        return await model.generateContent(request);
+      } catch (err) {
+        lastErr = err;
+        const msg = String(err && err.message || err);
+        const overloaded = /\b(503|429|overloaded|high demand|Service Unavailable|rate limit)\b/i.test(msg);
+        // Only retry/fallback on transient overload errors; rethrow real bugs.
+        if (!overloaded) throw err;
+        if (attempt < 3) {
+          const wait = 1000 * Math.pow(2, attempt);
+          console.warn(`[${label}] ${modelName} overloaded (attempt ${attempt + 1}), retrying in ${wait}ms`);
+          await new Promise(r => setTimeout(r, wait));
+        } else {
+          console.warn(`[${label}] ${modelName} still overloaded after retries; trying next model`);
+        }
+      }
+    }
+  }
+  throw lastErr;
+}
+
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -714,16 +747,15 @@ Before returning, verify ALL of these — fix any that fail before responding:
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
-  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
   const parts = [{ text: briefText }];
   if (imageDataUrl) {
     const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
     if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
   }
-  const res = await model.generateContent({
+  const res = await geminiGenerate({
     contents: [{ role: "user", parts }],
     generationConfig: { maxOutputTokens: 16000, temperature: 0.7 },
-  });
+  }, { label: "codegen" });
   let html = res.response.text().trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
@@ -818,11 +850,10 @@ ${stripped}
 Fix the bug. Common causes: variable used before declaration, typo in a variable name, calling a function before defining it, reading a property of null/undefined.
 Return the COMPLETE corrected HTML document — entire file, no diff, no snippet, no markdown fences, no commentary.`;
 
-  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
-  const res = await model.generateContent({
+  const res = await geminiGenerate({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { maxOutputTokens: 16000, temperature: 0.2 },
-  });
+  }, { label: "repair" });
   let fixed = res.response.text().trim();
   fixed = fixed.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return injectLabRuntime(fixed);
