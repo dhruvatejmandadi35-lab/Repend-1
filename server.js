@@ -888,6 +888,12 @@ const server = http.createServer(async (req, res) => {
           // ── Cache hit: serve instantly, zero AI cost ──────────────────
           const cached = await getCachedLab(key);
           if (cached) {
+            // Always re-inject the latest runtime so old cached labs get
+            // the current canvas-sizing fix without needing regeneration.
+            if (cached.labHtml) {
+              const stripped = cached.labHtml.replace(/<script data-repend-runtime="1">[\s\S]*?<\/script>/i, "");
+              cached.labHtml = injectLabRuntime(stripped);
+            }
             send("done", "Lab ready.", { ...cached, source: "cached" });
             res.end();
             return;
