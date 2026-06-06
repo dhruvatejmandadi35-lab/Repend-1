@@ -1,6 +1,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const OpenAI = require("openai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 // Load .env locally (Railway injects env vars directly).
@@ -11,28 +12,31 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
   });
 } catch (_) {}
 
+// Two providers: OpenAI runs the text/reasoning steps; Gemini builds the HTML lab.
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
-// Helper: call Gemini and get a text response
-async function geminiText(prompt, maxTokens = 1000) {
-  const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
-  const res = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.5 },
+// Helper: OpenAI plain-text response
+async function openaiText(prompt, maxTokens = 1000, model = "gpt-4o-mini") {
+  const res = await openai.chat.completions.create({
+    model, max_tokens: maxTokens,
+    messages: [{ role: "user", content: prompt }],
   });
-  return res.response.text().trim();
+  return res.choices[0].message.content.trim();
 }
 
-// Helper: call Gemini and get a parsed JSON response
-async function geminiJSON(prompt, maxTokens = 2500) {
-  const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
-  const res = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.4, responseMimeType: "application/json" },
+// Helper: OpenAI JSON response (json_object mode)
+async function openaiJSON(prompt, maxTokens = 2500, model = "gpt-4o") {
+  const res = await openai.chat.completions.create({
+    model, max_tokens: maxTokens,
+    response_format: { type: "json_object" },
+    messages: [{ role: "user", content: prompt }],
   });
-  const text = res.response.text().trim();
-  return JSON.parse(text);
+  return JSON.parse(res.choices[0].message.content.trim());
 }
+
+// The HTML codegen + repair steps call gemini.getGenerativeModel directly (see
+// codeFromImageBrief and repairLab) — that is the only place Gemini is used.
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
@@ -113,7 +117,7 @@ const VERIFY_SYSTEM = `You are a learning coach. Return ONLY JSON:
 const ENGINE_TEMPLATE = fs.readFileSync(path.join(__dirname, "engine.html"), "utf8");
 
 async function plan(topic) {
-  return geminiJSON(`${PLAN_SYSTEM}\n\nTopic: ${topic}\n\nProduce the complete recipe JSON.`, 4096);
+  return openaiJSON(`${PLAN_SYSTEM}\n\nTopic: ${topic}\n\nProduce the complete recipe JSON.`, 4096);
 }
 
 function injectRecipe(recipe) {
@@ -125,29 +129,32 @@ function injectRecipe(recipe) {
 }
 
 async function verify(topic, question, recipeSummary, userAnswer, labResult) {
-  return geminiJSON(`${VERIFY_SYSTEM}
+  return openaiJSON(`${VERIFY_SYSTEM}
 
 Topic: ${topic}
 Question: ${question}
 Lab summary: ${recipeSummary}
 Engine verdict: ${labResult ? JSON.stringify(labResult) : "n/a"}
-Student answer: ${userAnswer}`, 512);
+Student answer: ${userAnswer}`, 512, "gpt-4o-mini");
 }
 
 async function analyzeImage(base64Image, question) {
-  const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
-  const res = await model.generateContent({
-    contents: [{ role: "user", parts: [
-      { inlineData: { mimeType: "image/png", data: base64Image } },
-      { text: question || "Describe what the learner has built in this lab." },
-    ]}],
-    generationConfig: { maxOutputTokens: 512 },
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 512,
+    messages: [{
+      role: "user",
+      content: [
+        { type: "image_url", image_url: { url: `data:image/png;base64,${base64Image}` } },
+        { type: "text", text: question || "Describe what the learner has built in this lab." },
+      ],
+    }],
   });
-  return res.response.text().trim();
+  return res.choices[0].message.content.trim();
 }
 
 // ─────────────────────────────────────────────────────────────────
-// FREEFORM LAB PIPELINE — all steps now use Gemini only (one key):
+// FREEFORM LAB PIPELINE — OpenAI runs steps 0-3, Gemini builds the HTML:
 //   0. expandTopic        — gemini-2.5-flash JSON: sharpens vague input
 //   1. thinkAboutTopic    — gemini-2.5-flash prose: insight, metaphor, variables
 //   2. specFromThinking   — gemini-2.5-flash JSON: typed spec with archetype
@@ -160,7 +167,7 @@ async function analyzeImage(base64Image, question) {
 // "ML" → "Gradient Descent: how a model finds the bottom of a loss landscape"
 // "Physics" → "Newton's Second Law: why heavier objects need more force to accelerate"
 async function expandTopic(rawTopic) {
-  return geminiJSON(`You sharpen vague learning topics into one specific, teachable concept.
+  return openaiJSON(`You sharpen vague learning topics into one specific, teachable concept.
 
 Return JSON:
 {
@@ -176,11 +183,11 @@ RULES:
 - NEVER pick abstract concepts like 'resonance', 'harmony', 'energy flow' — pick something with a concrete visual output.
 - Never return a skill, definition, or procedure. Return the INSIGHT.
 
-Topic: ${rawTopic}`, 300);
+Topic: ${rawTopic}`, 300, "gpt-4o-mini");
 }
 
 async function thinkAboutTopic(topic) {
-  return geminiText(`You are an expert at explaining how concepts should FEEL to learn. Write a short analysis of "${topic}" covering exactly these five things:
+  return openaiText(`You are an expert at explaining how concepts should FEEL to learn. Write a short analysis of "${topic}" covering exactly these five things:
 
 1. THE CORE INSIGHT — what single thing, once seen visually, makes this concept truly click? Not a definition — the moment of understanding.
 2. THE VISUAL METAPHOR — what does this concept look like IN MOTION? Be vivid and specific to this topic.
@@ -188,11 +195,11 @@ async function thinkAboutTopic(topic) {
 4. THE AHA MOMENT — the precise moment when the learner says "oh!". What did they just see happen?
 5. THE REAL-WORLD COST — one concrete situation where not understanding this costs something real.
 
-Write in plain direct prose. Be specific to ${topic}.`, 800);
+Write in plain direct prose. Be specific to ${topic}.`, 800, "gpt-4o-mini");
 }
 
 async function specFromThinking(topic, thinking) {
-  const parsed = await geminiJSON(`You convert educational reasoning into an interactive lab spec. Read the reasoning and produce JSON.
+  const parsed = await openaiJSON(`You convert educational reasoning into an interactive lab spec. Read the reasoning and produce JSON.
 
 Return ONLY JSON with this exact shape:
 {
@@ -413,7 +420,7 @@ RULES:
 - No decorative elements — every element either reacts to input or displays the concept
 - The lab opens mid-phenomenon — already showing interesting behavior at the default values`;
 
-  return geminiText(prompt, 2500);
+  return openaiText(prompt, 2500, "gpt-4o");
 }
 
 // Step 4 (optional) — gpt-image-1 generates a clean UI mockup.
