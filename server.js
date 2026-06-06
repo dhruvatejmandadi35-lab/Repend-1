@@ -648,6 +648,68 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   return html;
 }
 
+// Injected into every lab: canvas auto-sizing + error reporter.
+// Sentinel attr prevents double-injection on repair.
+function injectLabRuntime(html) {
+  const runtime = `
+<script data-repend-runtime="1">
+(function(){
+  function fixCanvases(){
+    document.querySelectorAll("canvas").forEach(function(c){
+      var r = c.getBoundingClientRect();
+      if(r.width > 0 && r.height > 0){
+        if(c.width !== Math.round(r.width) || c.height !== Math.round(r.height)){
+          c.width  = Math.round(r.width);
+          c.height = Math.round(r.height);
+          // Dispatch resize so rAF loops that listen for it redraw immediately
+          window.dispatchEvent(new Event('resize'));
+        }
+      }
+    });
+  }
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", function(){ requestAnimationFrame(fixCanvases); });
+  } else {
+    requestAnimationFrame(fixCanvases);
+  }
+  window.addEventListener("resize", function(){ requestAnimationFrame(fixCanvases); });
+
+  var reported = false;
+  function report(msg, line, col){
+    if(reported) return; reported = true;
+    try { window.parent.postMessage({ type:"labError", error:{ message:String(msg||"Unknown error"), line:line||0, col:col||0 } }, "*"); } catch(_){}
+  }
+  window.addEventListener("error", function(e){ report(e.message, e.lineno, e.colno); });
+  window.addEventListener("unhandledrejection", function(e){ report((e.reason&&e.reason.message)||String(e.reason)||"Unhandled rejection", 0, 0); });
+})();
+<\/script>`;
+  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, runtime + "</head>");
+  if (/<body[^>]*>/i.test(html)) return html.replace(/(<body[^>]*>)/i, "$1" + runtime);
+  return runtime + html;
+}
+
+async function repairLab(html, errorMessage) {
+  const stripped = html.replace(/<script data-repend-runtime="1">[\s\S]*?<\/script>/i, "");
+  const prompt = `This interactive HTML lab throws a runtime JavaScript error that leaves the screen blank.
+
+THE ERROR: ${errorMessage}
+
+THE HTML:
+${stripped}
+
+Fix the bug. Common causes: variable used before declaration, typo in a variable name, calling a function before defining it, reading a property of null/undefined.
+Return the COMPLETE corrected HTML document — entire file, no diff, no snippet, no markdown fences, no commentary.`;
+
+  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
+  const res = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: 16000, temperature: 0.2 },
+  });
+  let fixed = res.response.text().trim();
+  fixed = fixed.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  return injectLabRuntime(fixed);
+}
+
 // ─────────────────────────────────────────────────────────────────
 // SERVER
 // /plan-lab uses SSE to stream progress stages to the frontend
@@ -684,8 +746,14 @@ const server = http.createServer(async (req, res) => {
           res.writeHead(200, {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            // NOTE: "Connection: keep-alive" is intentionally omitted —
+            // it is illegal over HTTP/2 and causes ERR_HTTP2_PROTOCOL_ERROR on Railway.
           });
+
+          // Heartbeat keeps the SSE connection alive through proxies/Railway
+          const heartbeat = setInterval(() => { try { res.write(`: ping\n\n`); } catch(_){} }, 15000);
+          res.on("close", () => clearInterval(heartbeat));
 
           const send = (stage, msg, data) => {
             res.write(`data: ${JSON.stringify({ stage, msg, data })}\n\n`);
@@ -724,7 +792,8 @@ const server = http.createServer(async (req, res) => {
           }
 
           send("code", "Writing your lab…");
-          const html = await codeFromImageBrief(design, labThinking, imageDataUrl);
+          const rawHtml = await codeFromImageBrief(design, labThinking, imageDataUrl);
+          const html = injectLabRuntime(rawHtml);
 
           const labData = {
             topic: design.topic,
@@ -741,6 +810,13 @@ const server = http.createServer(async (req, res) => {
 
           // Fire-and-forget save — don't block the response
           saveLab(key, design.topic, labData);
+
+        } else if (req.url === "/repair-lab") {
+          const { html, error } = data;
+          if (!html) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing html" })); return; }
+          const fixed = await repairLab(html, error || "Unknown error");
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ labHtml: fixed }));
 
         } else if (req.url === "/plan") {
           if (!data.topic?.trim()) {
