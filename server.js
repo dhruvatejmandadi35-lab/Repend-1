@@ -656,19 +656,27 @@ TECHNICAL CONSTRAINTS:
 • Zero console errors on first load.
 • Responsive: usable from 360px wide to full desktop.
 • Dark theme: bg #0B1220, stage #0E1830, panels #131A2A, border rgba(59,130,246,0.2). Accents: blue #3B82F6, copper #D4A574, success #22C55E, muted #8899BB.
-• CANVAS SIZING — mandatory pattern to prevent stretched/blank canvas:
+• CANVAS SIZING — CRITICAL. srcdoc iframes often return offsetWidth=0 at script time, causing permanent blank canvas. Use this EXACT pattern — no shortcuts:
   const canvas = document.getElementById('mainCanvas');
   const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, started = false;
   function resizeCanvas() {
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
+    const r = canvas.getBoundingClientRect();
+    const w = Math.round(r.width) || canvas.offsetWidth || canvas.parentElement.offsetWidth || 800;
+    const h = Math.round(r.height) || canvas.offsetHeight || canvas.parentElement.offsetHeight || 500;
+    if (w > 10 && h > 10) { W = canvas.width = w; H = canvas.height = h; }
+    if (!started && W > 0) { started = true; draw(); }
   }
-  resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
-  // Then start the draw loop:
-  function draw() { ctx.clearRect(0,0,canvas.width,canvas.height); /* draw everything */ requestAnimationFrame(draw); }
-  draw(); // called immediately on load — never wait for user input to start drawing
-  If canvas is blank on load, the lab has failed. A common cause: canvas.width/height not matching the element's CSS size.
+  window.addEventListener('load', resizeCanvas);
+  // Also handle the custom event fired by the platform's sizing runtime:
+  window.addEventListener('repend-resize', resizeCanvas);
+  // Try immediately, then defer — whichever fires first when layout is ready
+  resizeCanvas();
+  setTimeout(resizeCanvas, 50);
+  setTimeout(resizeCanvas, 200);
+  // draw() is called by resizeCanvas once W > 0 — DO NOT call draw() before then:
+  function draw() { if(!W||!H) return; ctx.clearRect(0,0,W,H); /* draw everything */ requestAnimationFrame(draw); }
 • Zone B must show something meaningful within 100ms of page load — no waiting for interaction.
 • VISUAL DEPTH — make it look alive, not flat:
   - Gradient backgrounds on canvas (createLinearGradient or createRadialGradient)
@@ -720,33 +728,70 @@ function injectLabRuntime(html) {
   const runtime = `
 <script data-repend-runtime="1">
 (function(){
-  function fixCanvases(){
-    document.querySelectorAll("canvas").forEach(function(c){
-      var r = c.getBoundingClientRect();
-      if(r.width > 0 && r.height > 0){
-        if(c.width !== Math.round(r.width) || c.height !== Math.round(r.height)){
-          c.width  = Math.round(r.width);
-          c.height = Math.round(r.height);
-          // Dispatch resize so rAF loops that listen for it redraw immediately
-          window.dispatchEvent(new Event('resize'));
-        }
-      }
-    });
+  // Canvas sizing: srcdoc iframes often return offsetWidth=0 at script time.
+  // Use ResizeObserver as the reliable trigger, with a polling fallback.
+  function sizeCanvas(c){
+    // Prefer getBoundingClientRect (accounts for CSS transforms)
+    var r = c.getBoundingClientRect();
+    var w = Math.round(r.width)  || c.offsetWidth  || c.parentElement && c.parentElement.offsetWidth  || 0;
+    var h = Math.round(r.height) || c.offsetHeight || c.parentElement && c.parentElement.offsetHeight || 0;
+    if(w > 10 && h > 10 && (c.width !== w || c.height !== h)){
+      c.width  = w;
+      c.height = h;
+      // Tell the lab code to redraw — try both resize event and a custom event
+      window.dispatchEvent(new Event('resize'));
+      c.dispatchEvent(new Event('repend-resize'));
+    }
   }
-  if(document.readyState === "loading"){
-    document.addEventListener("DOMContentLoaded", function(){ requestAnimationFrame(fixCanvases); });
-  } else {
-    requestAnimationFrame(fixCanvases);
-  }
-  window.addEventListener("resize", function(){ requestAnimationFrame(fixCanvases); });
 
+  function fixAll(){ document.querySelectorAll('canvas').forEach(sizeCanvas); }
+
+  // 1. Try immediately (works if layout is ready)
+  fixAll();
+
+  // 2. After DOM is loaded
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', function(){ requestAnimationFrame(fixAll); });
+  }
+
+  // 3. After full page load (images, fonts — most reliable timing)
+  window.addEventListener('load', function(){ requestAnimationFrame(fixAll); });
+
+  // 4. ResizeObserver watches every canvas that appears
+  if(typeof ResizeObserver !== 'undefined'){
+    var ro = new ResizeObserver(function(entries){
+      entries.forEach(function(e){ sizeCanvas(e.target); });
+    });
+    function observeAll(){
+      document.querySelectorAll('canvas').forEach(function(c){
+        ro.observe(c);
+        sizeCanvas(c);
+      });
+    }
+    observeAll();
+    // Catch canvases added later by the lab
+    if(typeof MutationObserver !== 'undefined'){
+      new MutationObserver(observeAll).observe(document.documentElement,{childList:true,subtree:true});
+    }
+  }
+
+  // 5. Hard retry if canvas is still 0×0 after 200ms / 600ms (srcdoc timing edge case)
+  [200, 600, 1200].forEach(function(ms){
+    setTimeout(function(){
+      document.querySelectorAll('canvas').forEach(function(c){
+        if(c.width < 10 || c.height < 10){ sizeCanvas(c); }
+      });
+    }, ms);
+  });
+
+  // Error reporter
   var reported = false;
   function report(msg, line, col){
     if(reported) return; reported = true;
-    try { window.parent.postMessage({ type:"labError", error:{ message:String(msg||"Unknown error"), line:line||0, col:col||0 } }, "*"); } catch(_){}
+    try { window.parent.postMessage({ type:'labError', error:{ message:String(msg||'Unknown error'), line:line||0, col:col||0 } }, '*'); } catch(_){}
   }
-  window.addEventListener("error", function(e){ report(e.message, e.lineno, e.colno); });
-  window.addEventListener("unhandledrejection", function(e){ report((e.reason&&e.reason.message)||String(e.reason)||"Unhandled rejection", 0, 0); });
+  window.addEventListener('error', function(e){ report(e.message, e.lineno, e.colno); });
+  window.addEventListener('unhandledrejection', function(e){ report((e.reason&&e.reason.message)||String(e.reason)||'Unhandled rejection', 0, 0); });
 })();
 <\/script>`;
   if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, runtime + "</head>");
