@@ -460,9 +460,17 @@ const LAB_MODEL = "gemini-2.5-flash";
 // Fallback model tried if LAB_MODEL is overloaded (503) after retries.
 const LAB_MODEL_FALLBACK = "gemini-1.5-flash";
 
-// Gemini's free tier 503s under load. Retry with exponential backoff, then
-// fall back to a secondary model. Returns the generateContent result.
-async function geminiGenerate(request, { label = "gemini" } = {}) {
+function isOverloadError(err) {
+  const msg = String(err && err.message || err);
+  return /\b(503|429|overloaded|high demand|Service Unavailable|rate limit)\b/i.test(msg);
+}
+
+// Gemini's free tier 503s under load. Retry with exponential backoff across
+// both Gemini models, then — if an openaiFallback is provided — fall back to
+// OpenAI (a different provider, unlikely to be down at the same time).
+// `openaiFallback` is `async (request) => string`; its return is wrapped to
+// match the Gemini response shape so callers stay unchanged.
+async function geminiGenerate(request, { label = "gemini", openaiFallback = null } = {}) {
   const models = [LAB_MODEL, LAB_MODEL_FALLBACK];
   let lastErr;
   for (const modelName of models) {
@@ -473,10 +481,8 @@ async function geminiGenerate(request, { label = "gemini" } = {}) {
         return await model.generateContent(request);
       } catch (err) {
         lastErr = err;
-        const msg = String(err && err.message || err);
-        const overloaded = /\b(503|429|overloaded|high demand|Service Unavailable|rate limit)\b/i.test(msg);
         // Only retry/fallback on transient overload errors; rethrow real bugs.
-        if (!overloaded) throw err;
+        if (!isOverloadError(err)) throw err;
         if (attempt < 3) {
           const wait = 1000 * Math.pow(2, attempt);
           console.warn(`[${label}] ${modelName} overloaded (attempt ${attempt + 1}), retrying in ${wait}ms`);
@@ -485,6 +491,17 @@ async function geminiGenerate(request, { label = "gemini" } = {}) {
           console.warn(`[${label}] ${modelName} still overloaded after retries; trying next model`);
         }
       }
+    }
+  }
+  // All Gemini models exhausted. Try OpenAI as a cross-provider fallback.
+  if (openaiFallback) {
+    try {
+      console.warn(`[${label}] all Gemini models overloaded; falling back to OpenAI`);
+      const text = await openaiFallback(request);
+      return { response: { text: () => text } };
+    } catch (err) {
+      console.warn(`[${label}] OpenAI fallback also failed: ${err.message}`);
+      lastErr = err;
     }
   }
   throw lastErr;
@@ -755,7 +772,11 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   const res = await geminiGenerate({
     contents: [{ role: "user", parts }],
     generationConfig: { maxOutputTokens: 16000, temperature: 0.7 },
-  }, { label: "codegen" });
+  }, {
+    label: "codegen",
+    // Cross-provider fallback: gpt-4o produces the same provider-agnostic HTML.
+    openaiFallback: () => openaiText(briefText, 16000, "gpt-4o"),
+  });
   let html = res.response.text().trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
@@ -853,7 +874,10 @@ Return the COMPLETE corrected HTML document — entire file, no diff, no snippet
   const res = await geminiGenerate({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { maxOutputTokens: 16000, temperature: 0.2 },
-  }, { label: "repair" });
+  }, {
+    label: "repair",
+    openaiFallback: () => openaiText(prompt, 16000, "gpt-4o"),
+  });
   let fixed = res.response.text().trim();
   fixed = fixed.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return injectLabRuntime(fixed);
@@ -1007,12 +1031,16 @@ const server = http.createServer(async (req, res) => {
         }
       } catch (err) {
         console.error(err);
+        // Turn cryptic provider 503s into a clear, actionable message.
+        const friendly = isOverloadError(err)
+          ? "Our lab-building models are overloaded right now (high demand). This is temporary — please try again in a minute."
+          : (err.message || "Something went wrong");
         if (!res.headersSent) {
           res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: err.message || "Something went wrong" }));
+          res.end(JSON.stringify({ error: friendly }));
         } else {
           // SSE already started — send error event then close
-          res.write(`data: ${JSON.stringify({ stage: "error", msg: err.message || "Something went wrong" })}\n\n`);
+          res.write(`data: ${JSON.stringify({ stage: "error", msg: friendly })}\n\n`);
           res.end();
         }
       }
