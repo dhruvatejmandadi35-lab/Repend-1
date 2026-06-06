@@ -233,7 +233,10 @@ Return ONLY JSON with this exact shape:
   "verificationQuestion": "One specific question the learner can only answer correctly AFTER interacting with the lab.",
   "spec": {
     "title": "Short punchy lab title",
+    "lab_archetype": "Exactly one of: physics-sim | threshold | accumulation | process-flow | tradeoff | structure-puzzle. Choose based on what kind of interaction best reveals the core insight: physics-sim = continuous motion/forces (orbital, waves, projectile); threshold = behavior jumps suddenly at a boundary (states of matter, equilibrium, action potential); accumulation = things pile up / compound over time (interest, growth, debt); process-flow = something moves through stages (photosynthesis, digestion, supply chain); tradeoff = two competing forces find an optimum (supply/demand, natural selection); structure-puzzle = click to arrange/mark a static structure (genetics pedigree, circuits, food web). Pick the ONE that best fits.",
     "learning_goal": "One sentence using the exact words of the core insight from the reasoning.",
+    "entry_misconception": "The specific wrong belief the learner almost certainly walks in with. Be concrete: not 'they don't understand X' but 'they think X because Y, so they predict Z'. This is what the lab must break.",
+    "first_move": "The very first thing the learner should try — what to drag/click/adjust and what surprising thing happens in the first 10 seconds. This must directly challenge the entry_misconception.",
     "visualMetaphor": "One vivid sentence describing what the simulation looks and feels like IN MOTION. Not a chart type — a scene. E.g. 'Money piling up in stacks of gold coins, each new coin landing with a clink, the stacks growing taller until they overflow the screen.' Copy from the reasoning verbatim.",
     "variables": [
       {
@@ -284,9 +287,12 @@ RULES:
 - rules MUST include at least one threshold that triggers the aha moment visually
 - the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
 - reflection question must be answerable only AFTER interacting — not a definition lookup
+- lab_archetype MUST be one of the six listed — choose the one that best reveals the concept through interaction, not the most generic one
+- entry_misconception MUST be a specific wrong belief, not a vague gap — "they think heavier objects fall faster" not "they don't understand gravity"
+- first_move MUST describe a concrete action that surprises the learner within 10 seconds and directly challenges the entry_misconception
 - direct_manipulation MUST describe a canvas object the learner grabs with their finger/mouse — not a slider. The primary variable is controlled by dragging something on the canvas.
 - interaction_palette MUST include at least one "draggable" and one "toggle-button" entry — the lab needs multiple interaction types, not just sliders
-- do NOT include interaction_type, lab_type, or any format label anywhere in the JSON`,
+- do NOT include interaction_type or any format label anywhere in the JSON`,
       },
       {
         role: "user",
@@ -332,10 +338,73 @@ async function thinkAboutLab(design) {
     .map(v => `  • ${v.name} (${v.unit || ""}), range ${v.min}–${v.max}, default ${v.default}: ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES: ${v.regimes_note}` : ""}`)
     .join("\n");
 
-  const prompt = `You are a senior creative coder designing an interactive learning lab. You will produce a CONCRETE VISUAL BRIEF that another developer can implement directly in HTML Canvas 2D.
+  const archetype = design.spec.lab_archetype || "physics-sim";
+
+  // Archetype-specific questions that shape what the lab is DESIGNED to do
+  const archetypeQuestions = {
+    "physics-sim": `
+━━━ ARCHETYPE: PHYSICS SIMULATION ━━━
+This is a continuous-motion lab. The learner changes something and watches a physical system evolve. Design around these questions:
+- What does the default state look like — what's already moving before the learner touches anything?
+- What trajectory, path, or trail morphs visibly as the primary variable changes? (This morphing trail IS the lab.)
+- What are the 2-3 distinct regimes the primary variable spans? (e.g. crash / orbit / escape) What does each look like visually?
+- What hidden force or vector should be drawn as an arrow? (velocity, gravity, tension — name it, color it, make it proportional)
+- At what exact value does the most surprising visual transition happen? What does the canvas look like 1 second before vs 1 second after?`,
+
+    "threshold": `
+━━━ ARCHETYPE: THRESHOLD / PHASE TRANSITION ━━━
+This lab is about a sudden jump. The learner moves a slider and MOST of the range feels boring — then suddenly everything changes. Design around:
+- What does "before the threshold" look like? What single property is the learner watching?
+- What exact value triggers the jump? What changes visually — color, shape, motion, state?
+- Is the jump reversible? If yes, show hysteresis (the threshold going back is different from going forward). If no, make the irreversibility dramatic.
+- What's the subtle early warning sign just before the threshold? (a tremor, a glow building up, a value approaching a line)
+- The boring region MUST still be visually alive — what slow continuous change shows the system approaching the threshold?`,
+
+    "accumulation": `
+━━━ ARCHETYPE: ACCUMULATION / COMPOUNDING ━━━
+This lab is about how small rates produce enormous outcomes over time. Time runs forward. Design around:
+- Two curves must be drawn simultaneously: the linear "what most people intuitively expect" line, and the actual exponential/accumulation curve. The gap between them IS the insight.
+- What does the graph look like at t=0? At t=halfway? At t=max? Describe the visual divergence.
+- What does the "crossing point" look like — when does the accumulation curve visibly pull ahead of intuition?
+- Time controls: a play button that advances time, a speed slider, a reset. The learner must be able to run time forward and back.
+- Live readouts: current value, "if it were linear it would be X, but it's actually Y" — show the difference as a number.`,
+
+    "process-flow": `
+━━━ ARCHETYPE: PROCESS / FLOW ━━━
+This lab shows something moving through stages. The learner controls the inputs and watches how the output changes. Design around:
+- Draw each stage as a physical region on the canvas (a chamber, a node, a box). Label them.
+- Show the thing that flows (molecules, money, energy, signal) as particles or a stream visually moving between stages.
+- What happens at each stage? What transforms there? Make the transformation visible.
+- What happens when a stage is bottlenecked or overloaded? Show the backup, the overflow, the failure.
+- The learner's control changes the rate or condition at one stage — how does this ripple downstream? Show the ripple.`,
+
+    "tradeoff": `
+━━━ ARCHETYPE: TRADEOFF / OPTIMUM ━━━
+This lab has two competing forces and an optimum in the middle. Design around:
+- Draw BOTH forces simultaneously — one curve going up, one going down, their sum showing a peak or trough.
+- The learner drags a cursor along the tradeoff space. The cursor's position shows the current tradeoff. The optimal point is marked but not highlighted until the learner finds it.
+- What happens at the extreme left? Extreme right? The extremes must be visibly bad in different ways.
+- When the learner hits the optimum, what visual event marks it? (a click, a peak lighting up, a readout turning green)
+- Show the real-world cost of being off-optimum as a concrete number ("you're leaving $X on the table").`,
+
+    "structure-puzzle": `
+━━━ ARCHETYPE: STRUCTURE / PUZZLE ━━━
+This lab is about recognizing a pattern in a structure. No continuous physics loop. Design around:
+- Draw the full structure clearly at startup: a pedigree tree, a circuit, a web of nodes. It fills the canvas.
+- Clicking a node/element cycles its state visually (affected → carrier → unaffected; on → off; connected → disconnected).
+- After every click, evaluate() re-checks whether the current configuration is consistent/correct.
+- What's the wrong configuration the learner tries first? What feedback makes it clearly wrong?
+- What's the correct configuration? When reached, what visual celebration happens? (a path lights up, a circuit closes, a glow travels through the correct nodes)
+- There must be intermediate "close but not quite" states that give the learner useful partial feedback.`,
+  };
+
+  const prompt = `You are a senior learning designer and creative coder. Produce a CONCRETE BRIEF that a developer can implement directly in HTML Canvas 2D.
 
 TOPIC: ${design.topic}
+LAB ARCHETYPE: ${archetype}
 LEARNING GOAL: ${design.spec.learning_goal}
+ENTRY MISCONCEPTION (what the learner believes walking in): "${design.spec.entry_misconception || "not specified"}"
+FIRST MOVE (what to try first that breaks the misconception): "${design.spec.first_move || "not specified"}"
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
 
 VARIABLES:
@@ -343,45 +412,39 @@ ${vars}
 
 AHA MOMENT: ${design.spec.aha_trigger}
 
-Write a concrete brief covering these four areas. Be specific enough that a developer can write the drawing code directly from your description — no ambiguity, no "something that represents X".
+${archetypeQuestions[archetype] || archetypeQuestions["physics-sim"]}
 
-━━━ 1. WHAT DRAWS ON LOAD (before any interaction) ━━━
-Describe exactly what the canvas shows at startup. Name every drawn element with its approximate position, size, color, and whether it's animated. The canvas must look interesting and alive before the user touches anything. Include: a background (gradient or pattern), at least one always-moving element, and axis/grid lines if the concept involves quantities.
+Now write the FULL VISUAL BRIEF covering these sections. Be specific — a developer must be able to draw this directly from your words. No vague gestures.
 
-Example level of detail: "A dark navy canvas (#0E1830). Faint blue grid lines every 50px. A glowing copper sine wave drawn across the full width, oscillating slowly — amplitude 80px, one full cycle visible. A white dot riding the wave, moving left to right continuously. Label 'frequency: 1 Hz' in the top-right in #8899BB."
+━━━ A. LEARNING ARC (not visual — pedagogical) ━━━
+1. What wrong thing will the learner try first? (based on entry_misconception)
+2. What happens when they try it? (the surprising result)
+3. What do they adjust next? (the natural follow-up)
+4. What's the moment of "oh!" — what exactly changed on screen?
+5. What can they now explain that they couldn't before?
 
-━━━ 2. HOW EACH VARIABLE CHANGES THE CANVAS ━━━
-For each variable, describe the EXACT canvas change when its value changes. Name the specific drawing operations: what shape changes size/position/color/shape, what equation drives it, what the visual looks like at min vs max value.
+━━━ B. WHAT DRAWS ON LOAD ━━━
+Describe exactly what the canvas shows at startup — every element, position, color, whether animated. Must look alive and interesting before any interaction.
 
-Example: "Frequency (1–10 Hz): the sine wave's horizontal compression changes — at 1Hz one full wave spans the canvas, at 10Hz ten waves are crammed in. The white dot's speed increases proportionally. The label updates to 'frequency: N Hz'."
+━━━ C. HOW EACH VARIABLE CHANGES THE CANVAS ━━━
+For each variable: exact visual change, what equation drives it, what it looks like at min vs max.
 
-━━━ 3. THE AHA MOMENT VISUAL ━━━
-Describe the specific canvas state right before and right after the aha moment. What threshold triggers it? What visual event makes it unmissable? Use a concrete trigger: a value crossing a number, a wave doing something specific, two lines intersecting.
+━━━ D. THE AHA MOMENT VISUAL ━━━
+Canvas state right before vs right after. Exact trigger value. What visual event makes it unmissable.
 
-Example: "When frequency crosses 5Hz, the wave peaks start overlapping with the reflected wave — destructive interference appears as the amplitude suddenly drops to near-zero. A golden ring pulses around the wave for 1 second. Label flashes 'Destructive interference!' in #D4A574."
+━━━ E. MAKE THE INVISIBLE VISIBLE ━━━
+- TRACE/TRAIL: what path or history stays on screen so the learner compares before vs now?
+- HIDDEN MECHANISM: what force/field/process is normally invisible that must be drawn as arrows/bars/glows?
+- LINKED REPRESENTATIONS: same quantity shown 2+ ways simultaneously?
 
-━━━ 4. LIVE READOUTS IN ZONE B ━━━
-List every text label that updates live on the canvas as values change. Each readout must show the OUTPUT of the concept (what the concept produces), not just the input value. Format: "Label text: [formula or description], position on canvas, color."
-
-Example: "• 'Wavelength: X m' — top-left, #8899BB, updates as frequency changes (wavelength = speed/frequency)
-• 'Interference: constructive / destructive' — center-top, color shifts green→red based on phase overlap"
-
-━━━ 5. MAKE THE INVISIBLE VISIBLE ━━━
-This is the most important section. Real understanding comes from SEEING the hidden mechanism, not just the surface. Describe:
-- The TRACE/TRAIL: what path or history persists on screen so the learner compares "before vs now" without remembering? (e.g. the orbit trail that morphs circle→ellipse→escape as velocity changes; the ghost of the previous curve faded behind the current one). This morphing trace is usually the single most important visual — describe it precisely.
-- The HIDDEN VECTORS/FORCES: what arrows, fields, or quantities that you can't see in reality should be drawn? (velocity arrow, gravity-force arrow pointing inward, energy bars). Name each, its color, what it attaches to, how it changes.
-- The LINKED REPRESENTATIONS: the same quantity shown two+ ways at once that update together (a number AND a bar AND the physical motion). Name which quantity and which representations.
-
-Example: "A continuously drawn orbital trail (copper, fading older segments to 20% alpha) traces the satellite's path — at default velocity it's a near-circle, drop velocity and the trail spirals inward to a crash, raise it and the trail opens into an ellipse then a hyperbola that flies off-screen. A blue velocity arrow extends from the satellite in its direction of motion, length ∝ speed. A red gravity arrow always points from satellite to planet, length ∝ 1/r². An energy bar (top-left) splits kinetic (blue) vs potential (orange) and shifts live."
+━━━ F. LIVE READOUTS ━━━
+Every text label that updates live. Each shows an OUTPUT (the effect), never just the input value echoed back.
 
 RULES:
-- Every element you describe must be drawable with Canvas 2D API calls (fillRect, arc, bezierCurveTo, etc.)
-- Minimum 2 variables with distinct visual effects
-- The PRIMARY variable must let the learner reach EVERY regime from its REGIMES note — the morphing visual across those regimes is the core of the lab
-- Zone B (the canvas) takes at least 65% of the screen height
-- Zone A (controls) is a compact panel — max 35% height on mobile, right-side panel on desktop
-- The central visual element must be LARGE — fill the stage, not a tiny dot in an empty field
-- No decorative elements that don't respond to or show the concept`;
+- Everything must be drawable with Canvas 2D (fillRect, arc, bezierCurveTo, etc.)
+- The central visual must be LARGE — filling the stage, not floating small in empty space
+- No decorative elements — every element either reacts to input or displays the concept
+- The lab opens mid-phenomenon — already showing interesting behavior at the default values`;
 
   const res = await openai.chat.completions.create({
     model: "gpt-4o",
@@ -445,18 +508,65 @@ async function codeFromImageBrief(design, labThinking, imageDataUrl) {
     .map(r => `  • when (${r.when}): ${r.visual_change} — show message "${r.message}"`)
     .join("\n");
 
-  const briefText = `You are building a self-contained interactive learning lab for Repend. You MUST output a complete, working HTML file — no summaries, no outlines, no explanations, no apologies, no "this is complex" disclaimers. If you do not output a full <!doctype html> file, the platform breaks and learners see nothing. Output the HTML file directly, right now.
+  const archetype = design.spec.lab_archetype || "physics-sim";
+
+  // Archetype-specific architecture patterns injected into codegen
+  const archetypeArchitecture = {
+    "physics-sim": `
+━━━ ARCHITECTURE: PHYSICS SIMULATION ━━━
+Build on requestAnimationFrame. State object holds all positions/velocities. Physics integrates every frame. Trail array stores past positions.
+const state = { x, y, vx, vy, trail: [], t: 0 };
+function update(dt) { /* integrate forces */ state.trail.push({x:state.x,y:state.y}); if(state.trail.length>200) state.trail.shift(); }
+function draw() { ctx.clearRect(0,0,W,H); drawTrail(); drawObject(); drawVectors(); drawReadouts(); requestAnimationFrame(loop); }`,
+
+    "threshold": `
+━━━ ARCHITECTURE: THRESHOLD ━━━
+One primary slider drives the simulation. The canvas shows a continuous slow change PLUS a sudden jump at the threshold.
+const state = { value: defaultVal, threshold: X, crossed: false };
+// In draw(): show the "approach" visually even before threshold. At threshold: trigger a burst + state.crossed=true.
+// Hysteresis: if reversible, use two threshold values (up-threshold ≠ down-threshold).`,
+
+    "accumulation": `
+━━━ ARCHITECTURE: ACCUMULATION ━━━
+Time advances via a play/pause loop. Draw TWO curves: the linear expectation AND the actual curve. Use a graph with labeled axes.
+const state = { t: 0, playing: false, data: [] }; // data[t] = actual value
+// Draw both curves from t=0 to current t. Show the gap between them as a filled region.
+// Controls: Play/Pause button, Speed slider, Reset button. Time axis labeled in meaningful units.`,
+
+    "process-flow": `
+━━━ ARCHITECTURE: PROCESS FLOW ━━━
+Draw each stage as a labeled region. Animate particles/tokens flowing between stages.
+const stages = [{x,y,w,h,label,rate},...]; const particles = [];
+// Each frame: move particles toward next stage. At each stage: transform particle color/size to show what happens there.
+// Bottleneck visualization: particles pile up before a slow stage, showing the constraint.`,
+
+    "tradeoff": `
+━━━ ARCHITECTURE: TRADEOFF ━━━
+Draw two curves that oppose each other. Their sum (or product) shows the optimum.
+// curve1: decreasing function of x. curve2: increasing function of x. total: curve1+curve2.
+// Learner drags a vertical cursor left/right. Show current values of both curves + total.
+// Optimum point marked with a subtle indicator — glows only when cursor is within 5% of it.`,
+
+    "structure-puzzle": `
+━━━ ARCHITECTURE: STRUCTURE PUZZLE ━━━
+NO continuous rAF physics loop. State changes on click, then evaluate() + draw().
+const nodes = [{id, x, y, state:'unset', shape:'circle'},...];
+canvas.addEventListener('click', e => { const hit = findHit(canvasPt(e)); if(hit){ hit.state=nextState(hit.state); evaluate(); draw(); } });
+function evaluate() { /* check if current config matches the correct pattern */ }
+function draw() { /* draw edges, then nodes colored by state, then status text */ }
+// Light rAF loop ONLY for hover glow animation — not for physics.`,
+  };
+
+  const briefText = `You are building a self-contained interactive learning lab for Repend. LAB ARCHETYPE: ${archetype.toUpperCase()}. You MUST output a complete, working HTML file. Output the HTML file directly, right now — no summaries, no explanations.
 
 ${imageDataUrl ? `You are given two inputs:
-1. A VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement, overall feel.
-2. A BEHAVIORAL BRIEF (below) — source of truth for what the lab actually DOES.
-
-RULES OF PRECEDENCE:
-- Image and brief conflict → the brief wins, every time.
-- The image contains garbled text, fake labels, or nonsensical UI fragments → IGNORE them. Implement real, working controls with real labels derived from the brief. Never reproduce meaningless elements just because they appear in the image.
+1. A VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement.
+2. A BEHAVIORAL BRIEF (below) — source of truth for what the lab DOES. Brief wins over image always.
 ` : `You are given a behavioral brief below — the source of truth for what the lab does.`}
 
 TOPIC: ${design.topic}
+ENTRY MISCONCEPTION (what the learner believes walking in): "${design.spec.entry_misconception || ""}"
+FIRST MOVE (try this first — it should surprise them): "${design.spec.first_move || ""}"
 LEARNING GOAL: ${design.spec.learning_goal}
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
 ${design.spec.direct_manipulation ? `
@@ -518,6 +628,8 @@ HOVER GLOW — every draggable object MUST glow when hovered:
     // redraw the object shape here
     ctx.restore();
   }
+
+${archetypeArchitecture[archetype] || archetypeArchitecture["physics-sim"]}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BEHAVIORAL BRIEF (build exactly this behavior):
