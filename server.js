@@ -16,22 +16,42 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+// OpenAI also returns transient 429/503s under load. Retry with exponential
+// backoff (~1s/2s/4s/8s) on overload errors only; rethrow real bugs.
+async function openaiCreate(params, label = "openai") {
+  let lastErr;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      return await openai.chat.completions.create(params);
+    } catch (err) {
+      lastErr = err;
+      if (!isOverloadError(err)) throw err;
+      if (attempt < 3) {
+        const wait = 1000 * Math.pow(2, attempt);
+        console.warn(`[${label}] OpenAI overloaded (attempt ${attempt + 1}), retrying in ${wait}ms`);
+        await new Promise(r => setTimeout(r, wait));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 // Helper: OpenAI plain-text response
 async function openaiText(prompt, maxTokens = 1000, model = "gpt-4o-mini") {
-  const res = await openai.chat.completions.create({
+  const res = await openaiCreate({
     model, max_tokens: maxTokens,
     messages: [{ role: "user", content: prompt }],
-  });
+  }, "text");
   return res.choices[0].message.content.trim();
 }
 
 // Helper: OpenAI JSON response (json_object mode)
 async function openaiJSON(prompt, maxTokens = 2500, model = "gpt-4o") {
-  const res = await openai.chat.completions.create({
+  const res = await openaiCreate({
     model, max_tokens: maxTokens,
     response_format: { type: "json_object" },
     messages: [{ role: "user", content: prompt }],
-  });
+  }, "json");
   return JSON.parse(res.choices[0].message.content.trim());
 }
 
@@ -462,7 +482,15 @@ const LAB_MODEL_FALLBACK = "gemini-1.5-flash";
 
 function isOverloadError(err) {
   const msg = String(err && err.message || err);
+  // Quota/billing exhaustion is a 429 too, but retrying won't help — treat
+  // it as a hard error so we surface a clear billing message instead.
+  if (/insufficient_quota|exceeded your current quota|billing/i.test(msg)) return false;
   return /\b(503|429|overloaded|high demand|Service Unavailable|rate limit)\b/i.test(msg);
+}
+
+function isQuotaError(err) {
+  const msg = String(err && err.message || err);
+  return /insufficient_quota|exceeded your current quota|billing/i.test(msg);
 }
 
 // Gemini's free tier 503s under load. Retry with exponential backoff across
@@ -1032,7 +1060,9 @@ const server = http.createServer(async (req, res) => {
       } catch (err) {
         console.error(err);
         // Turn cryptic provider 503s into a clear, actionable message.
-        const friendly = isOverloadError(err)
+        const friendly = isQuotaError(err)
+          ? "An AI provider API quota or billing limit was reached. Check the OpenAI/Gemini account billing — the keys are valid but out of quota."
+          : isOverloadError(err)
           ? "Our lab-building models are overloaded right now (high demand). This is temporary — please try again in a minute."
           : (err.message || "Something went wrong");
         if (!res.headersSent) {
