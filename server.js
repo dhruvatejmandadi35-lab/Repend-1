@@ -1,19 +1,38 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const OpenAI = require("openai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// Load .env locally (Railway injects env vars directly, so this is a no-op there).
+// Load .env locally (Railway injects env vars directly).
 try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
   .split("\n").forEach(line => {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
     if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
   });
-} catch (_) { /* no .env file — fine in production */ }
+} catch (_) {}
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+// Helper: call Gemini and get a text response
+async function geminiText(prompt, maxTokens = 1000) {
+  const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
+  const res = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.5 },
+  });
+  return res.response.text().trim();
+}
+
+// Helper: call Gemini and get a parsed JSON response
+async function geminiJSON(prompt, maxTokens = 2500) {
+  const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
+  const res = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.4, responseMimeType: "application/json" },
+  });
+  const text = res.response.text().trim();
+  return JSON.parse(text);
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
@@ -94,16 +113,7 @@ const VERIFY_SYSTEM = `You are a learning coach. Return ONLY JSON:
 const ENGINE_TEMPLATE = fs.readFileSync(path.join(__dirname, "engine.html"), "utf8");
 
 async function plan(topic) {
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: 4096,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: PLAN_SYSTEM },
-      { role: "user", content: `Topic: ${topic}\n\nProduce the complete recipe JSON.` },
-    ],
-  });
-  return JSON.parse(res.choices[0].message.content.trim());
+  return geminiJSON(`${PLAN_SYSTEM}\n\nTopic: ${topic}\n\nProduce the complete recipe JSON.`, 4096);
 }
 
 function injectRecipe(recipe) {
@@ -115,41 +125,33 @@ function injectRecipe(recipe) {
 }
 
 async function verify(topic, question, recipeSummary, userAnswer, labResult) {
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    max_tokens: 512,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: VERIFY_SYSTEM },
-      { role: "user", content:
-        `Topic: ${topic}\nQuestion: ${question}\nLab summary: ${recipeSummary}\n` +
-        `Engine verdict: ${labResult ? JSON.stringify(labResult) : "n/a"}\nStudent answer: ${userAnswer}` },
-    ],
-  });
-  return JSON.parse(res.choices[0].message.content.trim());
+  return geminiJSON(`${VERIFY_SYSTEM}
+
+Topic: ${topic}
+Question: ${question}
+Lab summary: ${recipeSummary}
+Engine verdict: ${labResult ? JSON.stringify(labResult) : "n/a"}
+Student answer: ${userAnswer}`, 512);
 }
 
 async function analyzeImage(base64Image, question) {
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: 512,
-    messages: [{
-      role: "user",
-      content: [
-        { type: "image_url", image_url: { url: `data:image/png;base64,${base64Image}` } },
-        { type: "text", text: question || "Describe what the learner has built in this lab." },
-      ],
-    }],
+  const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
+  const res = await model.generateContent({
+    contents: [{ role: "user", parts: [
+      { inlineData: { mimeType: "image/png", data: base64Image } },
+      { text: question || "Describe what the learner has built in this lab." },
+    ]}],
+    generationConfig: { maxOutputTokens: 512 },
   });
-  return res.choices[0].message.content.trim();
+  return res.response.text().trim();
 }
 
 // ─────────────────────────────────────────────────────────────────
-// FREEFORM LAB PIPELINE — six steps (image step is optional):
-//   0. expandTopic        — gpt-4o-mini: sharpens vague input to one specific concept
-//   1. thinkAboutTopic    — gpt-4o-mini prose: insight, metaphor, variables + why
-//   2. specFromThinking   — gpt-4o JSON: typed spec
-//   3. thinkAboutLab      — gpt-4o prose brief: behavior + visuals, no UI words
+// FREEFORM LAB PIPELINE — all steps now use Gemini only (one key):
+//   0. expandTopic        — gemini-2.5-flash JSON: sharpens vague input
+//   1. thinkAboutTopic    — gemini-2.5-flash prose: insight, metaphor, variables
+//   2. specFromThinking   — gemini-2.5-flash JSON: typed spec with archetype
+//   3. thinkAboutLab      — gemini-2.5-flash prose: archetype-adapted visual brief
 //   4. mockupImage        — gpt-image-1: clean UI mockup (OPTIONAL, USE_MOCKUP=1)
 //   5. codeFromImageBrief — gpt-4o vision: image + brief → final HTML
 // ─────────────────────────────────────────────────────────────────
@@ -157,74 +159,40 @@ async function analyzeImage(base64Image, question) {
 // Step 0 — turns vague topics into one specific, teachable concept.
 // "ML" → "Gradient Descent: how a model finds the bottom of a loss landscape"
 // "Physics" → "Newton's Second Law: why heavier objects need more force to accelerate"
-// "Compound Interest" → passes through unchanged (already specific enough)
 async function expandTopic(rawTopic) {
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    max_tokens: 200,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `You sharpen vague learning topics into one specific, teachable concept.
+  return geminiJSON(`You sharpen vague learning topics into one specific, teachable concept.
 
-Return ONLY JSON:
+Return JSON:
 {
-  "topic": "The sharpened topic. 3-10 words. Must be a CONCEPT with a surprising insight, not a skill or activity. Examples: 'Topspin: why a spinning tennis ball curves downward faster than gravity', 'Gradient Descent: why loss curves have valleys a model can slide down', 'Newton\\'s Second Law: why doubling mass halves acceleration for the same force'.",
-  "why": "One sentence: the specific aha moment this concept produces. E.g. 'The moment you see the ball curve MORE than expected is when you understand that spin changes the effective gravity on the ball.'"
+  "topic": "The sharpened topic. 3-10 words. Must be a CONCEPT with a surprising insight, not a skill or activity.",
+  "why": "One sentence: the specific aha moment this concept produces."
 }
 
 RULES:
-- If the input names a SPORT or ACTIVITY (tennis, basketball, cooking, driving): find the underlying physics concept. 'Tennis' → 'Topspin: why spin bends a ball's path'.
-- If the input names a MUSICAL INSTRUMENT or MUSIC concept (violin, guitar, piano, sound, music): pick the underlying wave/physics concept that is visually drawable. 'Violin' → 'Standing Waves: why pressing a string at different points produces different pitches'. 'Sound' → 'Wave Interference: why two sound waves can cancel each other out'. Always pick something with a visible waveform or physical motion.
-- If the input is a broad FIELD (ML, physics, biology, history): pick the sub-concept with the clearest aha moment.
-- If the input is already a specific CONCEPT (compound interest, Ohm's law, mitosis): return it nearly unchanged.
-- NEVER pick abstract/unmeasurable concepts like 'resonance', 'harmony', 'feel', 'balance', 'energy flow' — these cannot be drawn. Always pick something with a concrete visual output (a wave, a trajectory, a curve, a collision, a graph with a kink).
-- NEVER pick a concept where all the learner does is set inputs with no surprising output.
-- Never return a skill, definition, or procedure. Return the INSIGHT.`,
-      },
-      { role: "user", content: rawTopic },
-    ],
-  });
-  return JSON.parse(res.choices[0].message.content.trim());
+- Sport/activity (tennis, basketball): find the underlying physics concept. 'Tennis' → 'Topspin: why spin bends a ball's path'.
+- Musical instrument/sound: pick the wave/physics concept. 'Violin' → 'Standing Waves: why pressing a string produces different pitches'.
+- Broad field (ML, physics, biology): pick the sub-concept with the clearest aha moment.
+- Already a specific concept (compound interest, Ohm's law): return nearly unchanged.
+- NEVER pick abstract concepts like 'resonance', 'harmony', 'energy flow' — pick something with a concrete visual output.
+- Never return a skill, definition, or procedure. Return the INSIGHT.
+
+Topic: ${rawTopic}`, 300);
 }
 
 async function thinkAboutTopic(topic) {
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    max_tokens: 700,
-    messages: [
-      {
-        role: "system",
-        content: `You are an expert at explaining how concepts should FEEL to learn. Given a topic, write a short analysis covering exactly these five things:
+  return geminiText(`You are an expert at explaining how concepts should FEEL to learn. Write a short analysis of "${topic}" covering exactly these five things:
 
-1. THE CORE INSIGHT — what single thing, once felt in the body or seen visually, makes this concept truly click? Not a definition — the moment of understanding.
+1. THE CORE INSIGHT — what single thing, once seen visually, makes this concept truly click? Not a definition — the moment of understanding.
+2. THE VISUAL METAPHOR — what does this concept look like IN MOTION? Be vivid and specific to this topic.
+3. THE KEY VARIABLES — what 2-4 things can a learner change? For each, explain WHY it matters to the insight.
+4. THE AHA MOMENT — the precise moment when the learner says "oh!". What did they just see happen?
+5. THE REAL-WORLD COST — one concrete situation where not understanding this costs something real.
 
-2. THE VISUAL METAPHOR — what does this concept look like IN MOTION? Use a vivid image. Examples: "money piling up faster and faster, the stack growing so tall it leans", "two curves chasing each other across a graph until they cross and lock", "a planet falling sideways forever, missing the Earth each time". Be specific to THIS topic.
-
-3. THE KEY VARIABLES — what 2-4 things can a learner change? For each one, explain WHY it matters to the core insight (not just what it is). Example: "Rate matters because it controls how fast the pile grows — double it and the pile doesn't just grow twice as fast, it grows faster than that."
-
-4. THE AHA MOMENT — describe the precise moment in the interaction when the learner says "oh!". What did they just see happen? What did they move or change right before it?
-
-5. THE REAL-WORLD COST — one concrete situation where NOT understanding this concept costs someone something real (money, health, a bad decision, a failed system).
-
-Write in plain, direct prose. Be specific to ${topic}. Do not use generic educational language. Do not suggest a lab format or interaction type.`,
-      },
-      { role: "user", content: `Topic: ${topic}` },
-    ],
-  });
-  return res.choices[0].message.content.trim();
+Write in plain direct prose. Be specific to ${topic}.`, 800);
 }
 
 async function specFromThinking(topic, thinking) {
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: 2200,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `You convert educational reasoning into an interactive lab spec. Read the reasoning and produce JSON.
+  const parsed = await geminiJSON(`You convert educational reasoning into an interactive lab spec. Read the reasoning and produce JSON.
 
 Return ONLY JSON with this exact shape:
 {
@@ -292,15 +260,14 @@ RULES:
 - first_move MUST describe a concrete action that surprises the learner within 10 seconds and directly challenges the entry_misconception
 - direct_manipulation MUST describe a canvas object the learner grabs with their finger/mouse — not a slider. The primary variable is controlled by dragging something on the canvas.
 - interaction_palette MUST include at least one "draggable" and one "toggle-button" entry — the lab needs multiple interaction types, not just sliders
-- do NOT include interaction_type or any format label anywhere in the JSON`,
-      },
-      {
-        role: "user",
-        content: `Topic: ${topic}\n\nReasoning:\n${thinking}\n\nNow produce the spec JSON.`,
-      },
-    ],
-  });
-  const parsed = JSON.parse(res.choices[0].message.content.trim());
+- do NOT include interaction_type or any format label anywhere in the JSON
+
+Topic: ${topic}
+
+Reasoning:
+${thinking}
+
+Now produce the spec JSON.`, 2500);
   normalizeReflection(parsed);
   return parsed;
 }
@@ -446,13 +413,7 @@ RULES:
 - No decorative elements — every element either reacts to input or displays the concept
 - The lab opens mid-phenomenon — already showing interesting behavior at the default values`;
 
-  const res = await openai.chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: 2500,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  return res.choices[0].message.content.trim();
+  return geminiText(prompt, 2500);
 }
 
 // Step 4 (optional) — gpt-image-1 generates a clean UI mockup.
@@ -474,15 +435,8 @@ Do NOT include: paragraphs of text, labels with real words (use simple shapes an
 Aspect ratio: landscape, fills the frame edge to edge.`;
 
   try {
-    const res = await openai.images.generate({
-      model: "gpt-image-1",
-      prompt,
-      size: "1536x1024",
-      n: 1,
-    });
-    const b64 = res.data[0].b64_json;
-    if (!b64) return null;
-    return `data:image/png;base64,${b64}`;
+    // mockupImage disabled — was using gpt-image-1 (OpenAI), now Gemini-only
+    return null;
   } catch (err) {
     console.warn("mockupImage failed, continuing without:", err.message);
     return null;

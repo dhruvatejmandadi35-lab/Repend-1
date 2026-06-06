@@ -8,9 +8,6 @@
     "dev": "node server.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "@anthropic-ai/vertex-sdk": "^0.16.1",
-    "@google/generative-ai": "^0.24.1",
-    "openai": "^6.39.0"
+    "@google/generative-ai": "^0.24.1"
   }
 }
