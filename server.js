@@ -2,7 +2,6 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const OpenAI = require("openai");
-const Anthropic = require("@anthropic-ai/sdk");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 // Load .env locally (Railway injects env vars directly, so this is a no-op there).
@@ -17,7 +16,6 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 // (it rejects empty strings too). A real request will still fail with an auth
 // error if the key is genuinely missing — but the server boots.
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
-const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
