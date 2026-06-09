@@ -2,7 +2,6 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const OpenAI = require("openai");
-const Anthropic = require("@anthropic-ai/sdk");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 // Load .env locally (Railway injects env vars directly, so this is a no-op there).
@@ -17,7 +16,6 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 // (it rejects empty strings too). A real request will still fail with an auth
 // error if the key is genuinely missing — but the server boots.
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
-const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || "missing-anthropic-key" });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -428,8 +426,7 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 //
 // NOTE: This step originally ran on Claude (claude-opus-4-7), then Gemini, then Vertex, then Ollama. Now uses OpenAI.
 // Change LAB_MODEL here to swap models.
-// claude-haiku-4-5 = fast + cheap (replaces the retired claude-3-5-haiku).
-const LAB_MODEL = "claude-haiku-4-5";
+const LAB_MODEL = "gemini-2.5-flash";
 async function codeFromImageBrief(design, labThinking, imageDataUrl) {
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -659,35 +656,35 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   // return html;
   // --- END GEMINI FALLBACK ---
 
-  // Anthropic Claude (claude-haiku-4-5) via the official @anthropic-ai/sdk.
-  // Build the content array: text brief plus, if present, the mockup image
-  // as an inline base64 image block.
-  const content = [];
+  // Gemini 2.5 Pro via the native @google/generative-ai SDK. Build the parts
+  // array: text brief plus, if present, the mockup image as inline base64.
+  // (The OpenAI-compatible endpoint returns opaque "400 no body" errors, so we
+  // use the native SDK which surfaces the real error message.)
+  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
+  const parts = [{ text: briefText }];
   if (imageDataUrl) {
     const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
-    if (m) content.push({ type: "image", source: { type: "base64", media_type: m[1], data: m[2] } });
+    if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
   }
-  content.push({ type: "text", text: briefText });
 
   let res;
   try {
-    res = await claude.messages.create({
-      model: LAB_MODEL,
-      // A full animated lab HTML file is long — keep max_tokens high so the
-      // output isn't truncated mid-file.
-      max_tokens: 16000,
-      messages: [{ role: "user", content }],
+    res = await model.generateContent({
+      contents: [{ role: "user", parts }],
+      // Pro is a thinking model: reasoning tokens count against this budget
+      // before the HTML is written. Keep it high so a long animated lab file
+      // isn't truncated mid-output.
+      generationConfig: { maxOutputTokens: 32000, temperature: 0.7 },
     });
   } catch (err) {
-    console.error("CLAUDE LAB GENERATION ERROR — model:", LAB_MODEL);
+    console.error("GEMINI LAB GENERATION ERROR — model:", LAB_MODEL);
     console.error("  message:", err && err.message);
     console.error("  status:", err && (err.status || err.statusCode));
-    console.error("  details:", JSON.stringify(err && (err.error || err.response || err), null, 2));
+    console.error("  details:", JSON.stringify(err && (err.errorDetails || err.response || err), null, 2));
     throw err;
   }
 
-  // messages.create returns content blocks — concatenate the text blocks.
-  let html = res.content.filter(b => b.type === "text").map(b => b.text).join("").trim();
+  let html = res.response.text().trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
 }
