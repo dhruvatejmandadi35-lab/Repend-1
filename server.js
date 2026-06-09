@@ -668,20 +668,28 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   }
 
   let res;
-  try {
-    res = await model.generateContent({
-      contents: [{ role: "user", parts }],
-      // Pro is a thinking model: reasoning tokens count against this budget
-      // before the HTML is written. Keep it high so a long animated lab file
-      // isn't truncated mid-output.
-      generationConfig: { maxOutputTokens: 32000, temperature: 0.7 },
-    });
-  } catch (err) {
-    console.error("GEMINI LAB GENERATION ERROR — model:", LAB_MODEL);
-    console.error("  message:", err && err.message);
-    console.error("  status:", err && (err.status || err.statusCode));
-    console.error("  details:", JSON.stringify(err && (err.errorDetails || err.response || err), null, 2));
-    throw err;
+  const MAX_ATTEMPTS = 4;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      res = await model.generateContent({
+        contents: [{ role: "user", parts }],
+        generationConfig: { maxOutputTokens: 32000, temperature: 0.7 },
+      });
+      break;
+    } catch (err) {
+      const status = err && (err.status || err.statusCode);
+      const retryable = status === 503 || status === 429 || status === 500;
+      if (retryable && attempt < MAX_ATTEMPTS) {
+        const wait = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+        console.warn(`GEMINI ${status} on attempt ${attempt}/${MAX_ATTEMPTS} — retrying in ${wait}ms`);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+      console.error("GEMINI LAB GENERATION ERROR — model:", LAB_MODEL);
+      console.error("  message:", err && err.message);
+      console.error("  status:", status);
+      throw err;
+    }
   }
 
   let html = res.response.text().trim();
