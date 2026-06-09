@@ -8,7 +8,9 @@
     "dev": "node server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@google/generative-ai": "^0.24.1",
+    "ollama": "^0.6.3",
     "openai": "^6.39.0"
   }
 }
