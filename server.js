@@ -439,17 +439,50 @@ async function codeFromImageBrief(design, labThinking, imageDataUrl) {
     .map(r => `  • when (${r.when}): ${r.visual_change} — show message "${r.message}"`)
     .join("\n");
 
-  const briefText = `You are building a self-contained interactive learning lab for Repend. You MUST output a complete, working HTML file — no summaries, no outlines, no explanations, no apologies, no "this is complex" disclaimers. If you do not output a full <!doctype html> file, the platform breaks and learners see nothing. Output the HTML file directly, right now.
+  const briefText = `You are generating a single self-contained interactive learning lab for the topic: ${design.topic}.
+Your goal: the learner manipulates something, sees the concept's real mechanism play out, and walks away understanding how it actually works in the real world — not a decorated chart.
 
-${imageDataUrl ? `You are given two inputs:
-1. A VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement, overall feel.
-2. A BEHAVIORAL BRIEF (below) — source of truth for what the lab actually DOES.
+You MUST output a complete, working HTML file — no summaries, no outlines, no explanations, no apologies, no "this is complex" disclaimers. If you do not output a full <!doctype html> file, the platform breaks and learners see nothing.
 
-RULES OF PRECEDENCE:
-- Image and brief conflict → the brief wins, every time.
-- The image contains garbled text, fake labels, or nonsensical UI fragments → IGNORE them. Implement real, working controls with real labels derived from the brief. Never reproduce meaningless elements just because they appear in the image.
-` : `You are given a behavioral brief below — the source of truth for what the lab does.`}
+STEP 0 — Classify the concept. Decide which type "${design.topic}" is:
 
+- Quantitative/functional (output varies with continuous inputs — e.g. compound interest, supply & demand)
+- Dynamic physical system (evolves over time by physical law — pendulum, orbit)
+- Emergent/agent-based (macro pattern from many interacting entities — natural selection, diffusion, traffic)
+- Sequential process/mechanism (ordered causal chain — photosynthesis, cell division)
+- Spatial/geometric (invariants in space — vectors, transformations)
+- Probabilistic/statistical (variation over many trials — sampling distributions, CLT)
+- Abstract/relational (relations with no spatial form — logical fallacies, tradeoffs)
+- Network/feedback (loops, accumulation, delay — climate feedback, market equilibrium)
+
+STEP 1 — Pick the visual that matches the concept. Do NOT default to sliders.
+
+- Quantitative/functional → slider(s) + a live linked chart AND a concrete real-world referent (money stacks growing, not just a curve)
+- Dynamic physical → learner-controlled canvas animation (requestAnimationFrame) + a live linked graph; draggable starting conditions
+- Emergent/agent-based → a canvas with MANY visible individual entities following local rules + controls to perturb the environment; show the macro pattern emerging from the entities. NEVER a single slider on an aggregate curve.
+- Sequential process → a learner-paced step-through ("next" button), each step highlighting the one thing that changes. NEVER autoplay-only.
+- Spatial/geometric → draggable objects with live measurements that expose what stays invariant
+- Probabilistic → animate individual trials accumulating into a building histogram; learner sets sample size and runs many trials
+- Abstract/relational → sort-into-bins with feedback, or side-by-side contrasting cases; for tradeoffs, a slider that visibly gives up one thing to gain another
+- Network/feedback → stocks that visibly fill/drain and flows the learner adjusts + a linked time graph
+
+STEP 2 — Wrap it in Predict → Manipulate → Reveal:
+
+- Predict: before the sim is interactive, one specific falsifiable question about what will happen (2–4 options), then a confidence tap. They must commit before touching it.
+- Manipulate: reveal the full interactive visual. Every control produces immediate, visible, meaningful change. One conceptual prompt only ("Test it — were you right?"), no step-by-step instructions.
+- Reveal: an explanation that references THEIR prediction — whether it held and the real reason why — landing as a visible event in the sim, not a paragraph.
+
+STEP 3 — Make it transfer to real life. Tie the concept to a concrete real-world instance the learner can picture (the money in their savings account; the actual orbit of the ISS; a real population of animals). The "aha" should make them see the concept operating in the world, not just on screen.
+
+HARD RULES:
+- The visual must externalize the core mechanism. If you could delete it and lose no understanding, it's decoration — remove it.
+- Strip everything that doesn't encode meaning. No ornamental images, no decorative motion. Color and motion must carry the concept.
+- Any continuous animation gets play/pause/step + speed controls. Open in a near-still state with one obviously-grabbable element.
+- Max ~3 groups of ~3 controls. Labels 1–3 words. Play area visually separate from controls.
+- Single self-contained HTML file, vanilla JS, canvas or SVG, no external dependencies, zero console errors on first load, works from 360px wide up.
+
+${imageDataUrl ? `You are also given a VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement, overall feel. The behavioral brief below is the source of truth for what the lab DOES. If the image and brief conflict, the brief wins. If the image contains garbled text, fake labels, or nonsensical UI fragments, IGNORE them — implement real, working controls with real labels derived from the brief.
+` : ``}
 TOPIC: ${design.topic}
 LEARNING GOAL: ${design.spec.learning_goal}
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
@@ -467,137 +500,25 @@ FORMULAS — implement these EXACTLY in JS (no approximations):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${formulas}
 
-Every live readout in Zone B MUST be computed from these formulas. The learner must see the output value changing as a real number.
+Every live readout in the play area MUST be computed from these formulas. The learner must see the output value changing as a real number.
 ` : ""}
 ${rules ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 THRESHOLD RULES — trigger these exact visual events:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${rules}
 
-When a rule triggers: animate a golden glow burst on the key canvas element AND show the message text prominently in Zone B for 2-3 seconds.
+When a rule triggers: animate a golden glow burst on the key canvas element AND show the message text prominently in the play area for 2-3 seconds.
 ` : ""}
 SUCCESS CONDITION: ${design.spec.success_condition}
 REAL-WORLD PAYOFF (show on success): "${design.spec.real_world_payoff || ""}"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LAYOUT — TWO ZONES (non-negotiable):
+PLATFORM CONSTRAINTS (the lab runs inside a sandboxed iframe — these are non-negotiable):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• ZONE A — controls: compact panel. On mobile (width ≤ 500px) Zone A sits at the TOP as a horizontal strip, max 160px tall. On desktop Zone A sits on the LEFT, max 220px wide. Zone B fills all remaining space. Use CSS flex column on mobile, row on desktop. Zone A must NEVER overlap Zone B — set explicit widths/heights so they are cleanly separated.
-• ZONE B — result canvas: fills all remaining space after Zone A. The canvas element's width and height attributes must be set dynamically from its actual rendered pixel size (use ResizeObserver or set after layout). Never hardcode canvas.width/height to values that differ from the element's CSS size — that causes stretched/blank output.
-• Zone B must react to every Zone A change within 16ms. No submit button. No lag.
-• Zone B must have at least one live text readout of the OUTPUT value (not the control value). "Surface damage: HIGH" not "Friction: 0.9". The readout names the EFFECT, not the input. Draw it ON the canvas, not as an HTML element on top.
-• Nothing in Zone B is decorative. Every element either reacts to input or displays a result.
-• The aha moment from the brief must be visually unmissable in Zone B — a sudden change, a shape snapping, a value jumping.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CANVAS MUST DRAW SHAPES — NOT JUST TEXT:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Zone B must show a DRAWN SIMULATION — actual shapes, motion, and physics drawn with Canvas 2D primitives. It is NOT acceptable to output a canvas that only contains ctx.fillText() calls showing slider values. The canvas must contain:
-• At least 3 distinct drawn shapes (fillRect, arc, lineTo, bezierCurveTo, etc.) that represent the actual concept, not labels
-• At least one shape that MOVES or ANIMATES continuously even before interaction (a plate sliding, a particle oscillating, a wave propagating)
-• At least one shape that CHANGES SIZE, POSITION, COLOR, or SHAPE as each slider moves
-• Simulation-style visuals: cross-sections of earth, orbiting bodies, wave patterns, circuit diagrams, growing curves — not a blank grid with floating text
-
-BAD (do not do): canvas showing only "Slip Rate: 3 cm/year\nFriction: 0.9\nSurface Damage: Low" as text on a grid
-GOOD: a canvas showing two tectonic plate layers (filled rectangles) sliding in opposite directions, a glowing stress indicator building up, seismic waves radiating outward when a threshold is crossed
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ANIMATION & MOTION REQUIREMENTS (non-negotiable):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• ANIMATE THE CORE MECHANISM — the visual must show the concept's actual process in motion, not a static chart or decorative image. If the concept is about change over time or one-becoming-many, the user must literally watch that transformation happening on screen.
-• SLIDERS PRODUCE CONTINUOUS ANIMATED CHANGE — moving any slider must immediately produce visible, ongoing animated change in the visual. No static states. No requiring a button press to see motion. The animation responds to the current slider value on every frame.
-• ONE CLEAR "AHA" MOMENT — there must be a point where adjusting an input produces a surprising, visible result the user wouldn't have predicted. This is the concept's insight made visceral. Design the default slider positions so the first nudge the user makes hits or approaches this moment.
-• MOTION + MEANINGFUL COLOR + SMOOTH TRANSITIONS — use animation, color that encodes information (hotter = redder, faster = brighter, more dangerous = more saturated), and smooth easing. The visual must feel alive, not like a labeled diagram.
-
-BAD: slider moves, a number updates, a bar changes height, nothing else happens
-GOOD: slider moves → particles accelerate, colors shift from cool to hot, a threshold is crossed and the entire visual snaps into a new regime with a visible burst
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PEDAGOGY RULES (from research on effective learning sims — PhET):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• THE CENTRAL VISUAL MUST BE LARGE — it fills the stage. Never a tiny dot or shape floating in empty space. If the concept has a small object (a planet, a particle), the IMPORTANT thing (its path, field, or behavior) fills the canvas.
-• PERSISTENT TRACE: draw a trail/path/history that stays on screen so the learner compares before-vs-now without remembering. Fade older segments. This morphing trace is usually the single most important visual — implement the one from section 5 of the brief precisely.
-• MAKE THE INVISIBLE VISIBLE: draw the hidden vectors/forces/energy from section 5 of the brief — velocity arrows, force arrows, energy bars, fields. These explain WHY the behavior happens.
-• LINKED REPRESENTATIONS: show the key quantity in 2+ ways at once (a number AND a bar AND the motion), all updating together.
-• DEFAULT NEAR THE BOUNDARY: initialize the primary control at its default value, which sits just below the most surprising threshold — so the learner's first small nudge flips the outcome and reveals the aha. The sim opens mid-phenomenon, already showing interesting motion.
-• REACH EVERY REGIME: the primary control's range must let the learner reach every regime in its REGIMES note (e.g. crash / orbit / escape). Let the learner fail safely and visibly — the failure states ARE part of the lesson, show them vividly, don't block them.
-• PRESET BUTTONS: add 2-3 small preset buttons in Zone A that jump to interesting regimes (e.g. "Circular", "Comet", "Crash") plus a "Reset" button. One tap puts the learner in a meaningful state.
-• IMPLICIT GUIDANCE: don't write "now drag the slider" instructions. Make the productive action obvious through layout and defaults. Controls look grabbable (clear handles, hover highlight).
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHYSICS SIMULATION ARCHITECTURE — MANDATORY PATTERN:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Your simulation MUST be built on this exact architecture. Do not draw static frames. Do not recalculate only on slider input. Physics runs every frame via requestAnimationFrame.
-
-REQUIRED STRUCTURE:
-// 1. State object — all simulation variables live here, updated every frame
-const state = {
-  // position, velocity, angle, energy — whatever the concept needs
-  x: 0, y: 0, vx: 0, vy: 0,
-  trail: [],        // array of past positions for persistent trace
-  t: 0,             // simulation time in seconds
-};
-
-// 2. Controls object — slider values, read each frame (never cached)
-const controls = { speed: 1.0, mass: 1.0 }; // replace with your variables
-sliderEl.addEventListener('input', e => { controls.speed = +e.target.value; });
-
-// 3. Physics update — runs every frame with delta-time
-let lastTime = null;
-function update(timestamp) {
-  const dt = lastTime ? Math.min((timestamp - lastTime) / 1000, 0.05) : 0.016;
-  lastTime = timestamp;
-
-  // READ controls here, every frame — sliders always take effect immediately
-  const speed = controls.speed;
-
-  // APPLY physics equations here — real formulas, not approximations
-  // e.g. for orbit: angle += speed * dt; x = cx + r * Math.cos(angle);
-  state.t += dt;
-
-  // TRAIL — push current position, cap length
-  state.trail.push({ x: state.x, y: state.y });
-  if (state.trail.length > 120) state.trail.shift();
-}
-
-// 4. Draw — pure rendering, reads from state
-function draw(ctx, canvas) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // Draw trail first (oldest = most transparent)
-  state.trail.forEach((pt, i) => {
-    ctx.globalAlpha = i / state.trail.length;
-    // draw pt
-  });
-  ctx.globalAlpha = 1;
-  // Draw physics objects, force arrows, readouts on top
-}
-
-// 5. Loop — update then draw every frame, forever
-function loop(timestamp) {
-  update(timestamp);
-  draw(ctx, canvas);
-  requestAnimationFrame(loop);
-}
-requestAnimationFrame(loop); // starts immediately on page load
-
-CRITICAL RULES FROM THIS ARCHITECTURE:
-• dt (delta-time) MUST be used in all position/velocity updates — never hardcode pixel offsets like x += 2
-• Slider values are read from the controls object INSIDE update(), every frame — a slider change takes effect on the very next frame with zero lag
-• The trail array accumulates real positions from the physics, not a decorative effect
-• Force arrows and field lines are computed from the same physics state, not drawn separately
-• Every regime the learner can reach (fast/slow, stable/unstable, crash/orbit/escape) is produced by the same physics equations — not by if/else branches that swap out different animations
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TECHNICAL CONSTRAINTS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• ONE complete self-contained HTML file. Inline CSS and JS.
-• Vanilla JS only. NO external libraries, NO CDN links, NO import statements, NO require(). The lab runs inside sandbox="allow-scripts" which blocks all network requests — any <script src="..."> or fetch() will silently fail and break the lab. Everything must be inline in the single HTML file.
-• No localStorage / sessionStorage. No fetch().
-• Works in sandbox="allow-scripts".
-• Zero console errors on first load.
-• Responsive: usable from 360px wide to full desktop.
+• ONE complete self-contained HTML file. Inline CSS and JS. Vanilla JS only — NO external libraries, NO CDN links, NO import/require. The lab runs in sandbox="allow-scripts" which blocks all network requests: any <script src> or fetch() silently fails and breaks the lab.
+• No localStorage / sessionStorage. No fetch(). Zero console errors on first load.
 • Dark theme: bg #0B1220, stage #0E1830, panels #131A2A, border rgba(59,130,246,0.2). Accents: blue #3B82F6, copper #D4A574, success #22C55E, muted #8899BB.
-• CANVAS SIZING — mandatory pattern to prevent stretched/blank canvas:
+• CANVAS SIZING — mandatory pattern to prevent a stretched/blank canvas:
   const canvas = document.getElementById('mainCanvas');
   const ctx = canvas.getContext('2d');
   function resizeCanvas() {
@@ -606,37 +527,29 @@ TECHNICAL CONSTRAINTS:
   }
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
-  // Then start the draw loop:
-  function draw() { ctx.clearRect(0,0,canvas.width,canvas.height); /* draw everything */ requestAnimationFrame(draw); }
-  draw(); // called immediately on load — never wait for user input to start drawing
-  If canvas is blank on load, the lab has failed. A common cause: canvas.width/height not matching the element's CSS size.
-• Zone B must show something meaningful within 100ms of page load — no waiting for interaction.
-• VISUAL DEPTH — make it look alive, not flat:
-  - Gradient backgrounds on canvas (createLinearGradient or createRadialGradient)
-  - Glowing elements: draw a blurred shadow before the main shape (ctx.shadowBlur=20, ctx.shadowColor='#3B82F6')
-  - At least one element that is always animating (wave oscillating, particle moving, value counting) even before interaction
-  - Layered drawing: background grid/gradient first, then physics objects, then labels on top
-• MINIMUM 2 interactive controls — never just one slider.
-• A visible "Check Answer" button in Zone A.
-• requestAnimationFrame for all motion. pointerdown/move/up for drag.
-• On aha moment: golden glow burst (shadowBlur spike) on the key Zone B element.
-• On success: green wave across canvas + real_world_payoff card slides in.
-• window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success.
-• window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on wrong.
-
-DO NOT render any multiple-choice quiz, reflection question, or "verify your understanding" section inside this lab. The platform shows a separate quiz AFTER the lab. This lab is for HANDS-ON INTERACTION ONLY — manipulating controls and watching the result. Adding a quiz here would duplicate the platform's quiz. The "Check Answer" button checks whether the learner reached the success condition (e.g. produced the target orbit), NOT a multiple-choice answer.
+  Set canvas.width/height from the element's actual rendered size (offsetWidth/offsetHeight or ResizeObserver) — never hardcode values that differ from the CSS size. Something meaningful must be drawn within 100ms of load; a blank canvas on load means the lab has failed.
+• If the lab animates over time, use requestAnimationFrame with delta-time (never hardcoded pixel offsets like x += 2), read control values inside the update loop every frame, and include play/pause/step + speed controls per the hard rules above.
+• Pointer events (pointerdown/move/up) for any dragging — works for both mouse and touch.
+• Implement the formulas above EXACTLY in JS. Live readouts must name the EFFECT ("Earthquake Magnitude: 7.2"), not echo the input ("Friction: 0.9").
+• Include a Reset button.
+• SUCCESS REPORTING — when the learner reaches the success condition (use a visible "Check Answer" button to evaluate it):
+  window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success
+  window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on failure
+  On success also show the real-world payoff card.
+• DO NOT render any multiple-choice quiz or "verify your understanding" section — the platform shows its own quiz after the lab. The Predict step (2–4 options before interaction) is the only question allowed; it is a prediction commitment, not a quiz.
 
 Before returning, verify ALL of these — fix any that fail before responding:
-1. Does Zone B contain actual drawn SHAPES (fillRect, arc, lineTo, etc.) that represent the concept — NOT just a grid with ctx.fillText() labels?
-2. Is Zone B drawing something visible AND in motion immediately on load (not blank, not a tiny dot in empty space)?
-3. Is the central visual LARGE — filling the stage rather than floating small in a big empty field?
-4. Is Zone A on TOP (mobile) or LEFT (desktop), cleanly separated from Zone B with no overlap?
-5. Does canvas.width and canvas.height match the element's actual rendered pixel size (set via offsetWidth/offsetHeight)?
-6. Is there a persistent trail/trace that morphs as the primary control changes?
-7. Are hidden vectors/forces/energy drawn (arrows, bars, fields)?
-8. Are there at least 2 interactive controls plus preset + reset buttons?
-9. Is the output readout showing the EFFECT (e.g. "Earthquake Magnitude: 7.2"), not just echoing the input value?
-10. Does the canvas use gradients and glow — does it look like a polished simulation, not a flat grey box?
+1. Did you classify the concept (STEP 0) and pick the matching visual form (STEP 1) — not a default slider+chart?
+2. Is the Predict → Manipulate → Reveal flow present, with a falsifiable prediction the learner commits to before interacting?
+3. Does the visual externalize the core mechanism — actual drawn shapes/entities representing the concept, not text labels on a grid?
+4. Does canvas.width/height match the element's actual rendered pixel size?
+5. Does every control produce immediate, visible, meaningful change?
+6. Does the Reveal reference the learner's prediction and land as a visible event in the sim?
+7. Is there a concrete real-world referent the learner can picture?
+8. Controls: max ~3 groups of ~3, labels 1–3 words, play area visually separate? Reset present?
+9. Are the formulas implemented exactly, with readouts naming the effect?
+10. Does it work from 360px wide up, with zero console errors?
+
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 

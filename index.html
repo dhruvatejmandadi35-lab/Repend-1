@@ -152,6 +152,29 @@
       transition: all 0.15s;
     }
     .chip:hover { border-color: var(--copper); color: var(--copper); }
+    .chip-more { border-style: dashed; }
+
+    .cat-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+      margin-top: 28px;
+    }
+    .cat-tab {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .cat-tab:hover { color: var(--copper); }
+    .cat-tab.active { color: var(--copper); border-bottom-color: var(--copper); }
 
     /* ── LOADING ─────────────────────────────────── */
     #loading {
@@ -541,16 +564,66 @@
     <button id="genBtn">Generate →</button>
   </div>
 
-  <div class="chips">
-    <span class="chip" onclick="setTopic('Compound Interest')">Compound Interest</span>
-    <span class="chip" onclick="setTopic('Newton\'s Second Law')">Newton's Second Law</span>
-    <span class="chip" onclick="setTopic('Natural Selection')">Natural Selection</span>
-    <span class="chip" onclick="setTopic('Supply and Demand')">Supply and Demand</span>
-    <span class="chip" onclick="setTopic('DNA Replication')">DNA Replication</span>
-    <span class="chip" onclick="setTopic('Ohm\'s Law')">Ohm's Law</span>
-    <span class="chip" onclick="setTopic('Black Holes')">Black Holes</span>
-    <span class="chip" onclick="setTopic('Photosynthesis')">Photosynthesis</span>
-  </div>
+  <div class="cat-tabs" id="catTabs"></div>
+  <div class="chips" id="topicChips"></div>
+
+  <script>
+  // Curated topic catalog, grouped by subject. Each visit shows a random
+  // sample per category so the suggestions feel fresh.
+  const TOPIC_CATALOG = {
+    "Physics": ["Newton's Second Law", "Orbital Mechanics", "Wave Interference", "Conservation of Momentum", "Doppler Effect", "Pendulum Resonance", "Black Holes", "Ohm's Law", "Heat Transfer", "Terminal Velocity"],
+    "Biology": ["Natural Selection", "DNA Replication", "Photosynthesis", "Enzyme Kinetics", "Predator-Prey Dynamics", "Osmosis", "Herd Immunity", "Genetic Drift", "Action Potentials"],
+    "Money & Econ": ["Compound Interest", "Supply and Demand", "Inflation", "Opportunity Cost", "Loan Amortization", "Market Equilibrium", "Diversification and Risk", "Price Elasticity"],
+    "Math & Data": ["Central Limit Theorem", "Exponential Growth", "Bayes' Theorem", "Correlation vs Causation", "Sampling Bias", "Logarithmic Scales", "The Birthday Paradox", "Linear Regression"],
+    "Everyday Science": ["Why Planes Fly", "How Microwaves Heat Food", "Why the Sky Is Blue", "How Vaccines Work", "Why Ice Floats", "How GPS Works", "Caffeine Half-Life", "How Noise-Canceling Works"],
+  };
+
+  (function initTopicBrowser() {
+    const tabsEl = document.getElementById('catTabs');
+    const chipsEl = document.getElementById('topicChips');
+    const cats = Object.keys(TOPIC_CATALOG);
+    let active = cats[Math.floor(Math.random() * cats.length)];
+
+    function sample(arr, n) {
+      const copy = arr.slice();
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy.slice(0, n);
+    }
+
+    function renderChips() {
+      chipsEl.innerHTML = '';
+      sample(TOPIC_CATALOG[active], 6).forEach(topic => {
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.textContent = topic;
+        chip.onclick = () => setTopic(topic);
+        chipsEl.appendChild(chip);
+      });
+      const more = document.createElement('span');
+      more.className = 'chip chip-more';
+      more.textContent = '↻ More';
+      more.onclick = renderChips;
+      chipsEl.appendChild(more);
+    }
+
+    function renderTabs() {
+      tabsEl.innerHTML = '';
+      cats.forEach(cat => {
+        const tab = document.createElement('button');
+        tab.className = 'cat-tab' + (cat === active ? ' active' : '');
+        tab.textContent = cat;
+        tab.onclick = () => { active = cat; renderTabs(); renderChips(); };
+        tabsEl.appendChild(tab);
+      });
+    }
+
+    renderTabs();
+    renderChips();
+  })();
+  </script>
 </div>
 
 <!-- LOADING -->
