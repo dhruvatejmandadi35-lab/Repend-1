@@ -434,6 +434,13 @@ Canvas state right before vs right after. Exact trigger value. What visual event
 ━━━ F. LIVE READOUTS ━━━
 Every text label that updates live. Each shows an OUTPUT (the effect), never just the input value echoed back.
 
+━━━ G. THE MISSION ━━━
+Design the lab as a playable challenge, not a free-form sandbox. Describe:
+- THE GOAL: one concrete, visible objective the learner must achieve by exploiting the concept (e.g. "park the satellite in the green target ring and keep it there for 3 seconds", "breed a population that survives the drought", "deliver 100W to the bulb without melting the wire"). The goal must be impossible to hit by luck — succeeding requires using the mechanism the lab teaches.
+- DIRECT MANIPULATION: what the learner grabs, drags, or steers IN the play area itself — a draggable launch point, a steerable object via arrow keys, an aim-and-release gesture. Prefer touching the world over panel sliders whenever the concept allows it.
+- THE TARGET VISUAL: how the goal is drawn on canvas (a target zone, a finish line, a threshold marker) and how progress toward it is shown live (a meter filling, the zone glowing as you get close).
+- WIN/FAIL FEEDBACK: what plays on success (celebration burst, the win text) and what a near-miss looks like, so failing teaches WHY it failed in the concept's own terms.
+
 RULES:
 - Everything must be drawable with Canvas 2D (fillRect, arc, bezierCurveTo, etc.)
 - The central visual must be LARGE — filling the stage, not floating small in empty space
@@ -653,12 +660,20 @@ INTERACTION CODE PATTERNS — copy these exact patterns for each type:
     btn.style.background = controls.active ? '#1e3a5f' : '#3a1e1e';
   });
 
-[keyboard] Spacebar + arrow keys for power users:
+[keyboard-steer] Arrow keys / WASD steer the main object like a game — REQUIRED whenever the concept has a movable object (rocket, particle, organism, cursor). Track HELD keys in a Set so holding a key produces continuous action every frame:
+  const held = new Set();
   window.addEventListener('keydown', e => {
-    if (e.code==='Space') { controls.paused=!controls.paused; e.preventDefault(); }
-    if (e.code==='ArrowUp')   { controls.primaryVar = Math.min(controls.primaryVar+1, maxVal); syncSlider(); }
-    if (e.code==='ArrowDown') { controls.primaryVar = Math.max(controls.primaryVar-1, minVal); syncSlider(); }
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyA','KeyS','KeyD'].includes(e.code)) {
+      held.add(e.code); e.preventDefault();
+    }
   });
+  window.addEventListener('keyup', e => held.delete(e.code));
+  // Inside update(dt), every frame:
+  //   if (held.has('ArrowUp')||held.has('KeyW'))    applyThrust(dt);   // continuous while held
+  //   if (held.has('ArrowLeft')||held.has('KeyA'))  steerLeft(dt);
+  //   if (held.has('Space')) controls.paused is toggled on keydown only, not here
+  Show a small hint chip on the canvas: "← → ↑ ↓ to steer (click the play area first)" — the iframe needs focus before keys register.
+  ALWAYS mirror every keyboard action with on-screen touch buttons (◀ ▲ ▼ ▶ in a corner of Zone B, pointerdown=press, pointerup=release, feeding the same held Set) so phones get the identical game.
 
 HOVER GLOW — every draggable object MUST glow when hovered:
   // In the draw function, check if pointer is near the object:
@@ -694,6 +709,17 @@ When a rule triggers: animate a golden glow burst on the key canvas element AND 
 ` : ""}
 SUCCESS CONDITION: ${design.spec.success_condition}
 REAL-WORLD PAYOFF (show on success): "${design.spec.real_world_payoff || ""}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MISSION GAMEPLAY — the lab is a game the learner plays to WIN, not a sandbox to poke at:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Implement the mission from section G of the brief exactly. Requirements:
+• THE TARGET IS DRAWN IN ZONE B: a visible goal state on the canvas itself — a glowing target ring, a finish zone, a threshold line the learner must reach or stay inside. Not just text in the banner.
+• LIVE PROGRESS toward the goal: the target glows brighter / a progress meter fills as the learner gets close. A timer or counter where the mission requires holding a state ("hold the orbit for 3 s" → show 0.0/3.0 s counting).
+• STEER OR GRAB, don't just slide: the learner's primary action is IN the play area — dragging the object, aiming and releasing, or steering with arrow keys via the [keyboard-steer] pattern. Panel sliders are for secondary quantities only.
+• NEAR-MISS FEEDBACK: when an attempt fails, the canvas shows WHY in the concept's own terms ("too fast — escaped gravity", "not enough current — bulb stayed dark") for 2 s, then lets them retry instantly. Failing must teach.
+• WIN STATE = SUCCESS CONDITION: completing the mission triggers the celebration (golden burst, "MISSION COMPLETE"), the real-world payoff card, and the labCheck postMessage with ok:true. The mission must be winnable ONLY by actually using the concept's mechanism — never by random fiddling or waiting.
+• AUTO-DETECT the win — the moment the mission is achieved, celebrate immediately. The "Check Answer" button is a fallback that evaluates the same condition on demand.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LAYOUT — TWO ZONES (non-negotiable):
@@ -789,6 +815,8 @@ Before returning, verify ALL of these — fix any that fail before responding:
 8. Are there at least 2 interactive controls plus preset + reset buttons?
 9. Is the output readout showing the EFFECT (e.g. "Earthquake Magnitude: 7.2"), not just echoing the input value?
 10. Does the canvas use gradients and glow — does it look like a polished simulation, not a flat grey box?
+11. Is the mission's TARGET drawn on the canvas with live progress, and does achieving it auto-trigger the win celebration + labCheck postMessage?
+12. If the concept has a movable object: can the learner steer it with held arrow keys (continuous action, preventDefault, hint chip) AND with mirrored on-screen touch buttons?
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
