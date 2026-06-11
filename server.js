@@ -281,6 +281,8 @@ RULES:
 - formulas MUST be real math — look up the actual equation for this concept. Every output shown in Zone B must have a formula entry.
 - PHYSICAL TRUTH: every variable MUST appear in at least one formula expression. If a variable affects no formula, it is fake — DELETE it. Never invent decorative variables that sound topical but don't drive the physics (e.g. "contact surface" for Newton's third law). Three honest variables beat four where one is a lie — the learner WILL move it and learn something false.
 - UNITS ARE REAL: every variable unit and every readout is a real physical/financial unit (N, m/s, kg, %, $, years). NEVER pixels, NEVER unitless numbers. If the canvas measures something spatially, define a scale (e.g. 50 px = 1 m) and display the converted value.
+- DIMENSIONALITY: default to 2D. Research shows 3D raises cognitive load and only helps high-spatial-ability learners. The visualMetaphor should be 2D unless the concept's ESSENCE is 3D spatial structure (molecular geometry, protein folding, crystal lattices, orbital inclination, vector fields in space). Planar concepts (forces, circuits, graphs, kinematics, economics, statistics, waves) MUST be 2D — never describe a 3D scene for them.
+- LABELS: every object the learner sees must be nameable in one word. If a variable or object can't be given a clear one-word on-screen label, it's probably too abstract — reconsider it.
 - rules MUST include at least one threshold that triggers the aha moment visually
 - the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
 - reflection question must be answerable only AFTER interacting — not a definition lookup
@@ -636,6 +638,37 @@ ${imageDataUrl ? `You are given two inputs:
 
 GOAL: the learner manipulates something, watches the concept's real mechanism unfold, understands what every element on screen means, and sees how it works in the real world.
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RESEARCH-GROUNDED RULES (from PhET, cognitive-load theory, Mayer's multimedia principles, direct-manipulation HCI — follow these; they override any conflicting instinct):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+LABEL EVERYTHING, ONE WORD (PhET: one-word labels are read correctly without over-guiding):
+• Every distinct object on the canvas carries a one-word label drawn ON or beside it — "Box A", "Earth", "Buyer". The learner must never see a shape and wonder what it is. In your Newton's-third-law example the two circles were unlabeled — that is the failure to fix: label them ("Hand", "Wall" / "Cart A", "Cart B") and draw the force arrow pointing FROM each onto the other.
+• Provide a small legend (top of play area) only for color/encoding meaning ("● red = negative charge"). Keep it to encodings, not instructions.
+
+SPATIAL CONTIGUITY (Mayer, effect size d≈1.09 — strongest in the literature): put each label/readout immediately ADJACENT to the thing it describes, never in a far-off panel. A value that names an object's state is drawn next to that object, not in a side list.
+
+COHERENCE — STRIP THE EXTRANEOUS (Mayer d≈0.97; PhET removes wire colors etc.): every element either reacts to input or displays a result. No decorative motion, no ornamental shapes, no element that doesn't encode meaning. If deleting it loses no understanding, delete it.
+
+SIGNALING (Mayer d≈0.38): when a control changes a value, briefly highlight the affected element/term (color flash or glow) so attention goes to what changed.
+
+PHYSICAL TRUTH — NO FAKE VARIABLES: every control must map to a real term in a formula and visibly change a real output. Never invent a topical-sounding-but-inert variable (the "Contact Surface" slider on Newton's third law was exactly this bug — it affects nothing in F = -F and must not exist). If a variable drives no formula, delete it. Three honest controls beat four with one lie — the learner WILL move it and learn something false.
+
+REAL UNITS ONLY — NEVER PIXELS, NEVER BARE NUMBERS: every readout is a named quantity with a real unit (N, m/s², kg, m, %, $, °). Declare a world scale (e.g. const PX_PER_M = 50) and convert: show "Separation: 3.1 m", never "154 px"; show "Acceleration: 3.2 m/s²", never "Resulting Motion: 7.12".
+
+SOLID OBJECTS CANNOT OVERLAP (the intertwining-circles bug): if two bodies are drawn as solid, they must collide, not pass through each other. Use circle-circle resolution every frame, including during drag:
+  const dx=B.x-A.x, dy=B.y-A.y, dist=Math.hypot(dx,dy)||0.0001, minDist=A.r+B.r;
+  if (dist < minDist) {
+    const nx=dx/dist, ny=dy/dist, overlap=(minDist-dist);
+    // push each out by half the overlap (or push only the non-dragged one if one is grabbed)
+    A.x-=nx*overlap/2; A.y-=ny*overlap/2; B.x+=nx*overlap/2; B.y+=ny*overlap/2;
+  }
+  When the learner drags one body into another, the dragged one stops at contact (clamp it to minDist along the normal) — they touch and exert force, they never interpenetrate.
+
+DRAGGABLE AFFORDANCES (Norman/Shneiderman): every grabbable object signals it — cursor 'grab' on hover, 'grabbing' while dragging, plus a subtle hover glow/shadow. Hit radius ≥ 24px for touch. Position updates synchronously with the pointer (no lag).
+
+2D BY DEFAULT — 3D ONLY WHEN SPATIAL STRUCTURE IS THE LESSON (research: 3D raises cognitive load and only helps high-spatial-ability learners with interactive manipulation): Use flat 2D for forces in a plane, circuits, graphs, charts, kinematics, economics, statistics, waves — 3D for these HURTS comprehension and adds perspective bias. Reserve pseudo-3D/3D for concepts whose essence IS 3D spatial structure (molecular geometry, protein folding, crystal lattices, orbital inclination, vector fields in space). Newton's third law is a planar concept — keep it 2D; the fix is labels + collision + units, not 3D.
+
 TOPIC: ${design.topic}
 CONCEPT TYPE: ${archetype}
 ENTRY MISCONCEPTION: "${design.spec.entry_misconception || ""}"
@@ -657,21 +690,34 @@ ${(design.spec.interaction_palette || []).map(p => `  [${p.type}] ${p.element} �
 
 INTERACTION CODE PATTERNS — copy these exact patterns for each type:
 
-[draggable] Grab and drag a canvas object:
+[draggable] Grab and drag a canvas object (with grab/grabbing cursor + solid-collision clamp):
   let drag = null;
+  const HIT = Math.max(28, state.obj.r); // ≥24px touch target
   canvas.addEventListener('pointerdown', e => {
     const {mx, my} = canvasPt(e);
-    if (Math.hypot(mx - state.obj.x, my - state.obj.y) < 30) {
+    if (Math.hypot(mx - state.obj.x, my - state.obj.y) < HIT) {
       drag = { ox: state.obj.x - mx, oy: state.obj.y - my };
+      canvas.style.cursor = 'grabbing';
       canvas.setPointerCapture(e.pointerId);
     }
   });
   canvas.addEventListener('pointermove', e => {
-    if (drag) { const {mx,my}=canvasPt(e); state.obj.x=mx+drag.ox; state.obj.y=my+drag.oy; }
-    else { /* update hover: is pointer near obj? change cursor */ const {mx,my}=canvasPt(e); canvas.style.cursor = Math.hypot(mx-state.obj.x,my-state.obj.y)<30?'grab':'default'; }
+    const {mx,my}=canvasPt(e);
+    if (drag) {
+      state.obj.x = mx + drag.ox; state.obj.y = my + drag.oy;
+      // SOLID COLLISION: if obj would overlap another solid body, clamp it to contact (no interpenetration)
+      for (const other of state.solids) {
+        if (other === state.obj) continue;
+        const dx=state.obj.x-other.x, dy=state.obj.y-other.y, d=Math.hypot(dx,dy)||0.0001, min=state.obj.r+other.r;
+        if (d < min) { const nx=dx/d, ny=dy/d; state.obj.x=other.x+nx*min; state.obj.y=other.y+ny*min; }
+      }
+    } else {
+      canvas.style.cursor = Math.hypot(mx-state.obj.x,my-state.obj.y)<HIT ? 'grab' : 'default'; // hover affordance
+    }
   });
   canvas.addEventListener('pointerup', () => { drag=null; canvas.style.cursor='default'; });
   function canvasPt(e) { const r=canvas.getBoundingClientRect(); return { mx:(e.clientX-r.left)*(canvas.width/r.width), my:(e.clientY-r.top)*(canvas.height/r.height) }; }
+  // Touch: set CSS touch-action:none on the canvas so dragging doesn't scroll the page.
 
 [click-spawn] Click canvas to fire/spawn an object:
   canvas.addEventListener('click', e => {
@@ -930,6 +976,12 @@ Before returning, verify ALL of these — fix any that fail before responding:
 14. Does the canvas use gradients and glow — polished simulation, not a flat grey box?
 15. If the brief gave a real scenario: is the real target drawn from the start (labeled, with units), is there a live match % readout, and does crossing the match threshold reveal the equation with the learner's values plugged in?
 16. Are formulas rendered via renderFormula (KaTeX with plain-text fallback) — never raw ASCII math?
+17. Does EVERY object on the canvas have a one-word label drawn on/beside it, with labels/readouts placed adjacent to what they describe (not in a far panel)?
+18. Does EVERY control map to a real formula term and visibly change a real output? (No inert, topical-sounding fake variables.)
+19. Are ALL readouts real units with a declared world scale — zero pixel or bare-number readouts?
+20. If two objects are drawn as solid, do they collide instead of overlapping/intertwining — including while being dragged?
+21. Do draggable objects show grab/grabbing cursors + a hover affordance, with hit radius ≥24px and touch-action:none?
+22. Is the lab 2D unless the concept's essence is genuinely 3D spatial structure?
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
