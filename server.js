@@ -441,6 +441,20 @@ Design the lab as a playable challenge, not a free-form sandbox. Describe:
 - THE TARGET VISUAL: how the goal is drawn on canvas (a target zone, a finish line, a threshold marker) and how progress toward it is shown live (a meter filling, the zone glowing as you get close).
 - WIN/FAIL FEEDBACK: what plays on success (celebration burst, the win text) and what a near-miss looks like, so failing teaches WHY it failed in the concept's own terms.
 
+━━━ H. FORMULA PANEL ━━━
+The spec provides formulas{}. The lab must TEACH the formula, not just animate the result.
+Describe how to render a formula panel in Zone A (or pinned to the top of Zone B):
+- Show the governing equation written out symbolically (e.g. "R = v²·sin(2θ) / g").
+- For each variable the learner controls, name the symbol it maps to in the equation.
+- When the learner moves a control, that term in the equation should be visually highlighted (color flash, bold, or glow) AND the computed result updates live next to the equation.
+- The learner sees the arc, the equation, and the number update together — concept + formula + animation are three linked representations of the same thing.
+Describe the panel's position, which equation to show, which term each control highlights, and what computed value to display.
+
+━━━ I. REAL-WORLD LINE ━━━
+The spec provides real_world_payoff. In the Reveal step, this must land as one concrete sentence the learner reads AFTER they've hit the aha moment — not a generic topic sentence but a direct connection to what they just did.
+Write that sentence here. Format: "[What you just saw] is why [real-world consequence]."
+Example: "The steep drop angle you just found is why basketball coaches teach the high arc — a ball dropping steeply hits a 30% wider effective target."
+
 RULES:
 - Everything must be drawable with Canvas 2D (fillRect, arc, bezierCurveTo, etc.)
 - The central visual must be LARGE — filling the stage, not floating small in empty space
@@ -603,16 +617,19 @@ function draw() { /* draw edges, then nodes colored by state, then status text *
 // Light rAF loop ONLY for hover glow animation — not for physics.`,
   };
 
-  const briefText = `You are building a self-contained interactive learning lab for Repend. LAB ARCHETYPE: ${archetype.toUpperCase()}. You MUST output a complete, working HTML file. Output the HTML file directly, right now — no summaries, no explanations.
+  const briefText = `You are building a single self-contained interactive learning lab. LAB ARCHETYPE: ${archetype.toUpperCase()}. You MUST output a complete, working HTML file right now — no summaries, no explanations.
 
 ${imageDataUrl ? `You are given two inputs:
 1. A VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement.
 2. A BEHAVIORAL BRIEF (below) — source of truth for what the lab DOES. Brief wins over image always.
 ` : `You are given a behavioral brief below — the source of truth for what the lab does.`}
 
+GOAL: the learner manipulates something, watches the concept's real mechanism unfold, understands what every element on screen means, and sees how it works in the real world.
+
 TOPIC: ${design.topic}
-ENTRY MISCONCEPTION (what the learner believes walking in): "${design.spec.entry_misconception || ""}"
-FIRST MOVE (try this first — it should surprise them): "${design.spec.first_move || ""}"
+CONCEPT TYPE: ${archetype}
+ENTRY MISCONCEPTION: "${design.spec.entry_misconception || ""}"
+FIRST MOVE (what to try first — it should surprise them): "${design.spec.first_move || ""}"
 LEARNING GOAL: ${design.spec.learning_goal}
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
 ${design.spec.direct_manipulation ? `
@@ -708,7 +725,48 @@ ${rules}
 When a rule triggers: animate a golden glow burst on the key canvas element AND show the message text prominently in Zone B for 2-3 seconds.
 ` : ""}
 SUCCESS CONDITION: ${design.spec.success_condition}
-REAL-WORLD PAYOFF (show on success): "${design.spec.real_world_payoff || ""}"
+REAL-WORLD PAYOFF: "${design.spec.real_world_payoff || ""}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXPLAIN EVERYTHING ON SCREEN (non-negotiable):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Every entity, dot, shape, color, or symbol MUST be explained with a visible legend or inline label BEFORE or AS the learner first sees it.
+• Show a compact legend at the top of the play area before the sim starts — e.g. "● = one organism  |  color = trait  |  size = fitness"
+• As the sim runs, show ONE live mechanic line just below the legend that narrates what's happening RIGHT NOW — e.g. "High-fitness organisms reproducing faster…" or "Escape velocity not yet reached — orbit decaying"
+• The learner must never see a moving element without knowing what it represents.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PREDICT → MANIPULATE → REVEAL (non-negotiable):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Structure the lab in three phases:
+
+PREDICT (shown before the sim is interactive):
+• Ask one specific, falsifiable question about what will happen when they interact (2–4 options).
+• Show a confidence selector (Sure / Unsure / Just guessing).
+• A "Commit & Start" button reveals the simulation. They cannot touch the sim until they commit.
+• Display their prediction choice visibly throughout the Manipulate phase so they remember what they predicted.
+
+MANIPULATE:
+• Reveal the full interactive visual. Every control produces immediate, visible, meaningful change.
+• Show ONE conceptual prompt only: "Test it — were you right?" No step-by-step instructions.
+
+REVEAL (triggered by hitting the aha moment or success condition):
+• Flash a card that references their exact prediction choice — "You predicted X. Here's what actually happened and why."
+• State the REAL-WORLD PAYOFF as one concrete sentence: "[What you just saw] is why [real-world consequence]."
+• This card appears as a visible event in the sim (slides in, overlays briefly), not as a paragraph below the canvas.
+• After 4 seconds the card fades and the learner can keep exploring.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FORMULA PANEL — teach the rule, not just the animation:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The formulas below are the governing equations. The learner must see them, not just watch the result.
+Render a formula panel (pinned inside Zone A or at the top of Zone B):
+• Show the governing equation symbolically (e.g. R = v²·sin(2θ) / g).
+• Each slider/control maps to a symbol in the equation — label that mapping clearly (e.g. "θ → angle slider").
+• When the learner moves a control, HIGHLIGHT the corresponding term in the equation (color flash or bold) AND update the computed result live beside the equation.
+• The learner sees: the animation, the equation, and the result number — all changing together as linked representations of the same thing.
+FORMULAS (implement exactly, highlight live):
+${formulas || "  (derive from the concept — no approximations)"}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MISSION GAMEPLAY — the lab is a game the learner plays to WIN, not a sandbox to poke at:
@@ -761,7 +819,11 @@ PEDAGOGY RULES (from research on effective learning sims — PhET):
 TECHNICAL CONSTRAINTS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • ONE complete self-contained HTML file. Inline CSS and JS.
-• Vanilla JS only. NO external libraries, NO CDN links, NO import statements, NO require(). The lab runs inside sandbox="allow-scripts" which blocks all network requests — any <script src="..."> or fetch() will silently fail and break the lab. Everything must be inline in the single HTML file.
+• CDN libraries ALLOWED — use only what the concept genuinely needs:
+  - p5.js: for animated many-entity sims (agent-based, particles, populations). Load: <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  - GSAP: for smooth polished transitions (things glide, not snap). Load: <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  - Matter.js: for physics with collisions, gravity, forces. Load: <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+  - Plain vanilla JS is fine for simple cases — don't load a library you don't use.
 • No localStorage / sessionStorage. No fetch().
 • Works in sandbox="allow-scripts".
 • Zero console errors on first load.
@@ -805,18 +867,20 @@ TECHNICAL CONSTRAINTS:
 DO NOT render any multiple-choice quiz, reflection question, or "verify your understanding" section inside this lab. The platform shows a separate quiz AFTER the lab. This lab is for HANDS-ON INTERACTION ONLY — manipulating controls and watching the result. Adding a quiz here would duplicate the platform's quiz. The "Check Answer" button checks whether the learner reached the success condition (e.g. produced the target orbit), NOT a multiple-choice answer.
 
 Before returning, verify ALL of these — fix any that fail before responding:
-1. Does Zone B contain actual drawn SHAPES (fillRect, arc, lineTo, etc.) that represent the concept — NOT just a grid with ctx.fillText() labels?
-2. Is Zone B drawing something visible AND in motion immediately on load (not blank, not a tiny dot in empty space)?
-3. Is the central visual LARGE — filling the stage rather than floating small in a big empty field?
-4. Is Zone A on TOP (mobile) or LEFT (desktop), cleanly separated from Zone B with no overlap?
-5. Does canvas.width and canvas.height match the element's actual rendered pixel size (set via offsetWidth/offsetHeight)?
-6. Is there a persistent trail/trace that morphs as the primary control changes?
-7. Are hidden vectors/forces/energy drawn (arrows, bars, fields)?
-8. Are there at least 2 interactive controls plus preset + reset buttons?
-9. Is the output readout showing the EFFECT (e.g. "Earthquake Magnitude: 7.2"), not just echoing the input value?
-10. Does the canvas use gradients and glow — does it look like a polished simulation, not a flat grey box?
+1. Does Zone B contain actual drawn SHAPES that represent the concept — NOT just text on a grid?
+2. Is there a legend or key visible BEFORE the sim runs, labeling every entity/color/symbol?
+3. Is there a live ONE-LINE mechanic narrator updating as the sim runs?
+4. Is there a PREDICT step with 2–4 options + confidence + "Commit & Start" before the sim is interactive?
+5. Is the formula panel present, with each control mapped to a symbol, terms highlighted on change, and computed result live?
+6. Does the REVEAL card reference the learner's exact prediction AND state the real_world_payoff as one concrete sentence?
+7. Is Zone B in motion on load, with the central visual LARGE (not a small dot in empty space)?
+8. Does canvas.width/height match the element's actual rendered pixel size?
+9. Is there a persistent trail/trace + hidden vectors/force arrows drawn?
+10. Are there at least 2 interactive controls plus preset + reset buttons?
 11. Is the mission's TARGET drawn on the canvas with live progress, and does achieving it auto-trigger the win celebration + labCheck postMessage?
-12. If the concept has a movable object: can the learner steer it with held arrow keys (continuous action, preventDefault, hint chip) AND with mirrored on-screen touch buttons?
+12. If the concept has a movable object: can the learner steer it with held arrow keys + mirrored touch buttons?
+13. Did you load a CDN library only if the concept genuinely needs it (p5/GSAP/Matter — don't load what you don't use)?
+14. Does the canvas use gradients and glow — polished simulation, not a flat grey box?
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
