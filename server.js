@@ -279,6 +279,8 @@ RULES:
 - every variable MUST have why_it_matters — if you can't explain why it matters, remove the variable
 - the PRIMARY variable (the one that produces the aha) MUST have regimes_note describing the distinct outcomes across its range, with min/max/default chosen so EVERY regime is reachable and the default sits just below the most surprising boundary
 - formulas MUST be real math — look up the actual equation for this concept. Every output shown in Zone B must have a formula entry.
+- PHYSICAL TRUTH: every variable MUST appear in at least one formula expression. If a variable affects no formula, it is fake — DELETE it. Never invent decorative variables that sound topical but don't drive the physics (e.g. "contact surface" for Newton's third law). Three honest variables beat four where one is a lie — the learner WILL move it and learn something false.
+- UNITS ARE REAL: every variable unit and every readout is a real physical/financial unit (N, m/s, kg, %, $, years). NEVER pixels, NEVER unitless numbers. If the canvas measures something spatially, define a scale (e.g. 50 px = 1 m) and display the converted value.
 - rules MUST include at least one threshold that triggers the aha moment visually
 - the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
 - reflection question must be answerable only AFTER interacting — not a definition lookup
@@ -505,9 +507,9 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // NOTE: This step originally ran on Claude (claude-opus-4-7), then OpenAI gpt-4o.
 // Now uses Google Gemini (gemini-2.5-flash).
 // Change LAB_MODEL here to swap models.
-const LAB_MODEL = "gemini-2.5-flash";
+const LAB_MODEL = "gemini-2.5-pro";
 // Fallback model tried if LAB_MODEL is overloaded (503) after retries.
-const LAB_MODEL_FALLBACK = "gemini-1.5-flash";
+const LAB_MODEL_FALLBACK = "gemini-2.5-flash";
 
 function isOverloadError(err) {
   const msg = String(err && err.message || err);
@@ -734,6 +736,13 @@ When a rule triggers: animate a golden glow burst on the key canvas element AND 
 ` : ""}
 SUCCESS CONDITION: ${design.spec.success_condition}
 REAL-WORLD PAYOFF: "${design.spec.real_world_payoff || ""}"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHYSICAL TRUTH — nothing on screen may be false or meaningless:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Every readout shows a NAMED quantity with a REAL unit: "Acceleration: 3.2 m/s²", "Balance: $4,820". NEVER a bare number ("Resulting Motion: 7.12") and NEVER pixels ("Separation: 154 px") — define a world scale (e.g. 50 px = 1 m) and always display converted physical values.
+• Every control must visibly change an output through one of the formulas. If moving a control changes nothing the learner can see, DELETE the control — a dead or fake control teaches something false.
+• Only implement variables that appear in the formulas. If the brief or spec includes a variable that drives no formula, drop it.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXPLAIN EVERYTHING ON SCREEN (non-negotiable):
