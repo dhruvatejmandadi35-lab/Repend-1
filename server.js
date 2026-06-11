@@ -455,6 +455,14 @@ The spec provides real_world_payoff. In the Reveal step, this must land as one c
 Write that sentence here. Format: "[What you just saw] is why [real-world consequence]."
 Example: "The steep drop angle you just found is why basketball coaches teach the high arc — a ball dropping steeply hits a 30% wider effective target."
 
+━━━ J. REAL SCENARIO TO MATCH ━━━
+Learning flows backward when the equation comes first. Instead, open with REALITY and let the learner discover the rule by matching it:
+- Name ONE real, specific instance of this concept with real numbers — a documented basketball shot arc, the actual growth of $1,000 at 7% from 1990–2020, Darwin's finch beak-size shift after the 1977 drought, a real city's epidemic curve. Real names, real units, real magnitudes (approximate is fine; invented-but-plausible is acceptable if no famous dataset exists).
+- This real instance is drawn on the canvas from the start as a fixed TARGET — a ghost curve, a dotted trajectory, a faded historical line — clearly labeled as the real thing ("Curry's 2016 shot", "S&P 500 actual").
+- The learner's controls drive THEIR model's curve/behavior, drawn live on the same axes. Their goal: tune the parameters until their model lies on top of reality. Show a live match readout ("Match: 84%").
+- When the match crosses ~95%: that's the moment the equation is EARNED — reveal/highlight the formula with the learner's discovered parameter values plugged in ("You found it: A = 1000·(1.07)^t").
+This section applies whenever the concept produces a measurable output (most topics). If the topic is truly non-quantitative (e.g. a logical fallacy), say so and skip it — the mission from section G carries the lab instead.
+
 RULES:
 - Everything must be drawable with Canvas 2D (fillRect, arc, bezierCurveTo, etc.)
 - The central visual must be LARGE — filling the stage, not floating small in empty space
@@ -765,8 +773,20 @@ Render a formula panel (pinned inside Zone A or at the top of Zone B):
 • Each slider/control maps to a symbol in the equation — label that mapping clearly (e.g. "θ → angle slider").
 • When the learner moves a control, HIGHLIGHT the corresponding term in the equation (color flash or bold) AND update the computed result live beside the equation.
 • The learner sees: the animation, the equation, and the result number — all changing together as linked representations of the same thing.
+• Render equations with the renderFormula helper (KaTeX + plain-text fallback) so they look like a textbook, never like code.
 FORMULAS (implement exactly, highlight live):
 ${formulas || "  (derive from the concept — no approximations)"}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REAL SCENARIO MATCHING — reality first, equation earned:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+If the brief's section J provides a real scenario (it almost always does), build the lab around matching it:
+• Draw the real instance as a fixed TARGET on the canvas from the moment the sim appears — a ghost curve, dotted trajectory, or faded historical line, labeled with its real name and units. D3 is the right tool when this is data on axes.
+• The learner's controls drive THEIR model, drawn live on the same axes/space as the target. Both visible at once, visually distinct (target = faded/dotted, model = bright).
+• Show a live MATCH readout (e.g. "Match: 84%") computed from the gap between model and target. The match readout can double as the mission progress meter.
+• When the match crosses the threshold: the equation reveal IS the celebration — highlight the formula with the learner's discovered values plugged in ("You found it: A = 1000·(1.07)^t"), fire the win state and labCheck postMessage.
+• This replaces "equation first, animation second" — the learner reverse-engineers reality, and the formula arrives as the answer they earned.
+If section J was skipped (non-quantitative topic), the mission from the brief's section G carries the lab instead — do not force a fake dataset.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MISSION GAMEPLAY — the lab is a game the learner plays to WIN, not a sandbox to poke at:
@@ -829,6 +849,14 @@ TECHNICAL CONSTRAINTS:
   - Matter.js for physics with collisions, gravity, forces:
     <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
     <script>if(typeof Matter==='undefined'){document.write('<p style="color:red">Matter.js failed to load — check network</p>');}</script>
+  - D3.js for data-bound visuals: real datasets, labeled axes with meaningful units, scales, smooth curve transitions. Use it whenever the lab plots real-world data the learner must match:
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+    <script>if(typeof d3==='undefined'){document.write('<p style="color:red">D3 failed to load — check network</p>');}</script>
+  - KaTeX for textbook-quality math notation in the formula panel (real fractions, Greek letters, superscripts — never ASCII math like v^2*sin(2*theta)/g):
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script>function renderFormula(el, tex, plain){ if(typeof katex!=='undefined'){ katex.render(tex, el, {throwOnError:false}); } else { el.textContent = plain; } }</script>
+    Always call renderFormula with BOTH the TeX string and a plain-text fallback — if KaTeX fails to load, the formula still shows as readable text and the lab keeps working.
   - Plain vanilla JS is fine for simple cases — don't load a library you don't use.
 • No localStorage / sessionStorage. No fetch().
 • Works in sandbox="allow-scripts".
@@ -885,8 +913,10 @@ Before returning, verify ALL of these — fix any that fail before responding:
 10. Are there at least 2 interactive controls plus preset + reset buttons?
 11. Is the mission's TARGET drawn on the canvas with live progress, and does achieving it auto-trigger the win celebration + labCheck postMessage?
 12. If the concept has a movable object: can the learner steer it with held arrow keys + mirrored touch buttons?
-13. Did you load a CDN library only if the concept genuinely needs it (p5/GSAP/Matter — don't load what you don't use)?
+13. Did you load a CDN library only if the concept genuinely needs it (p5/GSAP/Matter/D3/KaTeX — don't load what you don't use)?
 14. Does the canvas use gradients and glow — polished simulation, not a flat grey box?
+15. If the brief gave a real scenario: is the real target drawn from the start (labeled, with units), is there a live match % readout, and does crossing the match threshold reveal the equation with the learner's values plugged in?
+16. Are formulas rendered via renderFormula (KaTeX with plain-text fallback) — never raw ASCII math?
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
