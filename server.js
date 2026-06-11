@@ -819,10 +819,16 @@ PEDAGOGY RULES (from research on effective learning sims — PhET):
 TECHNICAL CONSTRAINTS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • ONE complete self-contained HTML file. Inline CSS and JS.
-• CDN libraries ALLOWED — use only what the concept genuinely needs:
-  - p5.js: for animated many-entity sims (agent-based, particles, populations). Load: <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
-  - GSAP: for smooth polished transitions (things glide, not snap). Load: <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  - Matter.js: for physics with collisions, gravity, forces. Load: <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+• CDN libraries ALLOWED — use only what the concept genuinely needs (load from jsDelivr; include an inline vanilla fallback check so the lab degrades gracefully if the CDN is down):
+  - p5.js for animated many-entity sims (agent-based, particles, populations):
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+    <script>if(typeof p5==='undefined'){document.write('<p style="color:red">p5.js failed to load — check network</p>');}</script>
+  - GSAP for smooth polished transitions (things glide, not snap):
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+    <script>if(typeof gsap==='undefined'){/* fallback: define gsap.to as a no-op so the lab still runs */ window.gsap={to:(el,opts)=>{if(opts.onComplete)setTimeout(opts.onComplete,(opts.duration||0.5)*1000);}}; }</script>
+  - Matter.js for physics with collisions, gravity, forces:
+    <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
+    <script>if(typeof Matter==='undefined'){document.write('<p style="color:red">Matter.js failed to load — check network</p>');}</script>
   - Plain vanilla JS is fine for simple cases — don't load a library you don't use.
 • No localStorage / sessionStorage. No fetch().
 • Works in sandbox="allow-scripts".
