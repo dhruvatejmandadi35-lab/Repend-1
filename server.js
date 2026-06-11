@@ -857,7 +857,11 @@ TECHNICAL CONSTRAINTS:
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
     <script>function renderFormula(el, tex, plain){ if(typeof katex!=='undefined'){ katex.render(tex, el, {throwOnError:false}); } else { el.textContent = plain; } }</script>
     Always call renderFormula with BOTH the TeX string and a plain-text fallback — if KaTeX fails to load, the formula still shows as readable text and the lab keeps working.
-  - Plain vanilla JS is fine for simple cases — don't load a library you don't use.
+  - Google Fonts — ALWAYS include this one (typography is the cheapest polish; if it fails to load, system fonts take over automatically — zero risk):
+    <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    Use: body { font-family: 'Inter', -apple-system, sans-serif; } for all UI text; font-family: 'JetBrains Mono', monospace; for every number, readout, match %, and formula fallback text — tabular numbers make live values feel precise and stable.
+  - Plain vanilla JS is fine for simple cases — don't load a library you don't use (Google Fonts is the only always-on item).
 • No localStorage / sessionStorage. No fetch().
 • Works in sandbox="allow-scripts".
 • Zero console errors on first load.
