@@ -207,15 +207,28 @@ Topic: ${rawTopic}`, 300, "gpt-4o-mini");
 }
 
 async function thinkAboutTopic(topic) {
-  return openaiText(`You are an expert at explaining how concepts should FEEL to learn. Write a short analysis of "${topic}" covering exactly these five things:
+  return openaiText(`You are an expert at designing interactive learning experiences for ANY topic — STEM, history, economics, psychology, ethics, arts, everyday life. Write a short analysis of "${topic}" covering exactly these six things:
 
-1. THE CORE INSIGHT — what single thing, once seen visually, makes this concept truly click? Not a definition — the moment of understanding.
-2. THE VISUAL METAPHOR — what does this concept look like IN MOTION? Be vivid and specific to this topic.
-3. THE KEY VARIABLES — what 2-4 things can a learner change? For each, explain WHY it matters to the insight.
-4. THE AHA MOMENT — the precise moment when the learner says "oh!". What did they just see happen?
-5. THE REAL-WORLD COST — one concrete situation where not understanding this costs something real.
+STEP 0 — INTERACTION CLASSIFIER: Before anything else, classify this topic and pick the interaction type that will make it click:
+  • If the concept has motion/forces → physics-sim (planets, fluids, waves, projectiles)
+  • If behavior jumps suddenly at a boundary → threshold (phase transitions, action potentials, tipping points)
+  • If things compound/accumulate over time → accumulation (interest, climate, debt, skill)
+  • If something flows through stages → process-flow (supply chains, photosynthesis, legislation)
+  • If two forces optimize against each other → tradeoff (supply/demand, risk/return)
+  • If it's a static structure to assemble → structure-puzzle (circuits, timelines, food webs)
+  • If the learner makes sequential choices with branching consequences → branching-decision (history counterfactuals, ethics dilemmas, medical diagnosis, strategy)
+  • If the learner must EXPERIENCE a bias or social phenomenon firsthand → bias-trap (anchoring, sunk cost, groupthink, prisoner's dilemma)
+  • If learner allocates a fixed resource across competing priorities → budget-allocation (government budgets, personal finance, nutrition, time management)
+  • If emergent social/collective behavior appears from simple individual rules → agent-social-sim (segregation, epidemic spread, market prices, opinion dynamics)
+State: "INTERACTION TYPE: [chosen type] because [one sentence reason]."
 
-Write in plain direct prose. Be specific to ${topic}.`, 800, "gpt-4o-mini");
+1. THE CORE INSIGHT — what single thing, once experienced interactively, makes this concept truly click? Not a definition — the moment of understanding.
+2. THE VISUAL/INTERACTIVE METAPHOR — what does this concept look, feel, or play like? Be vivid. For non-quantitative topics: describe the branching tree, the bias reveal moment, the budget constraint, or the emergent pattern — not a chart.
+3. THE KEY VARIABLES or CHOICES — what 2-4 things can a learner change or decide? For each, explain WHY it matters to the insight.
+4. THE AHA MOMENT — the precise moment when the learner says "oh!". What did they just see or experience?
+5. THE REAL-WORLD COST — one concrete situation where not understanding this costs something real (money, health, justice, a relationship, a historical outcome).
+
+Write in plain direct prose. Be specific to ${topic}.`, 1000, "gpt-4o-mini");
 }
 
 async function specFromThinking(topic, thinking) {
@@ -228,7 +241,7 @@ Return ONLY JSON with this exact shape:
   "verificationQuestion": "One specific question the learner can only answer correctly AFTER interacting with the lab.",
   "spec": {
     "title": "Short punchy lab title",
-    "lab_archetype": "Exactly one of: physics-sim | threshold | accumulation | process-flow | tradeoff | structure-puzzle. Choose based on what kind of interaction best reveals the core insight: physics-sim = continuous motion/forces (orbital, waves, projectile); threshold = behavior jumps suddenly at a boundary (states of matter, equilibrium, action potential); accumulation = things pile up / compound over time (interest, growth, debt); process-flow = something moves through stages (photosynthesis, digestion, supply chain); tradeoff = two competing forces find an optimum (supply/demand, natural selection); structure-puzzle = click to arrange/mark a static structure (genetics pedigree, circuits, food web). Pick the ONE that best fits.",
+    "lab_archetype": "Exactly one of: physics-sim | threshold | accumulation | process-flow | tradeoff | structure-puzzle | branching-decision | bias-trap | budget-allocation | agent-social-sim. Choose the ONE whose interaction mechanic best exposes the core insight:\n  physics-sim = continuous motion/forces (orbital mechanics, waves, projectile, fluid dynamics)\n  threshold = behavior jumps suddenly at a boundary (states of matter, action potential, tipping points, viral spread)\n  accumulation = things compound over time (compound interest, debt, climate CO2, skill building)\n  process-flow = something moves through stages (photosynthesis, digestion, supply chain, legislation passage)\n  tradeoff = two competing forces find an optimum (supply/demand, risk/return, specialization/flexibility)\n  structure-puzzle = click to arrange/mark a static structure (circuits, genetics pedigree, food web, historical timeline)\n  branching-decision = learner makes sequential choices that lead to different outcomes (historical counterfactual, ethical dilemma, business strategy, medical diagnosis) — show a branching tree of consequences, the learner navigates it by choosing at each fork\n  bias-trap = learner EXPERIENCES a cognitive bias or social phenomenon first-hand (anchoring, confirmation bias, groupthink, sunk cost) — the learner makes a series of real judgments, sees their own pattern revealed, then compares to the research\n  budget-allocation = learner drags sliders to allocate a fixed resource (budget, time, calories, votes, risk) across competing priorities — tradeoffs emerge when the total is fixed and each allocation has consequences shown live\n  agent-social-sim = many autonomous agents follow simple rules and emergent social patterns appear (segregation, market price discovery, epidemic spread, language evolution) — learner adjusts the rules and watches collective behavior change",
     "learning_goal": "One sentence using the exact words of the core insight from the reasoning.",
     "entry_misconception": "The specific wrong belief the learner almost certainly walks in with. Be concrete: not 'they don't understand X' but 'they think X because Y, so they predict Z'. This is what the lab must break.",
     "first_move": "The very first thing the learner should try — what to drag/click/adjust and what surprising thing happens in the first 10 seconds. This must directly challenge the entry_misconception.",
@@ -286,7 +299,7 @@ RULES:
 - rules MUST include at least one threshold that triggers the aha moment visually
 - the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
 - reflection question must be answerable only AFTER interacting — not a definition lookup
-- lab_archetype MUST be one of the six listed — choose the one that best reveals the concept through interaction, not the most generic one
+- lab_archetype MUST be one of the ten listed — choose the one that best reveals the concept through interaction, not the most generic one. For non-STEM topics: history/ethics/philosophy → branching-decision; behavioral economics/psychology → bias-trap; government/personal finance/nutrition → budget-allocation; sociology/epidemiology/economics → agent-social-sim
 - entry_misconception MUST be a specific wrong belief, not a vague gap — "they think heavier objects fall faster" not "they don't understand gravity"
 - first_move MUST describe a concrete action that surprises the learner within 10 seconds and directly challenges the entry_misconception
 - direct_manipulation MUST describe a canvas object the learner grabs with their finger/mouse — not a slider. The primary variable is controlled by dragging something on the canvas.
@@ -627,9 +640,59 @@ canvas.addEventListener('click', e => { const hit = findHit(canvasPt(e)); if(hit
 function evaluate() { /* check if current config matches the correct pattern */ }
 function draw() { /* draw edges, then nodes colored by state, then status text */ }
 // Light rAF loop ONLY for hover glow animation — not for physics.`,
+
+    "branching-decision": `
+━━━ ARCHITECTURE: BRANCHING DECISION ━━━
+Show a tree of consequences that unfolds as the learner makes choices at each fork. No physics loop.
+const tree = { id:'root', text:'Crisis begins...', choices:[{ label:'Negotiate', next:'negotiate-path', consequence:'...' }, { label:'Confront', next:'confront-path', consequence:'...' }] };
+let currentNode = tree; const history = [];
+// Render: draw the full tree structure as a visual graph (nodes as rounded rects, edges as bezier curves, visited = solid, unvisited = faded).
+// Show the CURRENT node large in the center, its choices as prominent buttons.
+// On choice: animate the edge, push to history, set currentNode = chosen branch, redraw.
+// Progress bar shows how deep through the consequence chain the learner has gone.
+// At leaf nodes: reveal the OUTCOME prominently — "This is why [historical/ethical consequence]."
+// Back button lets learner explore alternate paths — encourage this, it IS the learning.`,
+
+    "bias-trap": `
+━━━ ARCHITECTURE: BIAS TRAP ━━━
+The learner makes a series of real judgments (estimates, predictions, allocations) WITHOUT knowing a cognitive bias is at play.
+const trials = [{ question:'...', anchor: X, correctAnswer: Y }, ...]; let trialIdx = 0; const responses = [];
+// Phase 1 — LIVE (no explanation): show each trial, capture response, show no feedback.
+// Phase 2 — REVEAL (after all trials): animate each response vs the correct answer. Draw a histogram of where MOST people land. Highlight the learner's dot in a different color on the distribution.
+// Show the bias name and mechanism ONLY after the learner has experienced it — never before.
+// The reveal must feel like a mirror: "Here is YOUR pattern across 5 trials."
+// Then show one countermeasure the learner can use going forward.
+// Use D3 for the distribution plot — real data showing the bias from studies, overlaid with the learner's result.`,
+
+    "budget-allocation": `
+━━━ ARCHITECTURE: BUDGET ALLOCATION ━━━
+A fixed total resource (budget $, time hours, calories, votes) is distributed across 3-5 competing priorities via draggable sliders.
+const TOTAL = 1000; // e.g. $1000 budget
+const categories = [{id:'r&d', label:'R&D', allocated:0, color:'#3B82F6', consequence:'...'}, ...];
+// Constraint: sum(allocated) MUST always equal TOTAL — when one slider moves, redistribute the remainder proportionally.
+// Draw: a horizontal stacked bar at the top showing current allocation with live $ labels.
+// Below: each category shows allocated amount + its CONSEQUENCE (icons/text that changes with allocation level).
+// Outcomes: a live OUTCOME score (profit, health, happiness) computed from the allocations via a formula.
+// The learner must discover that the naive "equal split" is suboptimal — the optimal has nonlinear payoffs.
+// Win: reach within 5% of the optimal allocation. Show the optimal breakdown after win.`,
+
+    "agent-social-sim": `
+━━━ ARCHITECTURE: AGENT SOCIAL SIM ━━━
+Many autonomous agents (dots, icons, avatars) follow simple local rules. Emergent collective behavior appears.
+const agents = Array.from({length:100}, (_,i) => ({ x:Math.random()*W, y:Math.random()*H, type:Math.random()<0.5?'A':'B', state:'neutral' }));
+// Each frame: for each agent, look at nearest neighbors and apply the rule (e.g. Schelling threshold, SIR transition probability).
+// Draw agents as colored dots (r=6). Use different colors per type/state. Show count labels per state.
+// Controls: rule parameters (e.g. "Tolerance threshold", "Infection rate") — learner adjusts rules and watches collective behavior change.
+// The emergent pattern (segregation, epidemic curve, price convergence) must appear NATURALLY from individual rules — never hard-code the macro pattern.
+// Show a live aggregate chart (D3 line chart of state proportions over time) so the learner sees BOTH the individual agents AND the macro trend.
+// Convergence to a stable state fires the win condition — show the emergent property named explicitly.`,
   };
 
-  const briefText = `You are building a single self-contained interactive learning lab. LAB ARCHETYPE: ${archetype.toUpperCase()}. You MUST output a complete, working HTML file right now — no summaries, no explanations.
+  const briefText = `━━━ REPEND MISSION ━━━
+Repend is an exploration engine that teaches any topic through hands-on interaction. Before generating ANYTHING, ask: "What is the most engaging way to make this concept click — through a simulation, a game, a decision tree, a social experiment, or a visual puzzle?" Default to the format that lets the learner FEEL the concept, not just read about it. A good lab produces an "aha" moment the learner couldn't get from a textbook. Passive explanations, static charts, and reading-only interfaces are rejected — every element must respond to the learner's action.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You are building a single self-contained interactive learning lab. LAB ARCHETYPE: ${archetype.toUpperCase()}. You MUST output a complete, working HTML file right now — no summaries, no explanations.
 
 ${imageDataUrl ? `You are given two inputs:
 1. A VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement.
@@ -982,6 +1045,10 @@ Before returning, verify ALL of these — fix any that fail before responding:
 20. If two objects are drawn as solid, do they collide instead of overlapping/intertwining — including while being dragged?
 21. Do draggable objects show grab/grabbing cursors + a hover affordance, with hit radius ≥24px and touch-action:none?
 22. Is the lab 2D unless the concept's essence is genuinely 3D spatial structure?
+23. (branching-decision only) Does the tree render visually as a graph? Can the learner backtrack and explore alternate paths? Does each leaf reveal a concrete consequence?
+24. (bias-trap only) Does the learner complete trials WITHOUT knowing the bias first? Is the reveal shown as a distribution plot with the learner's own data highlighted?
+25. (budget-allocation only) Is the total always constrained (sum=TOTAL)? Does each allocation show live consequences, not just a number change?
+26. (agent-social-sim only) Do agents follow LOCAL rules only — no hard-coded macro pattern? Is there a live D3 aggregate chart showing the emergent trend over time?
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
