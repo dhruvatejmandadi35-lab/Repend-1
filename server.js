@@ -18,6 +18,12 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+const { createClient } = require("@supabase/supabase-js");
+const supabase = createClient(
+  process.env.SUPABASE_URL || "",
+  process.env.SUPABASE_ANON_KEY || ""
+);
+
 // OpenAI also returns transient 429/503s under load. Retry with exponential
 // backoff (~1s/2s/4s/8s) on overload errors only; rethrow real bugs.
 async function openaiCreate(params, label = "openai") {
@@ -60,22 +66,21 @@ async function openaiJSON(prompt, maxTokens = 2500, model = "gpt-4o") {
 // The HTML codegen + repair steps call gemini.getGenerativeModel directly (see
 // codeFromImageBrief and repairLab) — that is the only place Gemini is used.
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
-
 function topicKey(topic) {
   return topic.toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
 async function getCachedLab(key) {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return null;
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/labs?topic_key=eq.${encodeURIComponent(key)}&select=lab_data&limit=1`,
-      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
-    );
-    const rows = await res.json();
-    return Array.isArray(rows) && rows.length > 0 ? rows[0].lab_data : null;
+    const { data, error } = await supabase
+      .from('labs')
+      .select('lab_data')
+      .eq('topic_key', key)
+      .limit(1)
+      .single();
+    if (error) return null;
+    return data ? data.lab_data : null;
   } catch (err) {
     console.warn('getCachedLab failed:', err.message);
     return null;
@@ -83,20 +88,37 @@ async function getCachedLab(key) {
 }
 
 async function saveLab(key, topic, labData) {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return;
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return;
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/labs`, {
-      method: 'POST',
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json',
-        Prefer: 'resolution=merge-duplicates',
-      },
-      body: JSON.stringify({ topic_key: key, topic, lab_data: labData }),
-    });
+    await supabase
+      .from('labs')
+      .upsert({ topic_key: key, topic, lab_data: labData }, { onConflict: 'topic_key' });
   } catch (err) {
     console.warn('saveLab failed:', err.message);
+  }
+}
+
+// Save or update a user's progress on a lab (called from /api/progress endpoint)
+async function saveProgress(userId, key, topic, { completed = false, score = 0 } = {}) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return;
+  try {
+    const { data: existing } = await supabase
+      .from('lab_progress')
+      .select('attempts')
+      .eq('user_id', userId)
+      .eq('topic_key', key)
+      .single();
+    await supabase.from('lab_progress').upsert({
+      user_id: userId,
+      topic_key: key,
+      topic,
+      completed,
+      score,
+      attempts: (existing ? existing.attempts : 0) + 1,
+      last_attempt_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,topic_key' });
+  } catch (err) {
+    console.warn('saveProgress failed:', err.message);
   }
 }
 
@@ -333,12 +355,12 @@ RULES:
 - interaction_palette MUST include at least one "draggable" and one "toggle-button" entry — the lab needs multiple interaction types, not just sliders
 - do NOT include interaction_type or any format label anywhere in the JSON
 
-Topic: ${topic}
-
-Reasoning:
-${thinking}
-
-Now produce the spec JSON.`, 2500);
+Now produce the spec JSON.`
+      },
+      { role: "user", content: `Topic: ${topic}\n\nReasoning:\n${thinking}\n\nNow produce the spec JSON.` }
+    ],
+  });
+  const parsed = JSON.parse(res.choices[0].message.content.trim());
   normalizeReflection(parsed);
   return parsed;
 }
@@ -1070,6 +1092,56 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/engine.html") {
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(fs.readFileSync(path.join(__dirname, "engine.html")));
+    return;
+  }
+
+  // POST /api/progress — record lab completion for authenticated user
+  if (req.method === "POST" && req.url === "/api/progress") {
+    let body = "";
+    req.on("data", c => (body += c));
+    req.on("end", async () => {
+      try {
+        const { topic_key, topic, completed, score, user_token } = JSON.parse(body);
+        if (!topic_key || !user_token) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "topic_key and user_token are required" }));
+          return;
+        }
+        // Verify the user token and get user_id
+        const { data: { user }, error } = await supabase.auth.getUser(user_token);
+        if (error || !user) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid token" }));
+          return;
+        }
+        await saveProgress(user.id, topic_key, topic, { completed, score });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (err) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // GET /api/progress?token=... — fetch all progress for authenticated user
+  if (req.method === "GET" && req.url.startsWith("/api/progress")) {
+    try {
+      const token = new URL(req.url, "http://x").searchParams.get("token");
+      if (!token) { res.writeHead(401); res.end(JSON.stringify({ error: "token required" })); return; }
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (error || !user) { res.writeHead(401); res.end(JSON.stringify({ error: "Invalid token" })); return; }
+      const { data: rows } = await supabase
+        .from("lab_progress")
+        .select("topic_key, topic, completed, score, attempts, last_attempt_at")
+        .eq("user_id", user.id)
+        .order("last_attempt_at", { ascending: false });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(rows || []));
+    } catch (err) {
+      res.writeHead(500); res.end(JSON.stringify({ error: err.message }));
+    }
     return;
   }
 
