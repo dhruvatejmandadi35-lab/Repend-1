@@ -4,15 +4,17 @@ const path = require("path");
 const OpenAI = require("openai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// Load .env locally (Railway injects env vars directly).
+// Load .env locally (Railway injects env vars directly, so this is a no-op there).
 try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
   .split("\n").forEach(line => {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
     if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
   });
-} catch (_) {}
+} catch (_) { /* no .env file — fine in production */ }
 
-// Two providers: OpenAI runs the text/reasoning steps; Gemini builds the HTML lab.
+// Placeholder keys avoid the SDK throwing at construction when a key is unset
+// (it rejects empty strings too). A real request will still fail with an auth
+// error if the key is genuinely missing — but the server boots.
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -137,7 +139,16 @@ const VERIFY_SYSTEM = `You are a learning coach. Return ONLY JSON:
 const ENGINE_TEMPLATE = fs.readFileSync(path.join(__dirname, "engine.html"), "utf8");
 
 async function plan(topic) {
-  return openaiJSON(`${PLAN_SYSTEM}\n\nTopic: ${topic}\n\nProduce the complete recipe JSON.`, 4096);
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 4096,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: PLAN_SYSTEM },
+      { role: "user", content: `Topic: ${topic}\n\nProduce the complete recipe JSON.` },
+    ],
+  });
+  return JSON.parse(res.choices[0].message.content.trim());
 }
 
 function injectRecipe(recipe) {
@@ -149,13 +160,18 @@ function injectRecipe(recipe) {
 }
 
 async function verify(topic, question, recipeSummary, userAnswer, labResult) {
-  return openaiJSON(`${VERIFY_SYSTEM}
-
-Topic: ${topic}
-Question: ${question}
-Lab summary: ${recipeSummary}
-Engine verdict: ${labResult ? JSON.stringify(labResult) : "n/a"}
-Student answer: ${userAnswer}`, 512, "gpt-4o-mini");
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_tokens: 512,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: VERIFY_SYSTEM },
+      { role: "user", content:
+        `Topic: ${topic}\nQuestion: ${question}\nLab summary: ${recipeSummary}\n` +
+        `Engine verdict: ${labResult ? JSON.stringify(labResult) : "n/a"}\nStudent answer: ${userAnswer}` },
+    ],
+  });
+  return JSON.parse(res.choices[0].message.content.trim());
 }
 
 async function analyzeImage(base64Image, question) {
@@ -174,11 +190,11 @@ async function analyzeImage(base64Image, question) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// FREEFORM LAB PIPELINE — OpenAI runs steps 0-3, Gemini builds the HTML:
-//   0. expandTopic        — gemini-2.5-flash JSON: sharpens vague input
-//   1. thinkAboutTopic    — gemini-2.5-flash prose: insight, metaphor, variables
-//   2. specFromThinking   — gemini-2.5-flash JSON: typed spec with archetype
-//   3. thinkAboutLab      — gemini-2.5-flash prose: archetype-adapted visual brief
+// FREEFORM LAB PIPELINE — six steps (image step is optional):
+//   0. expandTopic        — gpt-4o-mini: sharpens vague input to one specific concept
+//   1. thinkAboutTopic    — gpt-4o-mini prose: insight, metaphor, variables + why
+//   2. specFromThinking   — gpt-4o JSON: typed spec
+//   3. thinkAboutLab      — gpt-4o prose brief: behavior + visuals, no UI words
 //   4. mockupImage        — gpt-image-1: clean UI mockup (OPTIONAL, USE_MOCKUP=1)
 //   5. codeFromImageBrief — gpt-4o vision: image + brief → final HTML
 // ─────────────────────────────────────────────────────────────────
@@ -186,24 +202,36 @@ async function analyzeImage(base64Image, question) {
 // Step 0 — turns vague topics into one specific, teachable concept.
 // "ML" → "Gradient Descent: how a model finds the bottom of a loss landscape"
 // "Physics" → "Newton's Second Law: why heavier objects need more force to accelerate"
+// "Compound Interest" → passes through unchanged (already specific enough)
 async function expandTopic(rawTopic) {
-  return openaiJSON(`You sharpen vague learning topics into one specific, teachable concept.
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_tokens: 200,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `You sharpen vague learning topics into one specific, teachable concept.
 
-Return JSON:
+Return ONLY JSON:
 {
-  "topic": "The sharpened topic. 3-10 words. Must be a CONCEPT with a surprising insight, not a skill or activity.",
-  "why": "One sentence: the specific aha moment this concept produces."
+  "topic": "The sharpened topic. 3-10 words. Must be a CONCEPT with a surprising insight, not a skill or activity. Examples: 'Topspin: why a spinning tennis ball curves downward faster than gravity', 'Gradient Descent: why loss curves have valleys a model can slide down', 'Newton\\'s Second Law: why doubling mass halves acceleration for the same force'.",
+  "why": "One sentence: the specific aha moment this concept produces. E.g. 'The moment you see the ball curve MORE than expected is when you understand that spin changes the effective gravity on the ball.'"
 }
 
 RULES:
-- Sport/activity (tennis, basketball): find the underlying physics concept. 'Tennis' → 'Topspin: why spin bends a ball's path'.
-- Musical instrument/sound: pick the wave/physics concept. 'Violin' → 'Standing Waves: why pressing a string produces different pitches'.
-- Broad field (ML, physics, biology): pick the sub-concept with the clearest aha moment.
-- Already a specific concept (compound interest, Ohm's law): return nearly unchanged.
-- NEVER pick abstract concepts like 'resonance', 'harmony', 'energy flow' — pick something with a concrete visual output.
-- Never return a skill, definition, or procedure. Return the INSIGHT.
-
-Topic: ${rawTopic}`, 300, "gpt-4o-mini");
+- If the input names a SPORT or ACTIVITY (tennis, basketball, cooking, driving): find the underlying physics concept. 'Tennis' → 'Topspin: why spin bends a ball's path'.
+- If the input names a MUSICAL INSTRUMENT or MUSIC concept (violin, guitar, piano, sound, music): pick the underlying wave/physics concept that is visually drawable. 'Violin' → 'Standing Waves: why pressing a string at different points produces different pitches'. 'Sound' → 'Wave Interference: why two sound waves can cancel each other out'. Always pick something with a visible waveform or physical motion.
+- If the input is a broad FIELD (ML, physics, biology, history): pick the sub-concept with the clearest aha moment.
+- If the input is already a specific CONCEPT (compound interest, Ohm's law, mitosis): return it nearly unchanged.
+- NEVER pick abstract/unmeasurable concepts like 'resonance', 'harmony', 'feel', 'balance', 'energy flow' — these cannot be drawn. Always pick something with a concrete visual output (a wave, a trajectory, a curve, a collision, a graph with a kink).
+- NEVER pick a concept where all the learner does is set inputs with no surprising output.
+- Never return a skill, definition, or procedure. Return the INSIGHT.`,
+      },
+      { role: "user", content: rawTopic },
+    ],
+  });
+  return JSON.parse(res.choices[0].message.content.trim());
 }
 
 async function thinkAboutTopic(topic) {
@@ -232,7 +260,14 @@ Write in plain direct prose. Be specific to ${topic}.`, 1000, "gpt-4o-mini");
 }
 
 async function specFromThinking(topic, thinking) {
-  const parsed = await openaiJSON(`You convert educational reasoning into an interactive lab spec. Read the reasoning and produce JSON.
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 2200,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `You convert educational reasoning into an interactive lab spec. Read the reasoning and produce JSON.
 
 Return ONLY JSON with this exact shape:
 {
@@ -243,8 +278,6 @@ Return ONLY JSON with this exact shape:
     "title": "Short punchy lab title",
     "lab_archetype": "Exactly one of: physics-sim | threshold | accumulation | process-flow | tradeoff | structure-puzzle | branching-decision | bias-trap | budget-allocation | agent-social-sim. Choose the ONE whose interaction mechanic best exposes the core insight:\n  physics-sim = continuous motion/forces (orbital mechanics, waves, projectile, fluid dynamics)\n  threshold = behavior jumps suddenly at a boundary (states of matter, action potential, tipping points, viral spread)\n  accumulation = things compound over time (compound interest, debt, climate CO2, skill building)\n  process-flow = something moves through stages (photosynthesis, digestion, supply chain, legislation passage)\n  tradeoff = two competing forces find an optimum (supply/demand, risk/return, specialization/flexibility)\n  structure-puzzle = click to arrange/mark a static structure (circuits, genetics pedigree, food web, historical timeline)\n  branching-decision = learner makes sequential choices that lead to different outcomes (historical counterfactual, ethical dilemma, business strategy, medical diagnosis) — show a branching tree of consequences, the learner navigates it by choosing at each fork\n  bias-trap = learner EXPERIENCES a cognitive bias or social phenomenon first-hand (anchoring, confirmation bias, groupthink, sunk cost) — the learner makes a series of real judgments, sees their own pattern revealed, then compares to the research\n  budget-allocation = learner drags sliders to allocate a fixed resource (budget, time, calories, votes, risk) across competing priorities — tradeoffs emerge when the total is fixed and each allocation has consequences shown live\n  agent-social-sim = many autonomous agents follow simple rules and emergent social patterns appear (segregation, market price discovery, epidemic spread, language evolution) — learner adjusts the rules and watches collective behavior change",
     "learning_goal": "One sentence using the exact words of the core insight from the reasoning.",
-    "entry_misconception": "The specific wrong belief the learner almost certainly walks in with. Be concrete: not 'they don't understand X' but 'they think X because Y, so they predict Z'. This is what the lab must break.",
-    "first_move": "The very first thing the learner should try — what to drag/click/adjust and what surprising thing happens in the first 10 seconds. This must directly challenge the entry_misconception.",
     "visualMetaphor": "One vivid sentence describing what the simulation looks and feels like IN MOTION. Not a chart type — a scene. E.g. 'Money piling up in stacks of gold coins, each new coin landing with a clink, the stacks growing taller until they overflow the screen.' Copy from the reasoning verbatim.",
     "variables": [
       {
@@ -273,12 +306,6 @@ Return ONLY JSON with this exact shape:
       "correct": "B: it quadruples",
       "explanation": "Because wavelength ∝ 1/size², halving size means wavelength × 4."
     },
-    "direct_manipulation": "Describe one thing the learner grabs/drags directly ON the canvas — the PRIMARY variable must be controllable by dragging an object, not just a slider. E.g. 'Drag the planet closer or farther from the star to change orbital radius. The planet snaps to pointer on drag.' Be concrete about the visual object being grabbed.",
-    "interaction_palette": [
-      { "type": "draggable", "element": "name of draggable canvas object", "effect": "what changes in the simulation when dragged" },
-      { "type": "click-spawn", "element": "what clicking the canvas does", "effect": "immediate visual result" },
-      { "type": "toggle-button", "element": "button label", "effect": "what boolean flips and what visually changes" }
-    ],
     "stage_description": "Detailed paragraph: what is drawn on screen, what moves, what colors. Reference the visualMetaphor directly. Specific positions, sizes, what animates.",
     "interaction_description": "What the learner does step by step. What they touch first. What changes visually on each interaction. What the aha moment looks like on screen.",
     "aha_trigger": "The exact visual event that marks the aha moment. Be specific: what threshold, what visual change, what the learner sees right before vs. right after.",
@@ -349,73 +376,10 @@ async function thinkAboutLab(design) {
     .map(v => `  • ${v.name} (${v.unit || ""}), range ${v.min}–${v.max}, default ${v.default}: ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES: ${v.regimes_note}` : ""}`)
     .join("\n");
 
-  const archetype = design.spec.lab_archetype || "physics-sim";
-
-  // Archetype-specific questions that shape what the lab is DESIGNED to do
-  const archetypeQuestions = {
-    "physics-sim": `
-━━━ ARCHETYPE: PHYSICS SIMULATION ━━━
-This is a continuous-motion lab. The learner changes something and watches a physical system evolve. Design around these questions:
-- What does the default state look like — what's already moving before the learner touches anything?
-- What trajectory, path, or trail morphs visibly as the primary variable changes? (This morphing trail IS the lab.)
-- What are the 2-3 distinct regimes the primary variable spans? (e.g. crash / orbit / escape) What does each look like visually?
-- What hidden force or vector should be drawn as an arrow? (velocity, gravity, tension — name it, color it, make it proportional)
-- At what exact value does the most surprising visual transition happen? What does the canvas look like 1 second before vs 1 second after?`,
-
-    "threshold": `
-━━━ ARCHETYPE: THRESHOLD / PHASE TRANSITION ━━━
-This lab is about a sudden jump. The learner moves a slider and MOST of the range feels boring — then suddenly everything changes. Design around:
-- What does "before the threshold" look like? What single property is the learner watching?
-- What exact value triggers the jump? What changes visually — color, shape, motion, state?
-- Is the jump reversible? If yes, show hysteresis (the threshold going back is different from going forward). If no, make the irreversibility dramatic.
-- What's the subtle early warning sign just before the threshold? (a tremor, a glow building up, a value approaching a line)
-- The boring region MUST still be visually alive — what slow continuous change shows the system approaching the threshold?`,
-
-    "accumulation": `
-━━━ ARCHETYPE: ACCUMULATION / COMPOUNDING ━━━
-This lab is about how small rates produce enormous outcomes over time. Time runs forward. Design around:
-- Two curves must be drawn simultaneously: the linear "what most people intuitively expect" line, and the actual exponential/accumulation curve. The gap between them IS the insight.
-- What does the graph look like at t=0? At t=halfway? At t=max? Describe the visual divergence.
-- What does the "crossing point" look like — when does the accumulation curve visibly pull ahead of intuition?
-- Time controls: a play button that advances time, a speed slider, a reset. The learner must be able to run time forward and back.
-- Live readouts: current value, "if it were linear it would be X, but it's actually Y" — show the difference as a number.`,
-
-    "process-flow": `
-━━━ ARCHETYPE: PROCESS / FLOW ━━━
-This lab shows something moving through stages. The learner controls the inputs and watches how the output changes. Design around:
-- Draw each stage as a physical region on the canvas (a chamber, a node, a box). Label them.
-- Show the thing that flows (molecules, money, energy, signal) as particles or a stream visually moving between stages.
-- What happens at each stage? What transforms there? Make the transformation visible.
-- What happens when a stage is bottlenecked or overloaded? Show the backup, the overflow, the failure.
-- The learner's control changes the rate or condition at one stage — how does this ripple downstream? Show the ripple.`,
-
-    "tradeoff": `
-━━━ ARCHETYPE: TRADEOFF / OPTIMUM ━━━
-This lab has two competing forces and an optimum in the middle. Design around:
-- Draw BOTH forces simultaneously — one curve going up, one going down, their sum showing a peak or trough.
-- The learner drags a cursor along the tradeoff space. The cursor's position shows the current tradeoff. The optimal point is marked but not highlighted until the learner finds it.
-- What happens at the extreme left? Extreme right? The extremes must be visibly bad in different ways.
-- When the learner hits the optimum, what visual event marks it? (a click, a peak lighting up, a readout turning green)
-- Show the real-world cost of being off-optimum as a concrete number ("you're leaving $X on the table").`,
-
-    "structure-puzzle": `
-━━━ ARCHETYPE: STRUCTURE / PUZZLE ━━━
-This lab is about recognizing a pattern in a structure. No continuous physics loop. Design around:
-- Draw the full structure clearly at startup: a pedigree tree, a circuit, a web of nodes. It fills the canvas.
-- Clicking a node/element cycles its state visually (affected → carrier → unaffected; on → off; connected → disconnected).
-- After every click, evaluate() re-checks whether the current configuration is consistent/correct.
-- What's the wrong configuration the learner tries first? What feedback makes it clearly wrong?
-- What's the correct configuration? When reached, what visual celebration happens? (a path lights up, a circuit closes, a glow travels through the correct nodes)
-- There must be intermediate "close but not quite" states that give the learner useful partial feedback.`,
-  };
-
-  const prompt = `You are a senior learning designer and creative coder. Produce a CONCRETE BRIEF that a developer can implement directly in HTML Canvas 2D.
+  const prompt = `You are a senior creative coder designing an interactive learning lab. You will produce a CONCRETE VISUAL BRIEF that another developer can implement directly in HTML Canvas 2D.
 
 TOPIC: ${design.topic}
-LAB ARCHETYPE: ${archetype}
 LEARNING GOAL: ${design.spec.learning_goal}
-ENTRY MISCONCEPTION (what the learner believes walking in): "${design.spec.entry_misconception || "not specified"}"
-FIRST MOVE (what to try first that breaks the misconception): "${design.spec.first_move || "not specified"}"
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
 
 VARIABLES:
@@ -423,33 +387,36 @@ ${vars}
 
 AHA MOMENT: ${design.spec.aha_trigger}
 
-${archetypeQuestions[archetype] || archetypeQuestions["physics-sim"]}
+Write a concrete brief covering these four areas. Be specific enough that a developer can write the drawing code directly from your description — no ambiguity, no "something that represents X".
 
-Now write the FULL VISUAL BRIEF covering these sections. Be specific — a developer must be able to draw this directly from your words. No vague gestures.
+━━━ 1. WHAT DRAWS ON LOAD (before any interaction) ━━━
+Describe exactly what the canvas shows at startup. Name every drawn element with its approximate position, size, color, and whether it's animated. The canvas must look interesting and alive before the user touches anything. Include: a background (gradient or pattern), at least one always-moving element, and axis/grid lines if the concept involves quantities.
 
-━━━ A. LEARNING ARC (not visual — pedagogical) ━━━
-1. What wrong thing will the learner try first? (based on entry_misconception)
-2. What happens when they try it? (the surprising result)
-3. What do they adjust next? (the natural follow-up)
-4. What's the moment of "oh!" — what exactly changed on screen?
-5. What can they now explain that they couldn't before?
+Example level of detail: "A dark navy canvas (#0E1830). Faint blue grid lines every 50px. A glowing copper sine wave drawn across the full width, oscillating slowly — amplitude 80px, one full cycle visible. A white dot riding the wave, moving left to right continuously. Label 'frequency: 1 Hz' in the top-right in #8899BB."
 
-━━━ B. WHAT DRAWS ON LOAD ━━━
-Describe exactly what the canvas shows at startup — every element, position, color, whether animated. Must look alive and interesting before any interaction.
+━━━ 2. HOW EACH VARIABLE CHANGES THE CANVAS ━━━
+For each variable, describe the EXACT canvas change when its value changes. Name the specific drawing operations: what shape changes size/position/color/shape, what equation drives it, what the visual looks like at min vs max value.
 
-━━━ C. HOW EACH VARIABLE CHANGES THE CANVAS ━━━
-For each variable: exact visual change, what equation drives it, what it looks like at min vs max.
+Example: "Frequency (1–10 Hz): the sine wave's horizontal compression changes — at 1Hz one full wave spans the canvas, at 10Hz ten waves are crammed in. The white dot's speed increases proportionally. The label updates to 'frequency: N Hz'."
 
-━━━ D. THE AHA MOMENT VISUAL ━━━
-Canvas state right before vs right after. Exact trigger value. What visual event makes it unmissable.
+━━━ 3. THE AHA MOMENT VISUAL ━━━
+Describe the specific canvas state right before and right after the aha moment. What threshold triggers it? What visual event makes it unmissable? Use a concrete trigger: a value crossing a number, a wave doing something specific, two lines intersecting.
 
-━━━ E. MAKE THE INVISIBLE VISIBLE ━━━
-- TRACE/TRAIL: what path or history stays on screen so the learner compares before vs now?
-- HIDDEN MECHANISM: what force/field/process is normally invisible that must be drawn as arrows/bars/glows?
-- LINKED REPRESENTATIONS: same quantity shown 2+ ways simultaneously?
+Example: "When frequency crosses 5Hz, the wave peaks start overlapping with the reflected wave — destructive interference appears as the amplitude suddenly drops to near-zero. A golden ring pulses around the wave for 1 second. Label flashes 'Destructive interference!' in #D4A574."
 
-━━━ F. LIVE READOUTS ━━━
-Every text label that updates live. Each shows an OUTPUT (the effect), never just the input value echoed back.
+━━━ 4. LIVE READOUTS IN ZONE B ━━━
+List every text label that updates live on the canvas as values change. Each readout must show the OUTPUT of the concept (what the concept produces), not just the input value. Format: "Label text: [formula or description], position on canvas, color."
+
+Example: "• 'Wavelength: X m' — top-left, #8899BB, updates as frequency changes (wavelength = speed/frequency)
+• 'Interference: constructive / destructive' — center-top, color shifts green→red based on phase overlap"
+
+━━━ 5. MAKE THE INVISIBLE VISIBLE ━━━
+This is the most important section. Real understanding comes from SEEING the hidden mechanism, not just the surface. Describe:
+- The TRACE/TRAIL: what path or history persists on screen so the learner compares "before vs now" without remembering? (e.g. the orbit trail that morphs circle→ellipse→escape as velocity changes; the ghost of the previous curve faded behind the current one). This morphing trace is usually the single most important visual — describe it precisely.
+- The HIDDEN VECTORS/FORCES: what arrows, fields, or quantities that you can't see in reality should be drawn? (velocity arrow, gravity-force arrow pointing inward, energy bars). Name each, its color, what it attaches to, how it changes.
+- The LINKED REPRESENTATIONS: the same quantity shown two+ ways at once that update together (a number AND a bar AND the physical motion). Name which quantity and which representations.
+
+Example: "A continuously drawn orbital trail (copper, fading older segments to 20% alpha) traces the satellite's path — at default velocity it's a near-circle, drop velocity and the trail spirals inward to a crash, raise it and the trail opens into an ellipse then a hyperbola that flies off-screen. A blue velocity arrow extends from the satellite in its direction of motion, length ∝ speed. A red gravity arrow always points from satellite to planet, length ∝ 1/r². An energy bar (top-left) splits kinetic (blue) vs potential (orange) and shifts live."
 
 ━━━ G. THE MISSION ━━━
 Design the lab as a playable challenge, not a free-form sandbox. Describe:
@@ -481,12 +448,21 @@ Learning flows backward when the equation comes first. Instead, open with REALIT
 This section applies whenever the concept produces a measurable output (most topics). If the topic is truly non-quantitative (e.g. a logical fallacy), say so and skip it — the mission from section G carries the lab instead.
 
 RULES:
-- Everything must be drawable with Canvas 2D (fillRect, arc, bezierCurveTo, etc.)
-- The central visual must be LARGE — filling the stage, not floating small in empty space
-- No decorative elements — every element either reacts to input or displays the concept
-- The lab opens mid-phenomenon — already showing interesting behavior at the default values`;
+- Every element you describe must be drawable with Canvas 2D API calls (fillRect, arc, bezierCurveTo, etc.)
+- Minimum 2 variables with distinct visual effects
+- The PRIMARY variable must let the learner reach EVERY regime from its REGIMES note — the morphing visual across those regimes is the core of the lab
+- Zone B (the canvas) takes at least 65% of the screen height
+- Zone A (controls) is a compact panel — max 35% height on mobile, right-side panel on desktop
+- The central visual element must be LARGE — fill the stage, not a tiny dot in an empty field
+- No decorative elements that don't respond to or show the concept`;
 
-  return openaiText(prompt, 2500, "gpt-4o");
+  const res = await openai.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 2500,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  return res.choices[0].message.content.trim();
 }
 
 // Step 4 (optional) — gpt-image-1 generates a clean UI mockup.
@@ -508,8 +484,15 @@ Do NOT include: paragraphs of text, labels with real words (use simple shapes an
 Aspect ratio: landscape, fills the frame edge to edge.`;
 
   try {
-    // mockupImage disabled — was using gpt-image-1 (OpenAI), now Gemini-only
-    return null;
+    const res = await openai.images.generate({
+      model: "gpt-image-1",
+      prompt,
+      size: "1536x1024",
+      n: 1,
+    });
+    const b64 = res.data[0].b64_json;
+    if (!b64) return null;
+    return `data:image/png;base64,${b64}`;
   } catch (err) {
     console.warn("mockupImage failed, continuing without:", err.message);
     return null;
@@ -519,8 +502,7 @@ Aspect ratio: landscape, fills the frame edge to edge.`;
 // Step 5 — writes the final HTML lab.
 // Takes the prose brief (source of truth for behavior) + optional mockup image (look/layout).
 //
-// NOTE: This step originally ran on Claude (claude-opus-4-7), then OpenAI gpt-4o.
-// Now uses Google Gemini (gemini-2.5-flash).
+// NOTE: This step originally ran on Claude (claude-opus-4-7), then Gemini, then Vertex, then Ollama. Now uses OpenAI.
 // Change LAB_MODEL here to swap models.
 const LAB_MODEL = "gemini-2.5-pro";
 // Fallback model tried if LAB_MODEL is overloaded (503) after retries.
@@ -782,19 +764,16 @@ INTERACTION CODE PATTERNS — copy these exact patterns for each type:
   function canvasPt(e) { const r=canvas.getBoundingClientRect(); return { mx:(e.clientX-r.left)*(canvas.width/r.width), my:(e.clientY-r.top)*(canvas.height/r.height) }; }
   // Touch: set CSS touch-action:none on the canvas so dragging doesn't scroll the page.
 
-[click-spawn] Click canvas to fire/spawn an object:
-  canvas.addEventListener('click', e => {
-    const {mx,my}=canvasPt(e);
-    state.particles.push({ x:mx, y:my, vx:(Math.random()-.5)*4, vy:-6, life:1.0 });
-  });
+STEP 0 — Classify the concept. Decide which type "${design.topic}" is:
 
-[toggle-button] Button that flips a boolean:
-  const btn = document.getElementById('toggleBtn');
-  btn.addEventListener('click', () => {
-    controls.active = !controls.active;
-    btn.textContent = controls.active ? '⏸ Pause' : '▶ Play';
-    btn.style.background = controls.active ? '#1e3a5f' : '#3a1e1e';
-  });
+- Quantitative/functional (output varies with continuous inputs — e.g. compound interest, supply & demand)
+- Dynamic physical system (evolves over time by physical law — pendulum, orbit)
+- Emergent/agent-based (macro pattern from many interacting entities — natural selection, diffusion, traffic)
+- Sequential process/mechanism (ordered causal chain — photosynthesis, cell division)
+- Spatial/geometric (invariants in space — vectors, transformations)
+- Probabilistic/statistical (variation over many trials — sampling distributions, CLT)
+- Abstract/relational (relations with no spatial form — logical fallacies, tradeoffs)
+- Network/feedback (loops, accumulation, delay — climate feedback, market equilibrium)
 
 [keyboard-steer] Arrow keys / WASD steer the main object like a game — REQUIRED whenever the concept has a movable object (rocket, particle, organism, cursor). Track HELD keys in a Set so holding a key produces continuous action every frame:
   const held = new Set();
@@ -811,15 +790,35 @@ INTERACTION CODE PATTERNS — copy these exact patterns for each type:
   Show a small hint chip on the canvas: "← → ↑ ↓ to steer (click the play area first)" — the iframe needs focus before keys register.
   ALWAYS mirror every keyboard action with on-screen touch buttons (◀ ▲ ▼ ▶ in a corner of Zone B, pointerdown=press, pointerup=release, feeding the same held Set) so phones get the identical game.
 
-HOVER GLOW — every draggable object MUST glow when hovered:
-  // In the draw function, check if pointer is near the object:
-  if (state.hovered) {
-    ctx.save(); ctx.shadowBlur=20; ctx.shadowColor='rgba(99,102,241,0.8)';
-    // redraw the object shape here
-    ctx.restore();
-  }
+- Quantitative/functional → slider(s) + a live linked chart AND a concrete real-world referent (money stacks growing, not just a curve)
+- Dynamic physical → learner-controlled canvas animation (requestAnimationFrame) + a live linked graph; draggable starting conditions
+- Emergent/agent-based → a canvas with MANY visible individual entities following local rules + controls to perturb the environment; show the macro pattern emerging from the entities. NEVER a single slider on an aggregate curve.
+- Sequential process → a learner-paced step-through ("next" button), each step highlighting the one thing that changes. NEVER autoplay-only.
+- Spatial/geometric → draggable objects with live measurements that expose what stays invariant
+- Probabilistic → animate individual trials accumulating into a building histogram; learner sets sample size and runs many trials
+- Abstract/relational → sort-into-bins with feedback, or side-by-side contrasting cases; for tradeoffs, a slider that visibly gives up one thing to gain another
+- Network/feedback → stocks that visibly fill/drain and flows the learner adjusts + a linked time graph
 
-${archetypeArchitecture[archetype] || archetypeArchitecture["physics-sim"]}
+STEP 2 — Wrap it in Predict → Manipulate → Reveal:
+
+- Predict: before the sim is interactive, one specific falsifiable question about what will happen (2–4 options), then a confidence tap. They must commit before touching it.
+- Manipulate: reveal the full interactive visual. Every control produces immediate, visible, meaningful change. One conceptual prompt only ("Test it — were you right?"), no step-by-step instructions.
+- Reveal: an explanation that references THEIR prediction — whether it held and the real reason why — landing as a visible event in the sim, not a paragraph.
+
+STEP 3 — Make it transfer to real life. Tie the concept to a concrete real-world instance the learner can picture (the money in their savings account; the actual orbit of the ISS; a real population of animals). The "aha" should make them see the concept operating in the world, not just on screen.
+
+HARD RULES:
+- The visual must externalize the core mechanism. If you could delete it and lose no understanding, it's decoration — remove it.
+- Strip everything that doesn't encode meaning. No ornamental images, no decorative motion. Color and motion must carry the concept.
+- Any continuous animation gets play/pause/step + speed controls. Open in a near-still state with one obviously-grabbable element.
+- Max ~3 groups of ~3 controls. Labels 1–3 words. Play area visually separate from controls.
+- Single self-contained HTML file, vanilla JS, canvas or SVG, no external dependencies, zero console errors on first load, works from 360px wide up.
+
+${imageDataUrl ? `You are also given a VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement, overall feel. The behavioral brief below is the source of truth for what the lab DOES. If the image and brief conflict, the brief wins. If the image contains garbled text, fake labels, or nonsensical UI fragments, IGNORE them — implement real, working controls with real labels derived from the brief.
+` : ``}
+TOPIC: ${design.topic}
+LEARNING GOAL: ${design.spec.learning_goal}
+VISUAL METAPHOR: "${design.spec.visualMetaphor}"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BEHAVIORAL BRIEF (build exactly this behavior):
@@ -834,14 +833,14 @@ FORMULAS — implement these EXACTLY in JS (no approximations):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${formulas}
 
-Every live readout in Zone B MUST be computed from these formulas. The learner must see the output value changing as a real number.
+Every live readout in the play area MUST be computed from these formulas. The learner must see the output value changing as a real number.
 ` : ""}
 ${rules ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 THRESHOLD RULES — trigger these exact visual events:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${rules}
 
-When a rule triggers: animate a golden glow burst on the key canvas element AND show the message text prominently in Zone B for 2-3 seconds.
+When a rule triggers: animate a golden glow burst on the key canvas element AND show the message text prominently in the play area for 2-3 seconds.
 ` : ""}
 SUCCESS CONDITION: ${design.spec.success_condition}
 REAL-WORLD PAYOFF: "${design.spec.real_world_payoff || ""}"
@@ -918,43 +917,7 @@ Implement the mission from section G of the brief exactly. Requirements:
 • AUTO-DETECT the win — the moment the mission is achieved, celebrate immediately. The "Check Answer" button is a fallback that evaluates the same condition on demand.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LAYOUT — TWO ZONES (non-negotiable):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• MISSION BANNER: at the very top of Zone A, show the SUCCESS CONDITION text in a styled box — copper/amber border, small label "YOUR MISSION", text in white. Stays visible the entire time.
-  Example: <div style="background:rgba(212,165,116,0.08);border:1px solid rgba(212,165,116,0.4);border-radius:8px;padding:10px 12px;margin-bottom:12px"><div style="font-size:0.62rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#D4A574;margin-bottom:4px">YOUR MISSION</div><div style="font-size:0.82rem;color:#F0F2F8;line-height:1.5">[mission]</div></div>
-• ZONE A — controls: compact panel below the mission banner. On mobile (width ≤ 500px) Zone A sits at the TOP as a horizontal strip, max 200px tall. On desktop Zone A sits on the LEFT, max 220px wide. Zone B fills all remaining space. Use CSS flex column on mobile, row on desktop. Zone A must NEVER overlap Zone B — set explicit widths/heights so they are cleanly separated.
-• ZONE B — result canvas: fills all remaining space after Zone A. The canvas element's width and height attributes must be set dynamically from its actual rendered pixel size (use ResizeObserver or set after layout). Never hardcode canvas.width/height to values that differ from the element's CSS size — that causes stretched/blank output.
-• Zone B must react to every Zone A change within 16ms. No submit button. No lag.
-• Zone B must have at least one live text readout of the OUTPUT value (not the control value). "Surface damage: HIGH" not "Friction: 0.9". The readout names the EFFECT, not the input. Draw it ON the canvas, not as an HTML element on top.
-• Nothing in Zone B is decorative. Every element either reacts to input or displays a result.
-• The aha moment from the brief must be visually unmissable in Zone B — a sudden change, a shape snapping, a value jumping.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CANVAS MUST DRAW SHAPES — NOT JUST TEXT:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Zone B must show a DRAWN SIMULATION — actual shapes, motion, and physics drawn with Canvas 2D primitives. It is NOT acceptable to output a canvas that only contains ctx.fillText() calls showing slider values. The canvas must contain:
-• At least 3 distinct drawn shapes (fillRect, arc, lineTo, bezierCurveTo, etc.) that represent the actual concept, not labels
-• At least one shape that MOVES or ANIMATES continuously even before interaction (a plate sliding, a particle oscillating, a wave propagating)
-• At least one shape that CHANGES SIZE, POSITION, COLOR, or SHAPE as each slider moves
-• Simulation-style visuals: cross-sections of earth, orbiting bodies, wave patterns, circuit diagrams, growing curves — not a blank grid with floating text
-
-BAD (do not do): canvas showing only "Slip Rate: 3 cm/year\nFriction: 0.9\nSurface Damage: Low" as text on a grid
-GOOD: a canvas showing two tectonic plate layers (filled rectangles) sliding in opposite directions, a glowing stress indicator building up, seismic waves radiating outward when a threshold is crossed
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PEDAGOGY RULES (from research on effective learning sims — PhET):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• THE CENTRAL VISUAL MUST BE LARGE — it fills the stage. Never a tiny dot or shape floating in empty space. If the concept has a small object (a planet, a particle), the IMPORTANT thing (its path, field, or behavior) fills the canvas.
-• PERSISTENT TRACE: draw a trail/path/history that stays on screen so the learner compares before-vs-now without remembering. Fade older segments. This morphing trace is usually the single most important visual — implement the one from section 5 of the brief precisely.
-• MAKE THE INVISIBLE VISIBLE: draw the hidden vectors/forces/energy from section 5 of the brief — velocity arrows, force arrows, energy bars, fields. These explain WHY the behavior happens.
-• LINKED REPRESENTATIONS: show the key quantity in 2+ ways at once (a number AND a bar AND the motion), all updating together.
-• DEFAULT NEAR THE BOUNDARY: initialize the primary control at its default value, which sits just below the most surprising threshold — so the learner's first small nudge flips the outcome and reveals the aha. The sim opens mid-phenomenon, already showing interesting motion.
-• REACH EVERY REGIME: the primary control's range must let the learner reach every regime in its REGIMES note (e.g. crash / orbit / escape). Let the learner fail safely and visibly — the failure states ARE part of the lesson, show them vividly, don't block them.
-• PRESET BUTTONS: add 2-3 small preset buttons in Zone A that jump to interesting regimes (e.g. "Circular", "Comet", "Crash") plus a "Reset" button. One tap puts the learner in a meaningful state.
-• IMPLICIT GUIDANCE: don't write "now drag the slider" instructions. Make the productive action obvious through layout and defaults. Controls look grabbable (clear handles, hover highlight).
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TECHNICAL CONSTRAINTS:
+PLATFORM CONSTRAINTS (the lab runs inside a sandboxed iframe — these are non-negotiable):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • ONE complete self-contained HTML file. Inline CSS and JS.
 • CDN libraries ALLOWED — use only what the concept genuinely needs (load from jsDelivr; include an inline vanilla fallback check so the lab degrades gracefully if the CDN is down):
@@ -985,42 +948,25 @@ TECHNICAL CONSTRAINTS:
 • Zero console errors on first load.
 • Responsive: usable from 360px wide to full desktop.
 • Dark theme: bg #0B1220, stage #0E1830, panels #131A2A, border rgba(59,130,246,0.2). Accents: blue #3B82F6, copper #D4A574, success #22C55E, muted #8899BB.
-• CANVAS SIZING — CRITICAL. srcdoc iframes often return offsetWidth=0 at script time, causing permanent blank canvas. Use this EXACT pattern — no shortcuts:
+• CANVAS SIZING — mandatory pattern to prevent a stretched/blank canvas:
   const canvas = document.getElementById('mainCanvas');
   const ctx = canvas.getContext('2d');
-  let W = 0, H = 0, started = false;
   function resizeCanvas() {
-    const r = canvas.getBoundingClientRect();
-    const w = Math.round(r.width) || canvas.offsetWidth || canvas.parentElement.offsetWidth || 800;
-    const h = Math.round(r.height) || canvas.offsetHeight || canvas.parentElement.offsetHeight || 500;
-    if (w > 10 && h > 10) { W = canvas.width = w; H = canvas.height = h; }
-    if (!started && W > 0) { started = true; draw(); }
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
   }
-  window.addEventListener('resize', resizeCanvas);
-  window.addEventListener('load', resizeCanvas);
-  // Also handle the custom event fired by the platform's sizing runtime:
-  window.addEventListener('repend-resize', resizeCanvas);
-  // Try immediately, then defer — whichever fires first when layout is ready
   resizeCanvas();
-  setTimeout(resizeCanvas, 50);
-  setTimeout(resizeCanvas, 200);
-  // draw() is called by resizeCanvas once W > 0 — DO NOT call draw() before then:
-  function draw() { if(!W||!H) return; ctx.clearRect(0,0,W,H); /* draw everything */ requestAnimationFrame(draw); }
-• Zone B must show something meaningful within 100ms of page load — no waiting for interaction.
-• VISUAL DEPTH — make it look alive, not flat:
-  - Gradient backgrounds on canvas (createLinearGradient or createRadialGradient)
-  - Glowing elements: draw a blurred shadow before the main shape (ctx.shadowBlur=20, ctx.shadowColor='#3B82F6')
-  - At least one element that is always animating (wave oscillating, particle moving, value counting) even before interaction
-  - Layered drawing: background grid/gradient first, then physics objects, then labels on top
-• MINIMUM 2 interactive controls — never just one slider.
-• A visible "Check Answer" button in Zone A.
-• requestAnimationFrame for all motion. pointerdown/move/up for drag.
-• On aha moment: golden glow burst (shadowBlur spike) on the key Zone B element.
-• On success: green wave across canvas + real_world_payoff card slides in.
-• window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success.
-• window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on wrong.
-
-DO NOT render any multiple-choice quiz, reflection question, or "verify your understanding" section inside this lab. The platform shows a separate quiz AFTER the lab. This lab is for HANDS-ON INTERACTION ONLY — manipulating controls and watching the result. Adding a quiz here would duplicate the platform's quiz. The "Check Answer" button checks whether the learner reached the success condition (e.g. produced the target orbit), NOT a multiple-choice answer.
+  window.addEventListener('resize', resizeCanvas);
+  Set canvas.width/height from the element's actual rendered size (offsetWidth/offsetHeight or ResizeObserver) — never hardcode values that differ from the CSS size. Something meaningful must be drawn within 100ms of load; a blank canvas on load means the lab has failed.
+• If the lab animates over time, use requestAnimationFrame with delta-time (never hardcoded pixel offsets like x += 2), read control values inside the update loop every frame, and include play/pause/step + speed controls per the hard rules above.
+• Pointer events (pointerdown/move/up) for any dragging — works for both mouse and touch.
+• Implement the formulas above EXACTLY in JS. Live readouts must name the EFFECT ("Earthquake Magnitude: 7.2"), not echo the input ("Friction: 0.9").
+• Include a Reset button.
+• SUCCESS REPORTING — when the learner reaches the success condition (use a visible "Check Answer" button to evaluate it):
+  window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success
+  window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on failure
+  On success also show the real-world payoff card.
+• DO NOT render any multiple-choice quiz or "verify your understanding" section — the platform shows its own quiz after the lab. The Predict step (2–4 options before interaction) is the only question allowed; it is a prediction commitment, not a quiz.
 
 Before returning, verify ALL of these — fix any that fail before responding:
 1. Does Zone B contain actual drawn SHAPES that represent the concept — NOT just text on a grid?
@@ -1052,123 +998,61 @@ Before returning, verify ALL of these — fix any that fail before responding:
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
+  // --- GEMINI FALLBACK (commented out) ---
+  // const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
+  // const parts = [{ text: briefText }];
+  // if (imageDataUrl) {
+  //   const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
+  //   if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
+  // }
+  // const res = await model.generateContent({
+  //   contents: [{ role: "user", parts }],
+  //   generationConfig: { maxOutputTokens: 12000, temperature: 0.7 },
+  // });
+  // let html = res.response.text().trim();
+  // html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  // return html;
+  // --- END GEMINI FALLBACK ---
+
+  // Gemini 2.5 Pro via the native @google/generative-ai SDK. Build the parts
+  // array: text brief plus, if present, the mockup image as inline base64.
+  // (The OpenAI-compatible endpoint returns opaque "400 no body" errors, so we
+  // use the native SDK which surfaces the real error message.)
+  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
   const parts = [{ text: briefText }];
   if (imageDataUrl) {
     const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
     if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
   }
-  const res = await geminiGenerate({
-    contents: [{ role: "user", parts }],
-    generationConfig: { maxOutputTokens: 16000, temperature: 0.7 },
-  }, {
-    label: "codegen",
-    // Cross-provider fallback: gpt-4o produces the same provider-agnostic HTML.
-    openaiFallback: () => openaiText(briefText, 16000, "gpt-4o"),
-  });
+
+  let res;
+  const MAX_ATTEMPTS = 4;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      res = await model.generateContent({
+        contents: [{ role: "user", parts }],
+        generationConfig: { maxOutputTokens: 32000, temperature: 0.7 },
+      });
+      break;
+    } catch (err) {
+      const status = err && (err.status || err.statusCode);
+      const retryable = status === 503 || status === 429 || status === 500;
+      if (retryable && attempt < MAX_ATTEMPTS) {
+        const wait = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+        console.warn(`GEMINI ${status} on attempt ${attempt}/${MAX_ATTEMPTS} — retrying in ${wait}ms`);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+      console.error("GEMINI LAB GENERATION ERROR — model:", LAB_MODEL);
+      console.error("  message:", err && err.message);
+      console.error("  status:", status);
+      throw err;
+    }
+  }
+
   let html = res.response.text().trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
   return html;
-}
-
-// Injected into every lab: canvas auto-sizing + error reporter.
-// Sentinel attr prevents double-injection on repair.
-function injectLabRuntime(html) {
-  const runtime = `
-<script data-repend-runtime="1">
-(function(){
-  // Canvas sizing: srcdoc iframes often return offsetWidth=0 at script time.
-  // Use ResizeObserver as the reliable trigger, with a polling fallback.
-  function sizeCanvas(c){
-    // Prefer getBoundingClientRect (accounts for CSS transforms)
-    var r = c.getBoundingClientRect();
-    var w = Math.round(r.width)  || c.offsetWidth  || c.parentElement && c.parentElement.offsetWidth  || 0;
-    var h = Math.round(r.height) || c.offsetHeight || c.parentElement && c.parentElement.offsetHeight || 0;
-    if(w > 10 && h > 10 && (c.width !== w || c.height !== h)){
-      c.width  = w;
-      c.height = h;
-      // Tell the lab code to redraw — try both resize event and a custom event
-      window.dispatchEvent(new Event('resize'));
-      c.dispatchEvent(new Event('repend-resize'));
-    }
-  }
-
-  function fixAll(){ document.querySelectorAll('canvas').forEach(sizeCanvas); }
-
-  // 1. Try immediately (works if layout is ready)
-  fixAll();
-
-  // 2. After DOM is loaded
-  if(document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', function(){ requestAnimationFrame(fixAll); });
-  }
-
-  // 3. After full page load (images, fonts — most reliable timing)
-  window.addEventListener('load', function(){ requestAnimationFrame(fixAll); });
-
-  // 4. ResizeObserver watches every canvas that appears
-  if(typeof ResizeObserver !== 'undefined'){
-    var ro = new ResizeObserver(function(entries){
-      entries.forEach(function(e){ sizeCanvas(e.target); });
-    });
-    function observeAll(){
-      document.querySelectorAll('canvas').forEach(function(c){
-        ro.observe(c);
-        sizeCanvas(c);
-      });
-    }
-    observeAll();
-    // Catch canvases added later by the lab
-    if(typeof MutationObserver !== 'undefined'){
-      new MutationObserver(observeAll).observe(document.documentElement,{childList:true,subtree:true});
-    }
-  }
-
-  // 5. Hard retry if canvas is still 0×0 after 200ms / 600ms (srcdoc timing edge case)
-  [200, 600, 1200].forEach(function(ms){
-    setTimeout(function(){
-      document.querySelectorAll('canvas').forEach(function(c){
-        if(c.width < 10 || c.height < 10){ sizeCanvas(c); }
-      });
-    }, ms);
-  });
-
-  // Error reporter
-  var reported = false;
-  function report(msg, line, col){
-    if(reported) return; reported = true;
-    try { window.parent.postMessage({ type:'labError', error:{ message:String(msg||'Unknown error'), line:line||0, col:col||0 } }, '*'); } catch(_){}
-  }
-  window.addEventListener('error', function(e){ report(e.message, e.lineno, e.colno); });
-  window.addEventListener('unhandledrejection', function(e){ report((e.reason&&e.reason.message)||String(e.reason)||'Unhandled rejection', 0, 0); });
-})();
-<\/script>`;
-  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, runtime + "</head>");
-  if (/<body[^>]*>/i.test(html)) return html.replace(/(<body[^>]*>)/i, "$1" + runtime);
-  return runtime + html;
-}
-
-async function repairLab(html, errorMessage) {
-  const stripped = html.replace(/<script data-repend-runtime="1">[\s\S]*?<\/script>/i, "");
-  const prompt = `This interactive HTML lab throws a runtime JavaScript error that leaves the screen blank.
-
-THE ERROR: ${errorMessage}
-
-THE HTML:
-${stripped}
-
-Fix the bug. Common causes: variable used before declaration, typo in a variable name, calling a function before defining it, reading a property of null/undefined.
-Return the COMPLETE corrected HTML document — entire file, no diff, no snippet, no markdown fences, no commentary.`;
-
-  const res = await geminiGenerate({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: 16000, temperature: 0.2 },
-  }, {
-    label: "repair",
-    openaiFallback: () => openaiText(prompt, 16000, "gpt-4o"),
-  });
-  let fixed = res.response.text().trim();
-  fixed = fixed.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
-  return injectLabRuntime(fixed);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1207,14 +1091,8 @@ const server = http.createServer(async (req, res) => {
           res.writeHead(200, {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            // NOTE: "Connection: keep-alive" is intentionally omitted —
-            // it is illegal over HTTP/2 and causes ERR_HTTP2_PROTOCOL_ERROR on Railway.
+            "Connection": "keep-alive",
           });
-
-          // Heartbeat keeps the SSE connection alive through proxies/Railway
-          const heartbeat = setInterval(() => { try { res.write(`: ping\n\n`); } catch(_){} }, 15000);
-          res.on("close", () => clearInterval(heartbeat));
 
           const send = (stage, msg, data) => {
             res.write(`data: ${JSON.stringify({ stage, msg, data })}\n\n`);
@@ -1231,12 +1109,6 @@ const server = http.createServer(async (req, res) => {
           // ── Cache hit: serve instantly, zero AI cost ──────────────────
           const cached = await getCachedLab(key);
           if (cached) {
-            // Always re-inject the latest runtime so old cached labs get
-            // the current canvas-sizing fix without needing regeneration.
-            if (cached.labHtml) {
-              const stripped = cached.labHtml.replace(/<script data-repend-runtime="1">[\s\S]*?<\/script>/i, "");
-              cached.labHtml = injectLabRuntime(stripped);
-            }
             send("done", "Lab ready.", { ...cached, source: "cached" });
             res.end();
             return;
@@ -1259,8 +1131,7 @@ const server = http.createServer(async (req, res) => {
           }
 
           send("code", "Writing your lab…");
-          const rawHtml = await codeFromImageBrief(design, labThinking, imageDataUrl);
-          const html = injectLabRuntime(rawHtml);
+          const html = await codeFromImageBrief(design, labThinking, imageDataUrl);
 
           const labData = {
             topic: design.topic,
@@ -1277,13 +1148,6 @@ const server = http.createServer(async (req, res) => {
 
           // Fire-and-forget save — don't block the response
           saveLab(key, design.topic, labData);
-
-        } else if (req.url === "/repair-lab") {
-          const { html, error } = data;
-          if (!html) { res.writeHead(400); res.end(JSON.stringify({ error: "Missing html" })); return; }
-          const fixed = await repairLab(html, error || "Unknown error");
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ labHtml: fixed }));
 
         } else if (req.url === "/plan") {
           if (!data.topic?.trim()) {
@@ -1327,10 +1191,10 @@ const server = http.createServer(async (req, res) => {
           : (err.message || "Something went wrong");
         if (!res.headersSent) {
           res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: friendly }));
+          res.end(JSON.stringify({ error: err.message || "Something went wrong" }));
         } else {
           // SSE already started — send error event then close
-          res.write(`data: ${JSON.stringify({ stage: "error", msg: friendly })}\n\n`);
+          res.write(`data: ${JSON.stringify({ stage: "error", msg: err.message || "Something went wrong" })}\n\n`);
           res.end();
         }
       }
@@ -1342,4 +1206,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+server.timeout = 120_000; // 120 s — lab generation is multi-step and long
 server.listen(PORT, "0.0.0.0", () => console.log(`Repend running at http://0.0.0.0:${PORT}`));
