@@ -1187,6 +1187,7 @@ PLATFORM CONSTRAINTS (the lab runs inside a sandboxed iframe — these are non-n
   Set canvas.width/height from the element's actual rendered size (offsetWidth/offsetHeight or ResizeObserver) — never hardcode values that differ from the CSS size. Something meaningful must be drawn within 100ms of load; a blank canvas on load means the lab has failed.
 • If the lab animates over time, use requestAnimationFrame with delta-time (never hardcoded pixel offsets like x += 2), read control values inside the update loop every frame, and include play/pause/step + speed controls per the hard rules above.
 • Pointer events (pointerdown/move/up) for any dragging — works for both mouse and touch.
+• INTERACTIVE CHOICE OBJECTS MUST BE SELF-IDENTIFYING. If the learner must pick, drag, or match the CORRECT object among several candidates (e.g. "drag the correct tRNA", "select the right resistor", "match the codon"), EACH candidate must visibly display the decision-relevant attribute that makes the choice informed — its anticodon, value, name, charge, or carried payload — as a persistent text label anchored to that object (a Three.js Sprite/CSS2D billboard for 3D objects, or an HTML overlay tracking the object's screen position). Also label the TARGET the learner is matching against (e.g. the ribosome's "Current codon: AUG" → which anticodon fits). A pile of identical unlabeled blobs the learner must guess between is a FAILED lab — the learner must always be able to read what each object IS and why one is correct before they act.
 • Implement the formulas above EXACTLY in JS. Live readouts must name the EFFECT ("Earthquake Magnitude: 7.2"), not echo the input ("Friction: 0.9").
 • Include a Reset button.
 • SUCCESS REPORTING — when the learner reaches the success condition (use a visible "Check Answer" button to evaluate it):
@@ -1217,6 +1218,7 @@ Before returning, verify ALL of these — fix any that fail before responding:
 19. Are ALL readouts real units with a declared world scale — zero pixel or bare-number readouts?
 20. If two objects are drawn as solid, do they collide instead of overlapping/intertwining — including while being dragged?
 21. Do draggable objects show grab/grabbing cursors + a hover affordance, with hit radius ≥24px and touch-action:none?
+21b. If the learner must choose/drag/match the CORRECT object among several candidates, does EACH candidate display its decision-relevant identity (anticodon, value, name, payload) as a label anchored to it, AND is the target it matches against labeled too — so the choice is never a blind guess?
 22. Is the lab a full Three.js WebGL 3D scene with fog, particles, cinematic camera, and topic-specific environment (NOT flat 2D canvas)?
 23. (branching-decision only) Does the tree render visually as a graph? Can the learner backtrack and explore alternate paths? Does each leaf reveal a concrete consequence?
 24. (bias-trap only) Does the learner complete trials WITHOUT knowing the bias first? Is the reveal shown as a distribution plot with the learner's own data highlighted?
