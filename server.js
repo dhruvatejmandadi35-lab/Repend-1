@@ -1095,6 +1095,30 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Gamified learn UI (partner's design). Same lab generator under the hood.
+  if (req.method === "GET" && (req.url === "/learn" || req.url === "/learn.html")) {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(fs.readFileSync(path.join(__dirname, "learn.html")));
+    return;
+  }
+
+  // Static assets for the learn UI (design system + gamification module).
+  // These ship from the partner; serve gracefully and 404 if not present yet
+  // — learn.html degrades cleanly when they're missing.
+  if (req.method === "GET" && /^\/[\w.-]+\.(css|js)$/.test(req.url.split("?")[0])) {
+    const name = path.basename(req.url.split("?")[0]);
+    const file = path.join(__dirname, name);
+    if (fs.existsSync(file)) {
+      const type = name.endsWith(".css") ? "text/css" : "application/javascript";
+      res.writeHead(200, { "Content-Type": type });
+      res.end(fs.readFileSync(file));
+    } else {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not found");
+    }
+    return;
+  }
+
   // Reject non-JSON POST bodies early — bots POST XML/plaintext to random paths
   // which causes JSON.parse to throw and return a noisy 500.
   if (req.method === "POST") {
