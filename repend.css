@@ -1,0 +1,205 @@
+/* Repend — shared design system */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* NASA Mars exploration palette — shared by platform UI and generated labs */
+  --void: #050508;
+  --bg0: #0c0c14;
+  --bg1: #12121f;
+  --bg2: #1a1a2e;
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface2: rgba(255, 255, 255, 0.07);
+  --glass: rgba(10, 15, 30, 0.75);
+  --border: rgba(255, 255, 255, 0.09);
+  --border-mars: rgba(232, 93, 4, 0.25);
+  --text: #f4f4f8;
+  --muted: #8899bb;
+  --mars: #e85d04;
+  --mars2: #c44a00;
+  --dust: #8b4513;
+  --ice: #4cc9f0;
+  --copper: #d4a574;
+  --accent: var(--mars);
+  --accent2: var(--mars2);
+  --teal: var(--ice);
+  --amber: #fbbf24;
+  --green: #22c55e;
+  --r: 14px;
+  --r-lg: 22px;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg0);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 50% at 20% 10%, rgba(232, 93, 4, 0.1), transparent 55%),
+    radial-gradient(ellipse 60% 45% at 85% 75%, rgba(76, 201, 240, 0.07), transparent 50%),
+    linear-gradient(165deg, var(--void) 0%, var(--bg0) 45%, var(--bg1) 100%);
+}
+
+.page { position: relative; z-index: 1; }
+
+/* Nav */
+.site-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 40px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(12, 12, 20, 0.75);
+  backdrop-filter: blur(16px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.site-logo {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.site-logo b { color: var(--accent); font-weight: 800; }
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.nav-links a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: color 0.15s;
+}
+
+.nav-links a:hover,
+.nav-links a.active { color: var(--text); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 12px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--mars), var(--dust));
+  color: #fff;
+  padding: 12px 24px;
+  font-size: 0.95rem;
+  box-shadow: 0 4px 20px rgba(232, 93, 4, 0.25);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 28px rgba(232, 93, 4, 0.35);
+}
+
+.btn-lg {
+  padding: 18px 40px;
+  font-size: 1.1rem;
+  border-radius: 16px;
+}
+
+.btn-outline {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 12px 24px;
+  font-size: 0.95rem;
+}
+
+.btn-outline:hover { background: var(--surface2); }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(12px);
+}
+
+.section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--teal);
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-size: clamp(1.75rem, 4vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin-bottom: 16px;
+}
+
+.section-body {
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.75;
+  max-width: 56ch;
+}
+
+/* XP bar (learn page) */
+.nav-xp-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.nav-lvl { color: var(--accent); font-weight: 700; }
+
+.nav-streak {
+  font-size: 0.72rem;
+  color: var(--mars);
+  font-weight: 700;
+}
+
+.nav-xp-track {
+  width: 72px;
+  height: 5px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.nav-xp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--teal));
+  border-radius: 3px;
+  transition: width 0.4s;
+}
+
+@media (max-width: 640px) {
+  .site-nav { padding: 14px 20px; }
+  .nav-links a:not(.btn) { display: none; }
+}

@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Repend — AI-native course generation for everyone</title>
+  <meta name="description" content="Repend generates custom interactive courses on any topic — built for learners the internet forgot." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/repend.css" />
+  <style>
+    body.landing-page::before { display: none; }
+
+    #bg3d {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .readability-vignette {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background: radial-gradient(ellipse 75% 65% at 50% 45%, transparent 30%, rgba(6,6,14,0.8) 100%);
+    }
+
+    .landing-page .page {
+      position: relative;
+      z-index: 1;
+    }
+
+    .depth-root {
+      perspective: 1400px;
+      perspective-origin: 50% 40%;
+    }
+
+    [data-depth] {
+      transform-style: preserve-3d;
+      transform-origin: center center;
+      will-change: transform;
+    }
+
+    .hero-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: center;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 72px 32px 48px;
+      min-height: 88vh;
+      transform-style: preserve-3d;
+    }
+
+    .hero-copy {
+      transform-style: preserve-3d;
+    }
+
+    .hero-headline {
+      transform-style: preserve-3d;
+      margin-bottom: 20px;
+      transition: transform 0.12s ease-out;
+    }
+
+    .hero-headline .line {
+      display: block;
+      font-size: clamp(2.4rem, 5vw, 3.6rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.08;
+    }
+
+    .hero-headline .line:first-child { transform: translateZ(28px); margin-bottom: 4px; }
+
+    .hero-headline .line.accent {
+      transform: translateZ(48px);
+      background: linear-gradient(135deg, #c4b5fd, #7c6cf0 45%, var(--teal));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 8px 20px rgba(124,108,240,0.25));
+    }
+
+    .hero-lead {
+      font-size: 1.12rem;
+      color: var(--muted);
+      line-height: 1.7;
+      margin-bottom: 32px;
+      max-width: 46ch;
+      transform: translateZ(16px);
+    }
+
+    .hero-visual {
+      position: relative;
+      height: min(480px, 55vw);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      border: 1px solid rgba(124,108,240,0.2);
+      background: rgba(12,12,22,0.45);
+      backdrop-filter: blur(10px);
+      transform-style: preserve-3d;
+      transition: transform 0.12s ease-out;
+      box-shadow: 0 24px 56px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.04);
+    }
+
+    .hero-visual::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(124,108,240,0.08) 0%, transparent 50%, rgba(45,212,191,0.05) 100%);
+      pointer-events: none;
+    }
+
+    #hero3d {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: grab;
+    }
+
+    #hero3d:active { cursor: grabbing; }
+
+    .visual-caption {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      pointer-events: none;
+    }
+
+    /* 3D button */
+    .btn-3d-wrap {
+      display: inline-block;
+      perspective: 600px;
+      text-decoration: none;
+      transform: translateZ(24px);
+    }
+
+    .btn-3d {
+      position: relative;
+      display: block;
+      transform-style: preserve-3d;
+      transition: transform 0.18s ease;
+    }
+
+    .btn-3d-face {
+      display: block;
+      padding: 18px 44px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      border-radius: 16px;
+      color: #fff;
+      background: linear-gradient(135deg, var(--accent), #4f46e5);
+      transform: translateZ(14px);
+      box-shadow: 0 12px 32px rgba(124,108,240,0.35);
+    }
+
+    .btn-3d-edge {
+      position: absolute;
+      inset: 0;
+      border-radius: 16px;
+      background: #4338ca;
+      transform: rotateX(-90deg) translateY(8px);
+      transform-origin: bottom;
+      height: 16px;
+      bottom: 0;
+    }
+
+    .btn-3d-wrap:hover .btn-3d { transform: rotateX(8deg) translateY(-2px); }
+
+    .about-intro {
+      text-align: center;
+      padding: 0 32px 16px;
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    .about-intro .section-body { margin: 0 auto; }
+
+    .what-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 64px 32px;
+    }
+
+    .what-card {
+      padding: 28px;
+      transform-style: preserve-3d;
+      transition: box-shadow 0.25s ease;
+    }
+
+    .what-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 10px; transform: translateZ(12px); transition: transform 0.25s ease; }
+    .what-card p { font-size: 0.92rem; color: var(--muted); line-height: 1.65; transform: translateZ(6px); transition: transform 0.25s ease; }
+
+    .what-card:hover {
+      box-shadow: 0 16px 40px rgba(124,108,240,0.12);
+    }
+
+    .what-card:hover h3 { transform: translateZ(20px); }
+    .what-card:hover p { transform: translateZ(10px); }
+
+    .what-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, rgba(124,108,240,0.2), rgba(45,212,191,0.1));
+      transform: translateZ(18px);
+      transition: transform 0.25s ease;
+    }
+
+    .what-card:hover .what-icon { transform: translateZ(28px) scale(1.04); }
+
+    .story-wrap {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 32px 100px;
+    }
+
+    .scroll-track {
+      position: relative;
+      padding-left: 48px;
+    }
+
+    .scroll-track::before {
+      content: "";
+      position: absolute;
+      left: 15px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: linear-gradient(180deg, var(--accent), var(--teal), transparent);
+      opacity: 0.4;
+    }
+
+    .story-block {
+      position: relative;
+      margin-bottom: 72px;
+      opacity: 0;
+      transform: translateY(36px) translateZ(-40px);
+      transform-style: preserve-3d;
+      transition: opacity 0.65s ease, transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .story-block.visible {
+      opacity: 1;
+      transform: translateY(0) translateZ(var(--story-z, 0)) rotateX(var(--story-tilt, 0deg));
+    }
+
+    .story-block::before {
+      content: "";
+      position: absolute;
+      left: -40px;
+      top: 8px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px rgba(124, 108, 240, 0.2);
+    }
+
+    .story-block.visible::before {
+      background: var(--teal);
+      box-shadow: 0 0 0 6px rgba(45, 212, 191, 0.25);
+    }
+
+    .story-block .section-title { margin-bottom: 14px; transform: translateZ(10px); }
+
+    .story-panel {
+      margin-top: 8px;
+      padding: 22px 24px;
+      border-radius: var(--r);
+      background: rgba(12,12,24,0.5);
+      border: 1px solid rgba(124,108,240,0.1);
+      backdrop-filter: blur(8px);
+      transform: translateZ(6px);
+    }
+
+    .highlight-box {
+      margin-top: 16px;
+      padding: 20px 24px;
+      border-left: 3px solid var(--accent);
+      background: linear-gradient(90deg, rgba(124,108,240,0.1), transparent);
+      border-radius: 0 var(--r) var(--r) 0;
+      transform: translateZ(8px);
+    }
+
+    .highlight-box p {
+      color: var(--text);
+      font-size: 1.05rem;
+      line-height: 1.7;
+      font-weight: 500;
+    }
+
+    .pill-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+
+    .pill {
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .cta-final {
+      position: relative;
+      text-align: center;
+      padding: 80px 32px 100px;
+      max-width: 640px;
+      margin: 0 auto;
+      transform-style: preserve-3d;
+    }
+
+    .cta-orbit {
+      position: absolute;
+      width: 260px;
+      height: 260px;
+      left: 50%;
+      top: 50%;
+      border: 1px solid rgba(124,108,240,0.12);
+      border-radius: 50%;
+      transform: translate(-50%, -50%) translateZ(-30px) rotateX(70deg);
+      pointer-events: none;
+    }
+
+    .cta-orbit::before {
+      content: "";
+      position: absolute;
+      inset: 18px;
+      border: 1px dashed rgba(45,212,191,0.12);
+      border-radius: 50%;
+    }
+
+    .cta-final .section-title { transform: translateZ(20px); }
+
+    .scroll-rail {
+      position: fixed;
+      right: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 3px;
+      height: 100px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 2px;
+      z-index: 50;
+      pointer-events: none;
+    }
+
+    .scroll-rail-fill {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 0%;
+      background: linear-gradient(180deg, var(--teal), var(--accent));
+      border-radius: 2px;
+      box-shadow: 0 0 10px rgba(124,108,240,0.4);
+    }
+
+    .cta-final p { color: var(--muted); margin-bottom: 32px; font-size: 1.05rem; }
+
+    .scroll-hint {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.78rem;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      z-index: 50;
+      pointer-events: none;
+      transition: opacity 0.4s;
+    }
+
+    .scroll-hint.hidden { opacity: 0; }
+
+    .scroll-hint span {
+      width: 1px;
+      height: 28px;
+      background: linear-gradient(180deg, var(--muted), transparent);
+      animation: scrollPulse 1.8s ease infinite;
+    }
+
+    @keyframes scrollPulse {
+      0%, 100% { opacity: 0.3; transform: scaleY(0.6); }
+      50% { opacity: 1; transform: scaleY(1); }
+    }
+
+    .landing-page .site-nav {
+      background: rgba(12,12,20,0.7);
+      backdrop-filter: blur(14px);
+    }
+
+    footer {
+      text-align: center;
+      padding: 40px 24px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.85rem;
+      background: rgba(12,12,20,0.5);
+      backdrop-filter: blur(8px);
+    }
+
+    footer b { color: var(--accent); font-weight: 700; }
+
+    @media (max-width: 860px) {
+      .hero-split { grid-template-columns: 1fr; padding-top: 48px; min-height: auto; }
+      .hero-visual { height: 320px; order: -1; }
+      .what-grid { grid-template-columns: 1fr; }
+      .hero-headline .line:first-child { transform: translateZ(14px); }
+      .hero-headline .line.accent { transform: translateZ(24px); }
+      .scroll-rail { display: none; }
+      .cta-orbit { width: 200px; height: 200px; }
+    }
+  </style>
+</head>
+<body class="landing-page">
+<canvas id="bg3d" aria-hidden="true"></canvas>
+<div class="readability-vignette" aria-hidden="true"></div>
+<div class="scroll-rail" aria-hidden="true"><div class="scroll-rail-fill" id="scrollRailFill"></div></div>
+
+<div class="page depth-root">
+  <nav class="site-nav">
+    <a href="/" class="site-logo">Rep<b>end</b></a>
+    <div class="nav-links">
+      <a href="#about">About</a>
+      <a href="#story">Our story</a>
+      <a href="/achievements">Achievements</a>
+      <a href="/learn" class="btn btn-primary">Start Now</a>
+    </div>
+  </nav>
+
+  <section class="hero-split" id="hero">
+    <div class="hero-copy" id="heroCopy">
+      <p class="section-label" data-depth="0.03">AI-native learning</p>
+      <div class="hero-headline" id="heroHeadline" data-depth="0.04">
+        <span class="line">Any topic.</span>
+        <span class="line accent">Your course.</span>
+      </div>
+      <p class="hero-lead" data-depth="0.03">
+        Repend is an AI-native course generation tool. Type what you want to learn —
+        we build a custom interactive lab around it, not a generic video lecture.
+      </p>
+      <a href="/learn" class="btn-3d-wrap" data-depth="0.04">
+        <span class="btn-3d">
+          <span class="btn-3d-face">Start Now →</span>
+          <span class="btn-3d-edge" aria-hidden="true"></span>
+        </span>
+      </a>
+    </div>
+    <div class="hero-visual panel" id="heroVisual" data-depth="0.035">
+      <canvas id="hero3d"></canvas>
+      <span class="visual-caption">Drag to explore</span>
+    </div>
+  </section>
+
+  <section id="about">
+    <div class="about-intro" data-depth="0.025">
+      <p class="section-label">What is Repend</p>
+      <h2 class="section-title">Learning built for the topic you actually need</h2>
+      <p class="section-body">
+        Repend generates complete learning experiences — scenario, interactive lab, and verification —
+        tailored to your exact subject.
+      </p>
+    </div>
+    <div class="what-grid">
+      <div class="what-card panel" data-tilt>
+        <div class="what-icon">✦</div>
+        <h3>Course-specific</h3>
+        <p>Every lab is generated for your exact subject — tailored mechanics and real context.</p>
+      </div>
+      <div class="what-card panel" data-tilt>
+        <div class="what-icon">◈</div>
+        <h3>Interactive by default</h3>
+        <p>You learn by manipulating variables and seeing outcomes — not by watching a screen.</p>
+      </div>
+      <div class="what-card panel" data-tilt>
+        <div class="what-icon">◎</div>
+        <h3>Progress that sticks</h3>
+        <p>Earn XP, unlock badges, and track achievements as you complete labs.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="story" class="story-wrap">
+    <div data-depth="0.025">
+      <p class="section-label">Why we built Repend</p>
+      <h2 class="section-title" style="margin-bottom:48px;">Scroll to read our story</h2>
+    </div>
+    <div class="scroll-track">
+      <article class="story-block" data-story data-story-depth>
+        <p class="section-label">The gap</p>
+        <h2 class="section-title">Topics the internet never taught</h2>
+        <div class="story-panel">
+          <p class="section-body">
+            Most learning online is built for what's popular — not for what
+            <em>you</em> need to learn right now.
+          </p>
+        </div>
+      </article>
+      <article class="story-block" data-story data-story-depth>
+        <p class="section-label">Our mission</p>
+        <h2 class="section-title">Built for everyone, not just the privileged</h2>
+        <div class="story-panel">
+          <p class="section-body">
+            We created Repend so people could learn subjects they could never find on the internet —
+            for learners at every level.
+          </p>
+          <div class="highlight-box">
+            <p>Repend meets you where you are — no tutor, no university course required.</p>
+          </div>
+        </div>
+      </article>
+      <article class="story-block" data-story data-story-depth>
+        <p class="section-label">How it helps</p>
+        <h2 class="section-title">Your question becomes your curriculum</h2>
+        <div class="story-panel">
+          <p class="section-body">
+            Type any concept. Repend builds an immersive lab and checks that you actually understood.
+          </p>
+          <div class="pill-row">
+            <span class="pill">No prerequisites</span>
+            <span class="pill">Any reading level</span>
+            <span class="pill">Free to start</span>
+          </div>
+        </div>
+      </article>
+      <article class="story-block" data-story data-story-depth>
+        <p class="section-label">The promise</p>
+        <h2 class="section-title">Rep up. End with clarity.</h2>
+        <div class="story-panel">
+          <p class="section-body">
+            Every lab ends with real understanding — learning that fits the learner, not the other way around.
+          </p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="cta-final" data-depth="0.03">
+    <div class="cta-orbit" id="ctaOrbit" aria-hidden="true"></div>
+    <h2 class="section-title">Ready to learn your way?</h2>
+    <p>Generate your first custom course in under a minute.</p>
+    <a href="/learn" class="btn-3d-wrap">
+      <span class="btn-3d">
+        <span class="btn-3d-face">Start Now →</span>
+        <span class="btn-3d-edge" aria-hidden="true"></span>
+      </span>
+    </a>
+  </section>
+
+  <footer>
+    <p><b>Repend</b> — AI-native course generation for everyone</p>
+  </footer>
+</div>
+
+<div class="scroll-hint" id="scrollHint">Scroll to explore<span></span></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+const ScrollFX = { progress: 0, smooth: 0 };
+
+/* Story reveal + scroll hint */
+(function initScrollStory() {
+  const blocks = document.querySelectorAll('[data-story]');
+  const hint = document.getElementById('scrollHint');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+  }, { threshold: 0.2, rootMargin: '0px 0px -8% 0px' });
+  blocks.forEach(b => obs.observe(b));
+  window.addEventListener('scroll', () => {
+    if (hint) hint.classList.toggle('hidden', window.scrollY > 120);
+  }, { passive: true });
+})();
+
+/* Scroll parallax + hero mouse tilt */
+(function initDepth() {
+  const depthEls = document.querySelectorAll('[data-depth]');
+  const storyBlocks = document.querySelectorAll('[data-story-depth]');
+  const headline = document.getElementById('heroHeadline');
+  const visual = document.getElementById('heroVisual');
+  const railFill = document.getElementById('scrollRailFill');
+  const ctaOrbit = document.getElementById('ctaOrbit');
+
+  document.addEventListener('mousemove', e => {
+    const mx = (e.clientX / window.innerWidth - 0.5) * 2;
+    const my = (e.clientY / window.innerHeight - 0.5) * 2;
+    if (headline) headline.style.transform = `rotateY(${mx * 3}deg) rotateX(${-my * 2}deg)`;
+    if (visual) visual.style.transform = `rotateY(${-6 + mx * 5}deg) rotateX(${3 - my * 3}deg)`;
+  }, { passive: true });
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function update() {
+    const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+    ScrollFX.progress = window.scrollY / max;
+    ScrollFX.smooth += (ScrollFX.progress - ScrollFX.smooth) * 0.08;
+
+    if (railFill) railFill.style.height = `${ScrollFX.smooth * 100}%`;
+    if (ctaOrbit) {
+      ctaOrbit.style.transform = `translate(-50%, -50%) translateZ(-30px) rotateX(70deg) rotateZ(${ScrollFX.smooth * 120}deg)`;
+    }
+
+    depthEls.forEach(el => {
+      if (el === headline || el === visual) return;
+      const d = parseFloat(el.dataset.depth) || 0.03;
+      const rect = el.getBoundingClientRect();
+      const center = rect.top + rect.height * 0.5 - window.innerHeight * 0.5;
+      const y = -center * d;
+      const z = y * 0.06;
+      const tilt = Math.max(-2, Math.min(2, center * 0.001 * d * 80));
+      el.style.transform = `translate3d(0, ${y}px, ${z}px) rotateX(${tilt}deg)`;
+    });
+
+    storyBlocks.forEach(block => {
+      if (!block.classList.contains('visible')) return;
+      const rect = block.getBoundingClientRect();
+      const center = rect.top + rect.height * 0.5 - window.innerHeight * 0.5;
+      const norm = Math.max(-1, Math.min(1, center / (window.innerHeight * 0.55)));
+      const z = lerp(-24, 16, 1 - Math.abs(norm));
+      block.style.setProperty('--story-z', `${z}px`);
+      block.style.setProperty('--story-tilt', `${norm * 2}deg`);
+    });
+  }
+
+  window.addEventListener('scroll', update, { passive: true });
+  update();
+})();
+
+/* Card hover tilt */
+document.querySelectorAll('[data-tilt]').forEach(card => {
+  card.addEventListener('mousemove', e => {
+    const r = card.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5;
+    const y = (e.clientY - r.top) / r.height - 0.5;
+    card.style.transform = `perspective(800px) rotateY(${x * 6}deg) rotateX(${-y * 6}deg) translateZ(6px)`;
+  });
+  card.addEventListener('mouseleave', () => { card.style.transform = ''; });
+});
+
+/* Interactive hero canvas */
+(function initHero3D() {
+  if (typeof THREE === 'undefined') return;
+  const canvas = document.getElementById('hero3d');
+  if (!canvas) return;
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+  camera.position.z = 5.5;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  const setSize = () => {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  };
+  setSize();
+
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xE85D04, roughness: 0.35, metalness: 0.4,
+    emissive: 0x4CC9F0, emissiveIntensity: 0.1,
+  });
+  const mat2 = new THREE.MeshStandardMaterial({
+    color: 0x4CC9F0, roughness: 0.4, metalness: 0.3,
+    emissive: 0xE85D04, emissiveIntensity: 0.08,
+  });
+
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1, 1), mat);
+  group.add(core);
+
+  for (let i = 0; i < 8; i++) {
+    const s = 0.22 + Math.random() * 0.12;
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(s, 16, 16), i % 2 ? mat2 : mat);
+    const a = (i / 8) * Math.PI * 2;
+    orb.position.set(Math.cos(a) * 2, Math.sin(a * 1.3) * 0.8, Math.sin(a) * 2);
+    orb.userData.orbit = a;
+    group.add(orb);
+  }
+
+  for (let i = 0; i < 6; i++) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(1.6 - i * 0.06, 0.012, 6, 48),
+      new THREE.MeshBasicMaterial({ color: i % 2 ? 0xE85D04 : 0x4CC9F0, transparent: true, opacity: 0.15 + i * 0.05 })
+    );
+    ring.position.z = -i * 0.35;
+    group.add(ring);
+  }
+
+  const orbit = new THREE.Mesh(
+    new THREE.TorusGeometry(2.2, 0.03, 8, 64),
+    new THREE.MeshBasicMaterial({ color: 0xE85D04, transparent: true, opacity: 0.45 })
+  );
+  orbit.rotation.x = Math.PI / 2.5;
+  group.add(orbit);
+
+  scene.add(group);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const dl = new THREE.DirectionalLight(0xffffff, 0.9);
+  dl.position.set(3, 4, 5);
+  scene.add(dl);
+  const pl = new THREE.PointLight(0x4CC9F0, 0.6, 20);
+  pl.position.set(-3, 2, 2);
+  scene.add(pl);
+
+  let mx = 0, my = 0;
+  canvas.addEventListener('pointermove', e => {
+    const r = canvas.getBoundingClientRect();
+    mx = ((e.clientX - r.left) / r.width - 0.5) * 2;
+    my = ((e.clientY - r.top) / r.height - 0.5) * 2;
+  }, { passive: true });
+
+  const clock = new THREE.Clock();
+  function loop() {
+    requestAnimationFrame(loop);
+    const t = clock.getElapsedTime();
+    core.rotation.y = t * 0.25;
+    core.rotation.x = t * 0.12;
+    group.children.forEach(c => {
+      if (!c.userData.orbit) return;
+      const a = c.userData.orbit + t * 0.35;
+      c.position.x = Math.cos(a) * 2;
+      c.position.z = Math.sin(a) * 2;
+      c.position.y = Math.sin(a * 1.3 + t) * 0.8;
+    });
+    orbit.rotation.z = t * 0.15;
+    group.rotation.y += (mx * 0.4 - group.rotation.y) * 0.04;
+    group.rotation.x += (-my * 0.25 - group.rotation.x) * 0.04;
+    renderer.render(scene, camera);
+  }
+  loop();
+  new ResizeObserver(setSize).observe(canvas);
+})();
+
+/* Passive background — scroll only */
+(function initBg3D() {
+  if (typeof THREE === 'undefined') return;
+  const canvas = document.getElementById('bg3d');
+  if (!canvas) return;
+
+  const mobile = window.matchMedia('(max-width: 860px)').matches;
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x0a0a12, 0.048);
+
+  const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 120);
+  camera.position.set(0, 0, 14);
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobile ? 1.5 : 2));
+  renderer.setClearColor(0x0a0a12, 1);
+
+  const setSize = () => {
+    const w = window.innerWidth, h = window.innerHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  };
+  setSize();
+
+  const auroraMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: { uTime: { value: 0 }, uScroll: { value: 0 } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `
+      uniform float uTime; uniform float uScroll; varying vec2 vUv;
+      void main(){
+        vec2 uv = vUv - 0.5;
+        float w = sin(uv.x*4.5 + uTime*0.2)*0.5+0.5;
+        w *= cos(uv.y*3.5 - uTime*0.15)*0.5+0.5;
+        vec3 col = mix(vec3(0.49,0.42,0.94), vec3(0.18,0.83,0.75), w + uScroll*0.2);
+        float a = smoothstep(0.55, 0.0, length(uv)) * w * 0.11;
+        gl_FragColor = vec4(col, a);
+      }`,
+  });
+  const aurora = new THREE.Mesh(new THREE.PlaneGeometry(55, 34), auroraMat);
+  aurora.position.set(0, 1, -16);
+  scene.add(aurora);
+
+  const count = mobile ? 450 : 800;
+  const pos = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    pos[i*3] = (Math.random()-0.5)*55;
+    pos[i*3+1] = (Math.random()-0.5)*55;
+    pos[i*3+2] = (Math.random()-0.5)*35 - 8;
+  }
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
+    color: 0xa99bf8, size: mobile ? 0.06 : 0.045, transparent: true, opacity: 0.4,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  scene.add(particles);
+
+  const stack = new THREE.Group();
+  [0xE85D04, 0xC44A00, 0x4CC9F0].forEach((color, i) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(3.2, 0.08, 1.8),
+      new THREE.MeshStandardMaterial({
+        color, emissive: color, emissiveIntensity: 0.12,
+        roughness: 0.35, metalness: 0.4, transparent: true, opacity: 0.8,
+      })
+    );
+    mesh.position.set(0, (1 - i) * 0.5, i * 0.06);
+    mesh.userData.baseY = mesh.position.y;
+    stack.add(mesh);
+  });
+  const core = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.4, 1),
+    new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: 0xfbbf24, emissiveIntensity: 0.5, roughness: 0.2, metalness: 0.5 })
+  );
+  core.position.z = 0.35;
+  stack.add(core);
+
+  const orbit = new THREE.Mesh(
+    new THREE.TorusGeometry(2.4, 0.015, 6, 64),
+    new THREE.MeshBasicMaterial({ color: 0xE85D04, transparent: true, opacity: 0.15 })
+  );
+  orbit.rotation.x = Math.PI / 2.2;
+  stack.add(orbit);
+
+  const tunnel = new THREE.Group();
+  for (let i = 0; i < (mobile ? 8 : 12); i++) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(3 + i * 0.12, 0.014, 6, 48),
+      new THREE.MeshBasicMaterial({
+        color: i % 2 ? 0xE85D04 : 0x4CC9F0,
+        transparent: true,
+        opacity: 0.05 + (i / 12) * 0.15,
+      })
+    );
+    ring.position.z = -i * 1.1 - 5;
+    ring.rotation.x = Math.PI / 2;
+    tunnel.add(ring);
+  }
+  scene.add(tunnel);
+  scene.add(stack);
+
+  scene.add(new THREE.AmbientLight(0x4040a0, 0.45));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.65);
+  sun.position.set(4, 6, 8);
+  scene.add(sun);
+
+  const clock = new THREE.Clock();
+  function loop() {
+    requestAnimationFrame(loop);
+    const t = clock.getElapsedTime();
+    const sp = ScrollFX.smooth;
+
+    auroraMat.uniforms.uTime.value = t;
+    auroraMat.uniforms.uScroll.value = sp;
+    particles.rotation.y = t * 0.008 + sp * 0.12;
+    tunnel.position.z = sp * 8;
+    orbit.rotation.z = t * 0.08;
+
+    stack.children.forEach((c, i) => {
+      if (c.geometry?.type === 'BoxGeometry') {
+        c.position.y = c.userData.baseY + Math.sin(t * 0.55 + i) * 0.05;
+      }
+    });
+    core.rotation.x = t * 0.25;
+    core.rotation.y = t * 0.35;
+    stack.position.y = -sp * 2.5;
+    stack.rotation.y = sp * 0.25;
+
+    const camY = -sp * 7;
+    const camZ = 14 - sp * 2.5;
+    camera.position.y += (camY - camera.position.y) * 0.04;
+    camera.position.z += (camZ - camera.position.z) * 0.04;
+    camera.lookAt(0, camY - 0.5, -sp * 2);
+    scene.fog.density = 0.042 + sp * 0.015;
+
+    renderer.render(scene, camera);
+  }
+  loop();
+  window.addEventListener('resize', setSize, { passive: true });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Achievements — Repend</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/repend.css" />
+  <style>
+    .wrap { max-width: 920px; margin: 0 auto; padding: 0 24px 64px; }
+
+    .profile {
+      padding: 32px;
+      margin: 32px 0 28px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 24px;
+      align-items: center;
+    }
+
+    .avatar {
+      width: 68px; height: 68px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--mars), var(--dust));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.6rem; font-weight: 800; color: #fff;
+    }
+
+    .profile h1 { font-size: 1.35rem; font-weight: 800; margin-bottom: 4px; }
+    .profile .title { color: var(--ice); font-weight: 600; font-size: 0.92rem; margin-bottom: 14px; }
+
+    .xp-label { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--muted); font-family: "JetBrains Mono", monospace; margin-bottom: 6px; }
+    .xp-bar { height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
+    .xp-fill { height: 100%; background: linear-gradient(90deg, var(--mars), var(--ice)); border-radius: 4px; transition: width 0.5s; }
+
+    .stat-pills { display: flex; flex-direction: column; gap: 8px; }
+    .pill { padding: 8px 14px; border-radius: 10px; font-size: 0.82rem; background: var(--surface2); border: 1px solid var(--border); }
+    .pill strong { color: var(--mars); font-family: "JetBrains Mono", monospace; }
+
+    h2 { font-size: 1.1rem; font-weight: 800; margin-bottom: 16px; }
+    h2 span { font-size: 0.78rem; color: var(--muted); font-weight: 500; margin-left: 8px; }
+
+    .mastery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+    .mastery-card {
+      padding: 16px;
+      text-align: center;
+      border-radius: var(--r);
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .mastery-card .ring {
+      width: 52px; height: 52px;
+      margin: 0 auto 10px;
+      border-radius: 50%;
+      background: conic-gradient(var(--mars) var(--pct), rgba(255,255,255,0.08) 0);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+    }
+    .mastery-card .ring-inner {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: var(--bg0);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .mastery-card .cat-name { font-size: 0.78rem; font-weight: 700; margin-bottom: 2px; }
+    .mastery-card .cat-level { font-size: 0.68rem; color: var(--muted); }
+
+    .weekly-panel {
+      padding: 20px 24px;
+      margin-bottom: 36px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .weekly-panel .big { font-size: 2rem; font-weight: 900; color: var(--mars); font-family: "JetBrains Mono", monospace; }
+    .weekly-panel .detail { flex: 1; min-width: 180px; }
+    .weekly-panel .track { height: 10px; background: rgba(255,255,255,0.06); border-radius: 5px; margin-top: 8px; overflow: hidden; }
+    .weekly-panel .fill { height: 100%; background: linear-gradient(90deg, var(--mars), var(--ice)); border-radius: 5px; }
+
+    .bookmark-list { margin-bottom: 36px; }
+    .bookmark-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 14px 18px; margin-bottom: 8px;
+      border-radius: var(--r); background: var(--surface); border: 1px solid var(--border);
+      cursor: pointer; transition: border-color 0.15s;
+    }
+    .bookmark-row:hover { border-color: rgba(232,93,4,0.35); }
+    .bookmark-row .meta { font-size: 0.76rem; color: var(--muted); }
+
+    .quest { padding: 18px 22px; margin-bottom: 10px; display: flex; align-items: center; gap: 16px; }
+    .quest.done { opacity: 0.55; }
+    .quest-icon { font-size: 1.4rem; }
+    .quest-body { flex: 1; }
+    .quest-body h3 { font-size: 0.92rem; font-weight: 700; margin-bottom: 4px; }
+    .quest-body p { font-size: 0.8rem; color: var(--muted); }
+    .quest-bar { height: 5px; background: rgba(255,255,255,0.06); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+    .quest-fill { height: 100%; background: var(--green); border-radius: 3px; }
+    .quest-xp { font-family: "JetBrains Mono", monospace; font-size: 0.76rem; color: var(--amber); font-weight: 700; }
+
+    .badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; margin-bottom: 36px; }
+    .badge { padding: 18px 12px; text-align: center; border-radius: var(--r); background: var(--surface); border: 1px solid var(--border); transition: transform 0.15s; }
+    .badge.unlocked { border-color: rgba(232,93,4,0.35); }
+    .badge.unlocked:hover { transform: translateY(-2px); }
+    .badge.locked { opacity: 0.35; filter: grayscale(1); }
+    .badge .icon { font-size: 2rem; margin-bottom: 8px; }
+    .badge .name { font-size: 0.8rem; font-weight: 700; margin-bottom: 4px; }
+    .badge .desc { font-size: 0.65rem; color: var(--muted); line-height: 1.35; }
+
+    .hist-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+    .hist-row .meta { color: var(--muted); font-size: 0.76rem; font-family: "JetBrains Mono", monospace; }
+    .empty { color: var(--muted); text-align: center; padding: 32px; }
+    .empty a { color: var(--mars); }
+
+    @media (max-width: 640px) {
+      .profile { grid-template-columns: 1fr; text-align: center; }
+      .stat-pills { flex-direction: row; justify-content: center; flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+<div class="page wrap">
+  <nav class="site-nav" style="margin:0 -24px 0;padding-left:24px;padding-right:24px;">
+    <a href="/" class="site-logo">Rep<b>end</b></a>
+    <div class="nav-links">
+      <a href="/">Home</a>
+      <a href="/learn">Learn</a>
+      <a href="/achievements" class="active">Achievements</a>
+    </div>
+  </nav>
+
+  <div class="profile panel">
+    <div class="avatar" id="avatar">1</div>
+    <div>
+      <h1>Your progress</h1>
+      <div class="title" id="level-title">Rookie · Level 1</div>
+      <div class="xp-label"><span id="xp-into">0 XP</span><span id="xp-next">100 to next</span></div>
+      <div class="xp-bar"><div class="xp-fill" id="xp-fill" style="width:0%"></div></div>
+    </div>
+    <div class="stat-pills">
+      <div class="pill">Streak <strong id="streak">0</strong>d 🔥</div>
+      <div class="pill">Labs <strong id="labs-done">0</strong></div>
+      <div class="pill">Perfect <strong id="perfect">0</strong></div>
+    </div>
+  </div>
+
+  <section>
+    <h2>Weekly goal <span>Khan-style target</span></h2>
+    <div class="weekly-panel panel" id="weekly-panel"></div>
+  </section>
+
+  <section>
+    <h2>Course mastery <span>by category</span></h2>
+    <div class="mastery-grid" id="mastery-grid"></div>
+  </section>
+
+  <section class="bookmarks" id="bookmarks-section" style="display:none">
+    <h2>Saved for later <span>bookmarks</span></h2>
+    <div class="bookmark-list" id="bookmark-list"></div>
+  </section>
+
+  <section class="quests">
+    <h2>Quests <span>bonus XP</span></h2>
+    <div id="quest-list"></div>
+  </section>
+
+  <section>
+    <h2>Badges <span id="badge-count">0 / 18</span></h2>
+    <div class="badge-grid" id="badge-grid"></div>
+  </section>
+
+  <section>
+    <h2>Recent labs</h2>
+    <div id="history-list"></div>
+  </section>
+</div>
+
+<script src="/repend-game.js"></script>
+<script>
+function render() {
+  const s = RependGame.exportState();
+  document.getElementById('avatar').textContent = s.level;
+  document.getElementById('level-title').textContent = `${s.title} · Level ${s.level}`;
+  document.getElementById('xp-into').textContent = `${s.xp} XP total`;
+  document.getElementById('xp-next').textContent = s.xpNeed > 1 ? `${s.xpNeed - s.xpInto} to Level ${s.level + 1}` : 'Max level';
+  document.getElementById('xp-fill').style.width = s.xpPct + '%';
+  document.getElementById('streak').textContent = s.streak;
+  document.getElementById('labs-done').textContent = s.labsCompleted;
+  document.getElementById('perfect').textContent = s.perfectScores;
+  document.getElementById('badge-count').textContent = `${s.badges.length} / ${s.allBadges.length}`;
+
+  document.getElementById('weekly-panel').innerHTML = `
+    <div class="big">${s.weeklyLabs}/${s.weeklyGoal}</div>
+    <div class="detail">
+      <div style="font-weight:700">Labs completed this week</div>
+      <div style="font-size:0.82rem;color:var(--muted);margin-top:4px">${s.weeklyLabs >= s.weeklyGoal ? "Goal hit! 🎉" : `${s.weeklyGoal - s.weeklyLabs} more for bonus XP`}</div>
+      <div class="track"><div class="fill" style="width:${s.weeklyPct}%"></div></div>
+    </div>`;
+
+  document.getElementById('mastery-grid').innerHTML = s.mastery.map(m => `
+    <div class="mastery-card">
+      <div class="ring" style="--pct:${m.pct}%"><div class="ring-inner">${m.icon}</div></div>
+      <div class="cat-name">${m.category}</div>
+      <div class="cat-level">${m.label} · ${m.count} labs</div>
+    </div>`).join('');
+
+  const bmSec = document.getElementById('bookmarks-section');
+  if (s.bookmarks.length) {
+    bmSec.style.display = 'block';
+    document.getElementById('bookmark-list').innerHTML = s.bookmarks.map((b, i) => `
+      <div class="bookmark-row" data-i="${i}">
+        <div><div>${b.topic}</div><div class="meta">${b.category}</div></div>
+        <div class="meta">→</div>
+      </div>`).join('');
+    document.querySelectorAll('.bookmark-row').forEach(el => {
+      const b = s.bookmarks[+el.dataset.i];
+      el.onclick = () => { location.href = `/learn?topic=${encodeURIComponent(b.topic)}&cat=${encodeURIComponent(b.category)}`; };
+    });
+  } else bmSec.style.display = 'none';
+
+  document.getElementById('quest-list').innerHTML = s.quests.map(q => `
+    <div class="quest panel ${q.done ? 'done' : ''}">
+      <div class="quest-icon">${q.done ? '✓' : '○'}</div>
+      <div class="quest-body">
+        <h3>${q.title}</h3>
+        <p>${q.desc}</p>
+        <div class="quest-bar"><div class="quest-fill" style="width:${Math.min(100,(q.progress/q.goal)*100)}%"></div></div>
+      </div>
+      <div class="quest-xp">+${q.xp} XP</div>
+    </div>`).join('');
+
+  document.getElementById('badge-grid').innerHTML = s.allBadges.map(b => `
+    <div class="badge ${b.unlocked ? 'unlocked' : 'locked'}" title="${b.desc}">
+      <div class="icon">${b.icon}</div>
+      <div class="name">${b.name}</div>
+      <div class="desc">${b.desc}</div>
+    </div>`).join('');
+
+  const hist = document.getElementById('history-list');
+  hist.innerHTML = s.history.length
+    ? s.history.slice(0, 10).map(h => `
+      <div class="hist-row">
+        <div><div>${h.topic}</div><div class="meta">${h.category}${h.perfect ? ' · perfect' : ''}${h.isReview ? ' · review' : ''}${h.isDaily ? ' · daily' : ''}</div></div>
+        <div class="meta">+${h.xp} XP</div>
+      </div>`).join('')
+    : '<div class="empty">No labs yet. <a href="/learn">Start your first course →</a></div>';
+}
+document.addEventListener('DOMContentLoaded', render);
+</script>
+</body>
+</html>
