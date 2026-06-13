@@ -1095,6 +1095,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Reject non-JSON POST bodies early — bots POST XML/plaintext to random paths
+  // which causes JSON.parse to throw and return a noisy 500.
+  if (req.method === "POST") {
+    const ct = req.headers["content-type"] || "";
+    if (!ct.includes("application/json")) {
+      res.writeHead(415, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Content-Type must be application/json" }));
+      return;
+    }
+  }
+
   // POST /api/progress — record lab completion for authenticated user
   if (req.method === "POST" && req.url === "/api/progress") {
     let body = "";
