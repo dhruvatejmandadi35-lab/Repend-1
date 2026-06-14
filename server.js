@@ -683,12 +683,20 @@ AHA MOMENT: ${design.spec.aha_trigger}
 
 Write a concrete brief covering these areas. Be specific enough that a developer can write the Three.js code directly from your description — no ambiguity, no "something that represents X".
 
-━━━ 0. NASA REALISM REQUIREMENTS (non-negotiable) ━━━
-The lab must look like a NASA-grade interactive experience — NOT a flat diagram or placeholder shapes.
-• REAL 3D OBJECTS: build recognizable meshes for every topic element (basketball=SphereGeometry with pebble texture, rim=TorusGeometry, court=PlaneGeometry with painted lines, rover=BoxGeometry chassis + CylinderGeometry wheels, cell=SphereGeometry membrane + internal organelles)
-• MATERIALS: MeshStandardMaterial with roughness/metalness, emissive accents on interactive elements, environment-mapped reflections where appropriate
-• LIGHTING: warm DirectionalLight (sun) + cool PointLight (rim) + AmbientLight — cinematic shadows via renderer.shadowMap
-• ATMOSPHERE: FogExp2 (${REPEND_THEME.fog}), starfield Points (2000+), dust particle system, slow camera idle drift
+━━━ 0. VISIBILITY FIRST (before aesthetics) ━━━
+A beautiful brief is worthless if the scene is black. Every Three.js lab MUST:
+• AmbientLight(0xffffff, 0.7) + DirectionalLight at (5,10,7) + PointLight rim — ALL THREE, always
+• Camera at a position where the interactive objects are within view at startup (e.g. position (0,4,10) looking at origin)
+• All interactive meshes: MeshStandardMaterial with emissive + emissiveIntensity≥0.3 so they glow slightly even in low light
+• Objects spawn within x:[-3,3], y:[-2,2], z:[0] by default — never off-screen, never inside each other
+• Scene must show something the learner can grab within the first 100ms of load — describe exactly what they see
+
+━━━ 0b. TOPIC REALISM (non-generic) ━━━
+The lab content must depict "${design.topic}" literally — NEVER a default space/planet scene unless the topic is actually about space.
+• REAL 3D OBJECTS: build recognizable meshes for every topic element (basketball=SphereGeometry, rim=TorusGeometry, allele=labeled SphereGeometry with distinct color, language card=BoxGeometry with texture text)
+• MATERIALS: MeshStandardMaterial with roughness/metalness, emissive accents on interactive elements
+• ATMOSPHERE: FogExp2 scene depth, dust particles, slow camera idle drift — applied to the topic's real environment
+• LIGHTING: warm DirectionalLight (sun/lamp) + cool PointLight (rim) + AmbientLight — shadows via renderer.shadowMap
 • HUD: glass panels with backdrop-filter blur, ${REPEND_THEME.ice} readouts, ${REPEND_THEME.mars} accent borders — NASA mission-control aesthetic
 • For sports-game archetype: treat as a VIDEO GAME — scoreboard, attempt counter, stadium lights, crowd particle ambience, keyboard/touch controls, replay ghost of previous shot, combo/streak feedback
 • For wave-interference: two+ 3D wave sources with visible superposition; color-code constructive/destructive regions
@@ -1164,6 +1172,31 @@ ALL labs MUST be built with Three.js r128+ as the primary rendering engine. No c
 - REAL OBJECTS: build recognizable 3D meshes for EVERY topic element. Use procedural textures via CanvasTexture where needed (wood court grain, pebbled basketball, grass field). Never use untextured gray boxes as stand-ins.
 - Sports/projectile: show optimal arc as ghost reference line; learner adjusts angle/power/distance; ball flies in real-time physics
 - Interaction: raycasting, 3D aim handles, HUD sliders updating meshes/materials live
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VISIBILITY CONTRACT — a black scene is a broken lab
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The most common Three.js failure is a scene that renders nothing because lighting is missing or objects spawn off-camera. Prevent it with this mandatory setup:
+
+LIGHTING — always include ALL THREE, copy exactly:
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);   // bright ambient so nothing is pitch black
+  scene.add(ambientLight);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  dirLight.position.set(5, 10, 7);
+  scene.add(dirLight);
+  const rimLight = new THREE.PointLight(0x4CC9F0, 0.8, 30);    // ice-blue rim
+  rimLight.position.set(-5, 3, -5);
+  scene.add(rimLight);
+
+CAMERA — position it so objects at the origin are visible:
+  camera.position.set(0, 4, 10);   // or topic-appropriate, but NEVER at origin looking at origin
+  camera.lookAt(0, 0, 0);
+
+MATERIALS — never use MeshStandardMaterial without emissive when in doubt; use MeshLambertMaterial or add emissive:
+  new THREE.MeshStandardMaterial({ color: 0x9B59B6, emissive: 0x4A1070, emissiveIntensity: 0.4 })
+  Every mesh must be visible under the ambient light above — if it's black, increase emissiveIntensity.
+
+STARTUP CHECK — the very first frame must show something the learner can grab. Place all interactive objects within camera view at (x:0±3, y:0±2, z:0) by default. Never spawn objects at (0,0,0) if that's inside another mesh, and never off-screen.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 THE ANIMATION-LOOP CONTRACT (this is why labs feel dead — follow it EXACTLY)
