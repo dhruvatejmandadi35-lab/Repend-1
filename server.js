@@ -105,6 +105,59 @@ async function saveLab(key, topic, labData) {
   }
 }
 
+// Fire-and-forget: count a cache hit so popular labs can be recommended (= free reuse).
+async function bumpLabPlays(key) {
+  try {
+    const sb = getSupabase();
+    if (!sb) return;
+    await sb.rpc('bump_lab_plays', { p_topic_key: key });
+  } catch (err) {
+    console.warn('bumpLabPlays failed:', err.message);
+  }
+}
+
+// Record a 1–5 star rating against a cached lab; returns the new average.
+async function rateLab(key, stars) {
+  const sb = getSupabase();
+  if (!sb) return null;
+  const { data, error } = await sb.rpc('rate_lab', { p_topic_key: key, p_stars: stars });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || !row.rating_count) return { average: 0, count: 0 };
+  return { average: row.rating_sum / row.rating_count, count: row.rating_count };
+}
+
+// Top cached labs by quality, then popularity — recommending these is FREE (cache hits,
+// no Gemini call). This is the core cost-saving lever: steer learners to proven labs.
+async function getRecommendedLabs(limit = 12) {
+  const sb = getSupabase();
+  if (!sb) return [];
+  try {
+    const { data, error } = await sb
+      .from('labs')
+      .select('topic_key, topic, rating_sum, rating_count, plays')
+      .order('rating_sum', { ascending: false })
+      .order('plays', { ascending: false })
+      .limit(60);
+    if (error || !data) return [];
+    return data
+      .map(r => ({
+        topicKey: r.topic_key,
+        topic: r.topic,
+        plays: r.plays || 0,
+        ratingCount: r.rating_count || 0,
+        rating: r.rating_count ? +(r.rating_sum / r.rating_count).toFixed(1) : 0,
+      }))
+      // Rank: rated-good labs first (Wilson-ish: avg weighted by count), then plays.
+      .sort((a, b) => (b.rating * Math.min(b.ratingCount, 5) + b.plays * 0.2)
+                    - (a.rating * Math.min(a.ratingCount, 5) + a.plays * 0.2))
+      .slice(0, limit);
+  } catch (err) {
+    console.warn('getRecommendedLabs failed:', err.message);
+    return [];
+  }
+}
+
 // Save a lab HTML snapshot for sharing; returns a UUID share ID
 async function createShare(topic, labHtml) {
   const sb = getSupabase();
@@ -1587,6 +1640,39 @@ Rules:
     return;
   }
 
+  // GET /api/recommended-labs — top-rated cached labs (free to replay, no Gemini cost)
+  if (req.method === "GET" && url === "/api/recommended-labs") {
+    try {
+      const labs = await getRecommendedLabs(12);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(labs));
+    } catch (e) {
+      console.error("recommended-labs error:", e.message);
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify([]));
+    }
+    return;
+  }
+
+  // POST /rate-lab — { topic_key, stars (1-5) }; records rating so good labs get recommended
+  if (req.method === "POST" && req.url === "/rate-lab") {
+    let body = "";
+    req.on("data", c => (body += c));
+    req.on("end", async () => {
+      try {
+        const { topic_key, stars } = JSON.parse(body);
+        const s = Math.max(1, Math.min(5, parseInt(stars, 10) || 0));
+        if (!topic_key || !s) { res.writeHead(400); res.end(JSON.stringify({ error: "topic_key and stars (1-5) required" })); return; }
+        const result = await rateLab(topicKey(topic_key), s);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result || { average: 0, count: 0 }));
+      } catch (e) {
+        console.error("rate-lab error:", e.message);
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   // POST /share — save lab HTML snapshot, return share ID
   if (req.method === "POST" && req.url === "/share") {
     let body = "";
@@ -1717,6 +1803,7 @@ Rules:
             if (cached) {
               send("done", "Lab ready.", { ...cached, topicKey: cached.topicKey || key, source: "cached", category });
               res.end();
+              bumpLabPlays(key); // fire-and-forget: track reuse for recommendations
               return;
             }
           }
