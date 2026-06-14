@@ -1502,6 +1502,64 @@ Rules:
     return;
   }
 
+  // POST /publish-course — save a course to Supabase published_courses
+  if (req.method === "POST" && req.url === "/publish-course") {
+    let body = "";
+    req.on("data", c => (body += c));
+    req.on("end", async () => {
+      try {
+        const { title, tagline, category, modules } = JSON.parse(body);
+        if (!title || !modules) { res.writeHead(400); res.end(JSON.stringify({ error: "title and modules required" })); return; }
+        const db = getSupabase();
+        if (!db) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ id: "mock-" + Date.now() })); return; }
+        const { data, error } = await db.from("published_courses").insert([{ title, tagline, category, modules: JSON.stringify(modules), upvotes: 0 }]).select("id").single();
+        if (error) throw error;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ id: data.id }));
+      } catch (e) {
+        console.error("publish-course error:", e.message);
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // GET /api/public-courses — fetch published courses ordered by upvotes
+  if (req.method === "GET" && req.url === "/api/public-courses") {
+    try {
+      const db = getSupabase();
+      if (!db) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify([])); return; }
+      const { data, error } = await db.from("published_courses").select("id,title,tagline,category,modules,upvotes").order("upvotes", { ascending: false }).limit(20);
+      if (error) throw error;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(data || []));
+    } catch (e) {
+      console.error("public-courses error:", e.message);
+      res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify([]));
+    }
+    return;
+  }
+
+  // POST /upvote-course/:id — increment upvotes
+  if (req.method === "POST" && req.url.startsWith("/upvote-course/")) {
+    const id = req.url.replace("/upvote-course/", "");
+    try {
+      const db = getSupabase();
+      if (!db) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ upvotes: 0 })); return; }
+      const { data: row, error: fetchErr } = await db.from("published_courses").select("upvotes").eq("id", id).single();
+      if (fetchErr) throw fetchErr;
+      const newCount = (row.upvotes || 0) + 1;
+      const { error: updateErr } = await db.from("published_courses").update({ upvotes: newCount }).eq("id", id);
+      if (updateErr) throw updateErr;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ upvotes: newCount }));
+    } catch (e) {
+      console.error("upvote-course error:", e.message);
+      res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
   // POST /share — save lab HTML snapshot, return share ID
   if (req.method === "POST" && req.url === "/share") {
     let body = "";
