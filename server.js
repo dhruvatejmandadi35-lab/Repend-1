@@ -1165,6 +1165,37 @@ ALL labs MUST be built with Three.js r128+ as the primary rendering engine. No c
 - Sports/projectile: show optimal arc as ghost reference line; learner adjusts angle/power/distance; ball flies in real-time physics
 - Interaction: raycasting, 3D aim handles, HUD sliders updating meshes/materials live
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+THE ANIMATION-LOOP CONTRACT (this is why labs feel dead — follow it EXACTLY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A Three.js scene only moves when state is mutated inside a self-rescheduling per-frame loop. Most broken labs render once and freeze, or wire a slider straight to a render call. Build it like this, with NO exceptions:
+
+1. ONE shared mutable state object holds everything that can change:
+     const state = { /* positions, velocities, target, score, matchPct, won:false, ...topic values */ };
+2. ONE animation function is the ONLY place rendering happens:
+     const clock = new THREE.Clock();
+     function animate(){
+       requestAnimationFrame(animate);
+       const dt = clock.getDelta();              // call getDelta EXACTLY ONCE per frame
+       update(dt);                                // mutate meshes FROM state, scaled by dt
+       if (controls) controls.update();           // damped OrbitControls are DEAD without this
+       checkWin();                                // auto-detect win every frame
+       renderer.render(scene, camera);
+       if (labelRenderer) labelRenderer.render(scene, camera);
+     }
+     animate();
+3. EVERY UI control writes ONLY to state — it must NEVER render directly:
+     slider.addEventListener('input', e => { state.velocity = +e.target.value; });   // loop reacts next frame
+     Drag/keyboard handlers also only set state.* . The loop is what moves the meshes.
+4. update(dt) must produce VISIBLE motion every frame the input is non-neutral: move a mesh.position, rotate, scale, lerp a material color, advance a progress meter. If moving a control changes no mesh on screen, the lab is BROKEN — wire it or delete it.
+5. checkWin(): when state hits the target (e.g. state.matchPct >= 95), set state.won=true ONCE, fire a particle burst + gsap.to(camera) zoom + show a grade + postMessage labCheck. The mission meter must be REACHABLE: verify there exist control values that drive it to 100%. A mission stuck at 0% no matter what the learner does is the #1 failure — make the win mathematically achievable and show progress climbing as they get closer.
+6. LABEL every interactive/important mesh with CSS2DRenderer + CSS2DObject (or a Sprite) showing its real name/value ("Codon", "tRNA", "$4,820") — NEVER an unnamed "Body" sphere. Import: CSS2DRenderer from the three addons; new CSS2DObject(div); mesh.add(label).
+7. Frame-rate independence: all motion uses dt (e.g. mesh.position.x += state.v * dt). Never bare per-frame increments.
+8. Output ONE complete, runnable HTML file — no "// ..." placeholders, no TODO. Use Three.js r128 from the CDN exactly as given (do NOT invent version strings like r165).
+
+CONCRETE-FIRST (PhET + Nicky Case, proven): the learner's FIRST action is hands-on within 3 seconds — drag/aim/place something — BEFORE any explanation. Don't describe the system; let them run it and watch it react. The core action they repeat must BE the concept itself (intrinsic integration — drag the right anticodon = IS learning translation), not a points wrapper around a quiz.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 TOPIC: ${design.topic}
 CONCEPT TYPE: ${archetype}
 ENTRY MISCONCEPTION: "${design.spec.entry_misconception || ""}"
@@ -1413,7 +1444,7 @@ PLATFORM CONSTRAINTS (the lab runs inside a sandboxed iframe — these are non-n
 • Works in sandbox="allow-scripts".
 • Zero console errors on first load.
 • Responsive: usable from 360px wide to full desktop.
-• Immersive Mars/space theme: bg #050508, scene fog #1a0800, HUD glass rgba(10,15,30,0.75), border rgba(232,93,4,0.25). Accents: Mars rust #E85D04, copper #D4A574, ice blue #4CC9F0, success #22C55E, muted #8899BB.
+• Dark cinematic THEME COLORS (the app's palette — NOT a space setting; the scene content is the literal topic): bg #050508, scene fog #1a0800, HUD glass rgba(10,15,30,0.75), border rgba(232,93,4,0.25). Accents: rust #E85D04, copper #D4A574, ice blue #4CC9F0, success #22C55E, muted #8899BB.
 • CANVAS SIZING — mandatory pattern to prevent a stretched/blank canvas:
   const canvas = document.getElementById('mainCanvas');
   const ctx = canvas.getContext('2d');
@@ -1846,6 +1877,14 @@ Rules:
             res.write(`data: ${JSON.stringify({ stage, msg, data })}\n\n`);
           };
 
+          // Heartbeat: the codegen step can take 20-40s. Without traffic, proxies
+          // (Railway) drop idle connections and the browser shows "network error".
+          // An SSE comment every 12s keeps the stream alive; ignored by the client.
+          const heartbeat = setInterval(() => {
+            try { res.write(`: ping\n\n`); } catch (_) { clearInterval(heartbeat); }
+          }, 12000);
+          res.on("close", () => clearInterval(heartbeat));
+
           const rawTopic = data.topic.trim();
           const category = data.category?.trim() || "General";
           const levelBackground = data.levelBackground || null;
@@ -1864,6 +1903,7 @@ Rules:
           if (!levelBackground && !levelGoal && !sourceMaterial) {
             const cached = await getCachedLab(key);
             if (cached) {
+              clearInterval(heartbeat);
               send("done", "Lab ready.", { ...cached, topicKey: cached.topicKey || key, source: "cached", category });
               res.end();
               bumpLabPlays(key); // fire-and-forget: track reuse for recommendations
@@ -1887,6 +1927,7 @@ Rules:
                 labData: similar.labData,
                 category,
               });
+              clearInterval(heartbeat);
               res.end();
               return;
             }
@@ -1925,6 +1966,7 @@ Rules:
             labHtml: html,
           };
 
+          clearInterval(heartbeat);
           send("done", "Lab ready.", { ...labData, source: "generated" });
           res.end();
 
