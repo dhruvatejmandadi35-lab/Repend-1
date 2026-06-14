@@ -1,0 +1,25 @@
+<svg width="180" height="56" viewBox="0 0 180 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Geometric square-bracket R -->
+  <g stroke="#d0d4e0" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- top-left corner bracket of R -->
+    <path d="M14 10 H14 V46" />
+    <!-- top horizontal bar -->
+    <path d="M14 10 H38" />
+    <!-- right curve of R bowl (top arc) -->
+    <path d="M38 10 Q52 10 52 22 Q52 34 38 34" />
+    <!-- bottom of bowl connects back -->
+    <path d="M38 34 H14" />
+    <!-- diagonal leg of R -->
+    <path d="M38 34 L54 46" />
+    <!-- bottom-right corner of R (small foot) -->
+    <!-- left bottom foot bracket -->
+    <path d="M14 46 H22" />
+    <path d="M48 46 H56" />
+  </g>
+  <!-- Orange ECG / heartbeat through the middle of R -->
+  <g stroke="#E85D04" stroke-width="2.8" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 22 H24 L28 14 L33 30 L37 18 L41 22 H62" />
+  </g>
+  <!-- "epend" wordmark text -->
+  <text x="68" y="37" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="28" font-weight="300" fill="#c8cdd8" letter-spacing="-0.5">epend</text>
+</svg>

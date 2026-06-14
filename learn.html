@@ -925,7 +925,8 @@
 
     @media (max-width: 780px) {
       .sidebar { width: 60px; min-width: 60px; }
-      .sidebar-logo-text, .sidebar-item span:not(.sidebar-item-icon), .sidebar-profile-info, .sidebar-xp, .sidebar-auth .btn-login, .sidebar-auth .btn-signup { display: none; }
+      .sidebar-logo img { height: 22px; }
+      .sidebar-item span:not(.sidebar-item-icon), .sidebar-profile-info, .sidebar-xp, .sidebar-auth .btn-login, .sidebar-auth .btn-signup { display: none; }
       .sidebar-logo { padding: 0 10px 20px; justify-content: center; }
       .sidebar-item { justify-content: center; padding: 11px; }
       .sidebar-auth { padding: 8px 6px; }
@@ -937,9 +938,8 @@
 <body>
 <!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar">
-  <a href="#" class="sidebar-logo" id="sidebarLogo" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">
-    <img src="/repend-icon.svg" alt="Repend" width="34" height="34" style="background:rgba(255,255,255,0.04);border-radius:8px;padding:2px;" />
-    <span class="sidebar-logo-text">Repend</span>
+  <a href="/" class="sidebar-logo" id="sidebarLogo">
+    <img src="/repend-logo.svg" alt="Repend" style="height:32px;width:auto;display:block;" />
   </a>
   <nav class="sidebar-nav">
     <a href="/learn" class="sidebar-item active" id="sidebarLearn">
