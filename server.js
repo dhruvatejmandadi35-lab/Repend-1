@@ -395,7 +395,8 @@ const CATEGORY_GUIDANCE = {
   "Money & Econ": "3D trading floor or vault: coin stacks, holographic price surfaces, market ticker HUD, animated currency flows between sectors",
   "Math & Data": "3D data landscape: terrain from mathematical functions, holographic axes rising from the ground, glowing scatter points, D3-style curves as 3D ribbons",
   "Everyday Science": "Photorealistic real-world 3D environments — kitchen, sky dome, road, human body cross-section — with accurate lighting and recognizable everyday objects",
-  "General": "NASA Mars exploration aesthetic: cinematic WebGL, rocky terrain, rover-scale objects, mission-control glass HUD, dust particles, volumetric fog",
+  "Language & Humanities": "A 3D world built from the SUBJECT ITSELF — never space. For language: large legible 3D letters/characters/words the learner drags, matches, and assembles; audio-waveform ribbons; speech-bubble panels; floating translation cards that snap together. For history/literature/art: timelines you walk along, 3D artifacts/scenes/maps, document panels. Warm museum/library lighting, NOT a starfield. The scene must literally show the words, characters, or artifacts being learned.",
+  "General": "Build the scene OUT OF THE TOPIC ITSELF — depict the actual subject literally, never a default space/Mars scene. A lab about Telugu shows Telugu letters and words; a lab about cooking shows a kitchen; a lab about chess shows a board. Use cinematic WebGL polish (good lighting, soft fog, glass HUD, particle depth) as production QUALITY, but the CONTENT of the 3D world is always the literal topic — only use planets/space if the topic is actually about space.",
 };
 
 function categoryGuidance(category) {
@@ -410,7 +411,8 @@ const CATEGORY_ARCHETYPE_HINTS = {
   "Money & Econ": "accumulation, tradeoff, budget-allocation, agent-social-sim",
   "Math & Data": "data-sampling, accumulation, tradeoff",
   "Everyday Science": "physics-sim, experiment-bench, wave-interference",
-  "General": "physics-sim, threshold, accumulation, process-flow",
+  "Language & Humanities": "structure-puzzle, process-flow, branching-decision, threshold",
+  "General": "structure-puzzle, process-flow, branching-decision, threshold, physics-sim",
 };
 
 const LAB_ARCHETYPES = [
@@ -1141,17 +1143,24 @@ SOLID OBJECTS CANNOT OVERLAP (the intertwining-circles bug): if two bodies are d
 
 DRAGGABLE AFFORDANCES (Norman/Shneiderman): every grabbable object signals it — cursor 'grab' on hover, 'grabbing' while dragging, plus a subtle hover glow/shadow. Hit radius ≥ 24px for touch. Position updates synchronously with the pointer (no lag).
 
-MANDATORY 3D IMMERSIVE — EVERY LAB USES THREE.JS (inspired by NASA Mars Exploration interactive by Pablo Coronel: cinematic WebGL, geometry-rich worlds, atmospheric fog, smooth camera motion, glass HUD overlays, particle dust, emissive accents):
+━━━ SCENE CONTENT = THE LITERAL TOPIC (this overrides every aesthetic note below) ━━━
+The 3D world must DEPICT "${design.topic}" literally. The "NASA / cinematic" references below describe RENDERING QUALITY ONLY (good lighting, fog, glass HUD, smooth camera) — they are NOT instructions to build a space scene. Do NOT add planets, orbits, spacecraft, "Voyager", rovers, or starfields unless the topic is GENUINELY about astronomy/space.
+• Language lab (e.g. Telugu, Spanish): the scene is built from large legible 3D LETTERS/CHARACTERS/WORDS the learner drags and matches, audio-waveform ribbons, translation cards that snap together — NOT planets.
+• History/literature/art lab: timelines, 3D artifacts, document panels, scenes — NOT planets.
+• If you catch yourself drawing an unlabeled sphere called "Body" or a generic orbit, STOP — that means you defaulted to space instead of depicting the real topic. Build the real subject instead.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MANDATORY 3D IMMERSIVE — EVERY LAB USES THREE.JS (cinematic WebGL production quality: geometry-rich worlds, atmospheric fog, smooth camera motion, glass HUD overlays, particle dust, emissive accents — applied to the LITERAL TOPIC, never a space scene unless the topic is space):
 
 ALL labs MUST be built with Three.js r128+ as the primary rendering engine. No canvas-only 2D labs.
 - Load: <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 - Also load GSAP for cinematic camera/object transitions; OrbitControls (from three/examples) for optional orbit
-- Scene fills the viewport — palette: deep space #050508, Mars fog #1a0800, rust accent #E85D04, copper #D4A574, ice HUD #4CC9F0
-- Environment: fog (FogExp2), particle dust (Points), animated rim light, contextual skybox or starfield
+- Scene fills the viewport — dark UI palette: bg #050508, fog #1a0800, accent #E85D04, copper #D4A574, ice HUD #4CC9F0 (these are the app's THEME COLORS, not a space setting)
+- Environment: fog (FogExp2), particle dust (Points), animated rim light, and a backdrop that FITS THE TOPIC (a classroom, a board, a map, a stage — a starfield ONLY for space topics)
 - Camera: cinematic — slow idle drift, smooth lerp on changes, dramatic zoom on aha moments
 - HUD: floating glass panels (backdrop-filter blur) for controls/readouts — NASA mission-control aesthetic
 - TOPIC FIDELITY: 3D world MUST match the topic literally. Basketball = court, hoop, ball arc (TubeGeometry trail), release angle°, power, distance m. Compound interest = 3D coin stacks. Waves = 3D ripple surface. NEVER generic empty grid.
-- VISUAL REFERENCE — NASA Mars Exploration aesthetic (Pablo Coronel): MeshStandardMaterial with emissive accents, FogExp2 atmosphere, starfield Points, dust particles, warm directional + cool rim PointLight, ACESFilmicToneMapping, toneMappingExposure 1.2. Labs must feel like exploring a real place — rocky surfaces, glowing objects, cinematic depth — NOT flat UI mockups or placeholder cubes.
+- VISUAL REFERENCE — cinematic production quality (Pablo Coronel craft level): MeshStandardMaterial with emissive accents, FogExp2 atmosphere, dust particles, warm directional + cool rim PointLight, ACESFilmicToneMapping, toneMappingExposure 1.2. Labs must feel like a real, polished place built FROM THE TOPIC — NOT flat UI mockups, NOT placeholder cubes, and NOT a generic space scene.
 - REAL OBJECTS: build recognizable 3D meshes for EVERY topic element. Use procedural textures via CanvasTexture where needed (wood court grain, pebbled basketball, grass field). Never use untextured gray boxes as stand-ins.
 - Sports/projectile: show optimal arc as ghost reference line; learner adjusts angle/power/distance; ball flies in real-time physics
 - Interaction: raycasting, 3D aim handles, HUD sliders updating meshes/materials live
@@ -1602,13 +1611,17 @@ const server = http.createServer(async (req, res) => {
       try {
         const { subject, category = "General" } = JSON.parse(body);
         if (!subject) { res.writeHead(400); res.end(JSON.stringify({ error: "subject required" })); return; }
-        const outline = await openaiJSON(`You are a curriculum designer. Create a tight, practical course outline for: "${subject}" (category: ${category}).
+        const outline = await openaiJSON(`You are a curriculum designer. Create a tight, practical course outline for: "${subject}".
+
+First pick the BEST-FITTING category for this subject from exactly this list (do not invent new ones):
+"Physics", "Biology", "Sports & Skills", "Money & Econ", "Math & Data", "Everyday Science", "Language & Humanities", "General".
+Use "Language & Humanities" for languages (e.g. learning Telugu/Spanish), history, literature, art, philosophy, writing. Use "General" only when nothing else fits.
 
 Return JSON exactly like this:
 {
   "title": "Course title (short, punchy, e.g. 'Physics of Motion')",
   "tagline": "One sentence selling the course (what the learner will be able to do)",
-  "category": "${category}",
+  "category": "the category you picked from the list above",
   "modules": [
     { "order": 1, "topic": "Specific interactive lab topic", "why": "One sentence: why this comes first / what it unlocks" },
     { "order": 2, "topic": "...", "why": "..." }
