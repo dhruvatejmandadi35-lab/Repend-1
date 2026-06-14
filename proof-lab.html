@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mendelian Cross: Pp × Pp — Repend</title>
+<style>
+  html, body { margin:0; height:100%; background:#050508; overflow:hidden;
+    font-family:'Inter',-apple-system,system-ui,sans-serif; color:#e8eefc; }
+  #app { position:fixed; inset:0; }
+  .label { font-family:'JetBrains Mono',ui-monospace,monospace; font-weight:700;
+    font-size:15px; color:#fff; text-shadow:0 1px 6px rgba(0,0,0,.8);
+    pointer-events:none; user-select:none; }
+  .cell-ghost { font-size:11px; color:#8899BB; font-weight:600; }
+  /* HUD */
+  #hud { position:fixed; top:18px; left:18px; padding:16px 20px; width:300px;
+    background:rgba(10,15,30,.75); backdrop-filter:blur(10px);
+    border:1px solid rgba(232,93,4,.3); border-radius:14px; }
+  #hud h1 { margin:0 0 4px; font-size:18px; }
+  #hud .sub { font-size:12px; color:#8899BB; margin-bottom:12px; }
+  .meter-row { display:flex; justify-content:space-between; font-family:'JetBrains Mono',monospace;
+    font-size:14px; margin-bottom:6px; }
+  .meter-row .val { color:#4CC9F0; }
+  .bar { height:8px; border-radius:6px; background:rgba(255,255,255,.08); overflow:hidden; }
+  .bar > i { display:block; height:100%; width:0%; border-radius:6px;
+    background:linear-gradient(90deg,#E85D04,#D4A574); transition:width .4s cubic-bezier(.2,.8,.2,1); }
+  #ratio { margin-top:12px; font-family:'JetBrains Mono',monospace; font-size:13px;
+    color:#22C55E; opacity:0; transition:opacity .5s; }
+  #hint { position:fixed; bottom:96px; left:50%; transform:translateX(-50%);
+    font-size:14px; color:#8899BB; background:rgba(10,15,30,.7); padding:8px 16px;
+    border-radius:20px; pointer-events:none; }
+  #legend { position:fixed; bottom:24px; left:18px; font-size:13px; }
+  #legend div { display:flex; align-items:center; gap:8px; margin-top:6px; }
+  #legend .dot { width:14px; height:14px; border-radius:50%; }
+  #reset { position:fixed; bottom:24px; right:18px; padding:10px 22px;
+    background:transparent; color:#E85D04; border:1px solid #E85D04; border-radius:10px;
+    font-weight:700; font-size:14px; cursor:pointer; }
+  #reset:hover { background:rgba(232,93,4,.12); }
+  #win { position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    flex-direction:column; background:rgba(5,5,8,.6); backdrop-filter:blur(3px); z-index:5; }
+  #win .grade { font-size:90px; font-weight:800; color:#22C55E; text-shadow:0 0 40px rgba(34,197,94,.6); }
+  #win .msg { font-size:20px; margin-top:8px; }
+  #win .sub2 { font-size:15px; color:#8899BB; margin-top:6px; max-width:380px; text-align:center; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud">
+  <h1>Mendelian Cross: Pp × Pp</h1>
+  <div class="sub">Drag each genotype tile into the cell where its two gametes meet.</div>
+  <div class="meter-row"><span>Gametes Placed</span><span class="val"><span id="count">0</span> / 4</span></div>
+  <div class="bar"><i id="barfill"></i></div>
+  <div id="ratio"></div>
+</div>
+
+<div id="hint">Grab a glowing tile below and drop it on the matching grid cell ↑</div>
+
+<div id="legend">
+  <div><span class="dot" style="background:#9B59B6"></span> Purple flower — has a dominant P (P_)</div>
+  <div><span class="dot" style="background:#f4f4f4"></span> White flower — recessive only (pp)</div>
+</div>
+<button id="reset">Reset</button>
+
+<div id="win">
+  <div class="grade" id="grade">A</div>
+  <div class="msg">Cross complete — 3 : 1</div>
+  <div class="sub2" id="winsub"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+<script>
+// ───────────────────────────────────────────────────────────────────────────
+// HAND-WRITTEN HARNESS — the animation loop, lighting, camera, drag, win-check
+// are all guaranteed here. Nothing is "hoped for". Objects move because THIS
+// code moves them every single frame.
+// ───────────────────────────────────────────────────────────────────────────
+
+// ---- 1. Renderer + scene + camera (positioned so everything is in view) ----
+const app = document.getElementById('app');
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x07060a, 0.035);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(0, 0.2, 13);
+camera.lookAt(0, 0.3, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+app.appendChild(renderer.domElement);
+
+// CSS2D labels (so every object SAYS what it is)
+const labelRenderer = new THREE.CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+labelRenderer.domElement.style.position = 'fixed';
+labelRenderer.domElement.style.top = '0';
+labelRenderer.domElement.style.pointerEvents = 'none';
+app.appendChild(labelRenderer.domElement);
+
+// ---- 2. Lighting — VISIBILITY GUARANTEED (the fix for the black screen) ----
+scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 1.25); key.position.set(5,10,7); scene.add(key);
+const rim = new THREE.PointLight(0x4CC9F0, 0.9, 60); rim.position.set(-6,4,-4); scene.add(rim);
+const warm = new THREE.PointLight(0xE85D04, 0.5, 60); warm.position.set(6,-2,4); scene.add(warm);
+
+// dust particles for depth (continuous motion)
+const dustGeo = new THREE.BufferGeometry();
+const dustN = 240, dpos = new Float32Array(dustN*3);
+for (let i=0;i<dustN*3;i++) dpos[i] = (Math.random()-0.5)*40;
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dpos,3));
+const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color:0x88aaff, size:0.04, transparent:true, opacity:.5 }));
+scene.add(dust);
+
+function mkLabel(text, cls){ const d=document.createElement('div'); d.className='label '+(cls||''); d.textContent=text; return new THREE.CSS2DObject(d); }
+
+// ---- 3. Allele palette ----
+const PURPLE = 0x9B59B6, WHITE = 0xf2f2f2;
+function alleleColor(a){ return a==='P' ? PURPLE : WHITE; }
+function canonical(g){ return g.split('').sort((a,b)=> a==='P'? -1:1).join(''); } // 'pP' -> 'Pp'
+function phenotype(g){ return g.includes('P') ? 'purple' : 'white'; }
+
+// ---- 4. The Punnett grid: 2x2 cells. Columns = Parent1 gametes (P,p),
+//         rows = Parent2 gametes (P,p). Each cell's correct genotype is col+row.
+const CELL = 2.2, GX = 1.35, GY = 1.55;
+const cells = [];
+function makeCell(col, row, cx, cy){
+  const correct = canonical(col + row);
+  const frame = new THREE.Mesh(
+    new THREE.BoxGeometry(CELL, CELL, 0.18),
+    new THREE.MeshStandardMaterial({ color:0x141a2e, emissive:0x0a0f1e, emissiveIntensity:0.6, metalness:.2, roughness:.6 })
+  );
+  frame.position.set(cx, cy, 0);
+  scene.add(frame);
+  // edge glow
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(frame.geometry),
+    new THREE.LineBasicMaterial({ color:0x4CC9F0, transparent:true, opacity:.4 }));
+  frame.add(edge);
+  // ghost hint of which gametes feed this cell
+  const ghost = mkLabel(col+' × '+row, 'cell-ghost'); ghost.position.set(0,-CELL/2+0.3,0.2); frame.add(ghost);
+  const c = { col, row, correct, cx, cy, frame, edge, filled:false, offspring:null, pulse:Math.random()*6 };
+  cells.push(c);
+}
+makeCell('P','P', -GX*1.0,  GY); makeCell('p','P',  GX*1.0,  GY);
+makeCell('P','p', -GX*1.0, -GY); makeCell('p','p',  GX*1.0, -GY);
+
+// column + row header gamete spheres (the parents' gametes)
+function gameteSphere(a, x, y){
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.34, 32, 32),
+    new THREE.MeshStandardMaterial({ color:alleleColor(a), emissive:alleleColor(a), emissiveIntensity:.45, metalness:.3, roughness:.4 }));
+  m.position.set(x,y,0.2); scene.add(m);
+  const l = mkLabel(a); l.position.set(0,0.55,0); m.add(l);
+  m.userData.spin = true; return m;
+}
+const headers = [];
+headers.push(gameteSphere('P', -GX, GY+CELL/2+0.7));   // col P
+headers.push(gameteSphere('p',  GX, GY+CELL/2+0.7));   // col p
+headers.push(gameteSphere('P', -GX*1.0-CELL/2-0.9, GY));  // row P  (left of top row)
+headers.push(gameteSphere('p', -GX*1.0-CELL/2-0.9, -GY)); // row p
+
+// ---- 5. Draggable genotype tiles in a tray below the grid ----
+const TRAY_Y = -4.6;
+const tileDefs = ['PP','Pp','Pp','pp'];
+// shuffle
+for (let i=tileDefs.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [tileDefs[i],tileDefs[j]]=[tileDefs[j],tileDefs[i]]; }
+const tiles = [];
+tileDefs.forEach((g, i) => {
+  const grp = new THREE.Group();
+  const x = (i-1.5)*2.0;
+  grp.position.set(x, TRAY_Y, 0.5);
+  // a tile is two little allele beads side by side
+  g.split('').forEach((a, k) => {
+    const bead = new THREE.Mesh(new THREE.SphereGeometry(0.3,28,28),
+      new THREE.MeshStandardMaterial({ color:alleleColor(a), emissive:alleleColor(a), emissiveIntensity:.5, metalness:.3, roughness:.35 }));
+    bead.position.x = (k-0.5)*0.62; grp.add(bead);
+  });
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(1.5,0.9,0.16),
+    new THREE.MeshStandardMaterial({ color:0x1a2138, emissive:0xE85D04, emissiveIntensity:.18, metalness:.2, roughness:.6 }));
+  plate.position.z = -0.2; grp.add(plate);
+  const lab = mkLabel(g); lab.position.set(0,0.75,0); grp.add(lab);
+  grp.userData = { genotype:canonical(g), home:new THREE.Vector3(x,TRAY_Y,0.5), placed:false, bob:Math.random()*6 };
+  scene.add(grp); tiles.push(grp);
+});
+
+// ---- 6. Dragging via raycaster against a fixed z-plane ----
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const dragPlane = new THREE.Plane(new THREE.Vector3(0,0,1), -0.5);
+let dragging = null, dragOffset = new THREE.Vector3();
+function setPointer(e){ const r=renderer.domElement.getBoundingClientRect();
+  pointer.x=((e.clientX-r.left)/r.width)*2-1; pointer.y=-((e.clientY-r.top)/r.height)*2+1; }
+function planeHit(){ raycaster.setFromCamera(pointer,camera); const p=new THREE.Vector3();
+  raycaster.ray.intersectPlane(dragPlane,p); return p; }
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  setPointer(e); raycaster.setFromCamera(pointer,camera);
+  const pickable = tiles.filter(t=>!t.userData.placed);
+  const hits = raycaster.intersectObjects(pickable, true);
+  if (hits.length){
+    let g = hits[0].object; while(g.parent && !g.userData.home) g = g.parent;
+    dragging = g; const p = planeHit(); dragOffset.copy(g.position).sub(p);
+    renderer.domElement.style.cursor='grabbing';
+    document.getElementById('hint').style.opacity = 0;
+  }
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  setPointer(e);
+  if (dragging){ const p = planeHit(); dragging.position.copy(p.add(dragOffset)); dragging.position.z=0.8; }
+  else {
+    raycaster.setFromCamera(pointer,camera);
+    const over = raycaster.intersectObjects(tiles.filter(t=>!t.userData.placed), true).length;
+    renderer.domElement.style.cursor = over ? 'grab' : 'default';
+  }
+});
+renderer.domElement.addEventListener('pointerup', () => {
+  if (!dragging){ return; }
+  const t = dragging; dragging = null; renderer.domElement.style.cursor='default';
+  // nearest empty cell
+  let best=null, bd=1e9;
+  cells.forEach(c=>{ if(c.filled) return; const d=Math.hypot(t.position.x-c.cx, t.position.y-c.cy);
+    if(d<bd){bd=d; best=c;} });
+  if (best && bd < CELL*0.8 && t.userData.genotype === best.correct){
+    placeTile(t, best);
+  } else {
+    if (best && bd < CELL*0.8) flashWrong(best);
+    tweenTo(t, t.userData.home, 0.45); // bounce home
+  }
+});
+
+// ---- 7. Place / win logic ----
+let placed = 0;
+function placeTile(tile, cell){
+  tile.userData.placed = true; cell.filled = true; cell.token = tile;
+  tweenTo(tile, new THREE.Vector3(cell.cx, cell.cy, 0.45), 0.35, ()=>{
+    // bloom an offspring flower coloured by phenotype
+    const ph = phenotype(cell.correct);
+    const col = ph==='purple'?PURPLE:WHITE;
+    const flower = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5,1),
+      new THREE.MeshStandardMaterial({ color:col, emissive:col, emissiveIntensity:.55, metalness:.2, roughness:.4, flatShading:true }));
+    flower.position.set(cell.cx, cell.cy, 0.7); flower.scale.setScalar(0.01);
+    scene.add(flower); cell.offspring = flower;
+    tweenScale(flower, 1, 0.4);
+    burst(cell.cx, cell.cy, col);
+  });
+  cell.edge.material.color.setHex(0x22C55E); cell.edge.material.opacity = .9;
+  placed++;
+  document.getElementById('count').textContent = placed;
+  document.getElementById('barfill').style.width = (placed/4*100)+'%';
+  if (placed===4) win();
+}
+function flashWrong(cell){
+  const orig = cell.frame.material.emissive.getHex();
+  cell.frame.material.emissive.setHex(0xE0245E);
+  cell.frame.material.emissiveIntensity = 1.0;
+  setTimeout(()=>{ cell.frame.material.emissive.setHex(orig); cell.frame.material.emissiveIntensity=0.6; }, 260);
+  const h=document.getElementById('hint'); h.style.opacity=1;
+  h.textContent = 'Not that cell — match the two gametes labelled at the bottom of each square.';
+  setTimeout(()=>h.style.opacity=0, 1800);
+}
+function win(){
+  document.getElementById('ratio').style.opacity=1;
+  document.getElementById('ratio').textContent = 'Phenotype ratio  →  3 purple : 1 white';
+  const w=document.getElementById('win');
+  document.getElementById('winsub').textContent =
+    'Two Pp parents → ¾ of offspring show the dominant purple flower, ¼ show white. That 3:1 ratio is Mendel’s law of segregation in action.';
+  setTimeout(()=>{ w.style.display='flex'; for(let i=0;i<6;i++) setTimeout(()=>burst((Math.random()-0.5)*4,(Math.random()-0.2)*3,[PURPLE,WHITE,0x22C55E][i%3]), i*120); }, 500);
+  try { window.parent.postMessage({ type:'labCheck', result:{ ok:true, score:1, total:1 } }, '*'); } catch(_){}
+}
+
+// ---- 8. Tiny tween system (so motion is smooth and code-controlled) ----
+const tweens = [];
+function ease(t){ return t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+function tweenTo(obj, to, dur, done){ tweens.push({obj, kind:'pos', from:obj.position.clone(), to:to.clone(), t:0, dur, done}); }
+function tweenScale(obj, to, dur, done){ tweens.push({obj, kind:'scale', from:obj.scale.x, to, t:0, dur, done}); }
+function updateTweens(dt){
+  for (let i=tweens.length-1;i>=0;i--){ const tw=tweens[i]; tw.t+=dt/tw.dur; const k=ease(Math.min(tw.t,1));
+    if (tw.kind==='pos') tw.obj.position.lerpVectors(tw.from, tw.to, k);
+    else tw.obj.scale.setScalar(tw.from + (tw.to-tw.from)*k);
+    if (tw.t>=1){ if(tw.done) tw.done(); tweens.splice(i,1); } }
+}
+
+// ---- 9. Particle bursts for celebration ----
+const bursts = [];
+function burst(x,y,color){
+  const n=70, g=new THREE.BufferGeometry(), pos=new Float32Array(n*3), vel=[];
+  for(let i=0;i<n;i++){ pos[i*3]=x; pos[i*3+1]=y; pos[i*3+2]=0.8;
+    const a=Math.random()*Math.PI*2, s=2+Math.random()*4;
+    vel.push(new THREE.Vector3(Math.cos(a)*s, Math.sin(a)*s, (Math.random()-0.5)*3)); }
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const p=new THREE.Points(g, new THREE.PointsMaterial({ color, size:0.16, transparent:true, opacity:1, blending:THREE.AdditiveBlending }));
+  scene.add(p); bursts.push({ p, vel, life:0 });
+}
+function updateBursts(dt){
+  for(let i=bursts.length-1;i>=0;i--){ const b=bursts[i]; b.life+=dt;
+    const arr=b.p.geometry.attributes.position.array;
+    for(let j=0;j<b.vel.length;j++){ arr[j*3]+=b.vel[j].x*dt; arr[j*3+1]+=b.vel[j].y*dt - 2*dt*b.life; arr[j*3+2]+=b.vel[j].z*dt; }
+    b.p.geometry.attributes.position.needsUpdate=true; b.p.material.opacity=Math.max(0,1-b.life/1.3);
+    if(b.life>1.3){ scene.remove(b.p); bursts.splice(i,1); } }
+}
+
+// ---- 10. THE ANIMATION LOOP — the one place rendering happens. Always runs. ----
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();           // exactly once per frame
+  const t = clock.elapsedTime;
+
+  updateTweens(dt);
+  updateBursts(dt);
+
+  // continuous life: tray tiles bob + rotate, headers spin, offspring pulse, dust drifts
+  tiles.forEach(tl => { if(!tl.userData.placed && tl!==dragging){
+    tl.position.y = tl.userData.home.y + Math.sin(t*1.6 + tl.userData.bob)*0.12;
+    tl.rotation.z = Math.sin(t*0.8 + tl.userData.bob)*0.12; }});
+  headers.forEach(h => h.rotation.y += dt*0.8);
+  cells.forEach(c => { if(c.offspring){ c.offspring.rotation.y += dt*0.7;
+    c.offspring.scale.setScalar(1 + Math.sin(t*2 + c.pulse)*0.04); }
+    c.frame.material.emissiveIntensity = 0.5 + Math.sin(t*1.5 + c.pulse)*0.12; });
+  dust.rotation.y += dt*0.02;
+  camera.position.x = Math.sin(t*0.15)*0.5;       // gentle idle drift
+  camera.lookAt(0,0.3,0);
+
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+animate();
+
+// ---- 11. Resize + reset ----
+addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight); labelRenderer.setSize(innerWidth,innerHeight); });
+
+document.getElementById('reset').onclick = ()=>{
+  cells.forEach(c=>{ c.filled=false; if(c.offspring){scene.remove(c.offspring); c.offspring=null;}
+    c.edge.material.color.setHex(0x4CC9F0); c.edge.material.opacity=.4; });
+  tiles.forEach(t=>{ t.userData.placed=false; t.position.copy(t.userData.home); t.scale.setScalar(1); });
+  placed=0; document.getElementById('count').textContent='0';
+  document.getElementById('barfill').style.width='0%';
+  document.getElementById('ratio').style.opacity=0;
+  document.getElementById('win').style.display='none';
+};
+</script>
+</body>
+</html>
