@@ -12,11 +12,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/repend.css" />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html { scroll-behavior: smooth; }
+    html { scroll-behavior: smooth; background: #0a0a12; }
 
     body {
       font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
@@ -24,7 +24,11 @@
       min-height: 100vh;
       line-height: 1.65;
       overflow-x: hidden;
+      background: #0a0a12;
+      opacity: 0;
+      animation: pageFadeIn 0.45s ease forwards;
     }
+    @keyframes pageFadeIn { to { opacity: 1; } }
 
     .ui-layer { position: relative; z-index: 1; }
 
@@ -1992,7 +1996,7 @@
 </script>
 
 <script>
-(function initAuth() {
+function initAuth() {
   const SUPA_URL = "https://zgudymnluwxhkmjjsrfz.supabase.co";
   const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpndWR5bW5sdXd4aGttampzcmZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyODEzNjYsImV4cCI6MjA5Njg1NzM2Nn0.ILTuXA2jBu8xNTF5xdSRTPEKxoPszF0EywX4elCUTCQ";
   if (typeof supabase === 'undefined' || !supabase.createClient) return;
@@ -2125,7 +2129,13 @@
       });
     } catch (_) { /* non-critical */ }
   });
-})();
+}
+// Supabase SDK is deferred so it never blocks first paint; init once DOM + deferred scripts are ready.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initAuth);
+} else {
+  initAuth();
+}
 </script>
 </body>
 </html>

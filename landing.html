@@ -10,8 +10,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/repend.css" />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <style>
+    html { background: #0a0a12; }
     body.landing-page::before { display: none; }
 
     #bg3d {
@@ -982,7 +983,7 @@ document.querySelectorAll('[data-tilt]').forEach(card => {
 </script>
 
 <script>
-(function initAuth() {
+function initAuth() {
   const SUPA_URL = "https://zgudymnluwxhkmjjsrfz.supabase.co";
   const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpndWR5bW5sdXd4aGttampzcmZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyODEzNjYsImV4cCI6MjA5Njg1NzM2Nn0.ILTuXA2jBu8xNTF5xdSRTPEKxoPszF0EywX4elCUTCQ";
   if (typeof supabase === 'undefined' || !supabase.createClient) return;
@@ -1074,7 +1075,13 @@ document.querySelectorAll('[data-tilt]').forEach(card => {
   avatarCircle.addEventListener('click', e => { e.stopPropagation(); avatarCircle.classList.toggle('open'); });
   document.addEventListener('click', () => avatarCircle.classList.remove('open'));
   document.getElementById('btnSignOut').onclick = async () => { await sb.auth.signOut(); avatarCircle.classList.remove('open'); };
-})();
+}
+// Supabase SDK is deferred so it never blocks first paint; init once DOM + deferred scripts are ready.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initAuth);
+} else {
+  initAuth();
+}
 </script>
 </body>
 </html>
