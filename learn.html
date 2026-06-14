@@ -735,6 +735,15 @@
     .rate-stars span:hover { transform: scale(1.15); }
     .rate-stars span.lit { color: #F4B400; }
     .rate-thanks { font-size: 0.85rem; color: var(--green, #4ade80); font-weight: 600; margin-top: 6px; }
+    .similar-banner { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 18px; margin-bottom: 14px; border-color: rgba(244,180,0,0.4); background: rgba(244,180,0,0.06); }
+    .similar-banner-text { font-size: 0.88rem; line-height: 1.4; }
+    .similar-banner-text strong { color: #fff; }
+    .similar-icon { margin-right: 6px; }
+    .similar-stars { margin-left: 8px; color: #F4B400; font-weight: 700; font-size: 0.82rem; }
+    .similar-banner-btns { display: flex; gap: 8px; flex-shrink: 0; }
+    .btn-use-similar { background: #F4B400; color: #0a0a12; border: none; border-radius: 8px; padding: 7px 14px; font-size: 0.82rem; font-weight: 700; cursor: pointer; }
+    .btn-gen-fresh { background: transparent; color: var(--muted); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 7px 14px; font-size: 0.82rem; cursor: pointer; }
+    .btn-gen-fresh:hover { color: #fff; }
     .next-btns { display: flex; flex-wrap: wrap; gap: 8px; }
     .next-btn {
       background: rgba(232,93,4,0.1);
@@ -2118,7 +2127,31 @@
     if (event.stage === "code") setStage("code");
     if (event.stage === "error") throw new Error(event.msg);
     if (event.stage === "done") return event.data;
+    if (event.stage === "similar_found") return { _similar: event.data };
     return null;
+  }
+
+  // Show a "similar lab found" banner and let the user choose.
+  // Resolves true = use similar (free), false = generate fresh.
+  function promptSimilarLab(d) {
+    return new Promise(resolve => {
+      const banner = document.createElement("div");
+      banner.className = "similar-banner glass-panel";
+      banner.innerHTML = `
+        <div class="similar-banner-text">
+          <span class="similar-icon">⭐</span>
+          A similar lab already exists: <strong>${d.similarTopic}</strong>
+          <span class="similar-stars">${d.rating}★ (${d.ratingCount} rating${d.ratingCount !== 1 ? "s" : ""})</span>
+        </div>
+        <div class="similar-banner-btns">
+          <button class="btn-use-similar">Load free ↗</button>
+          <button class="btn-gen-fresh">Generate fresh</button>
+        </div>`;
+      const loadingEl = document.getElementById("loading");
+      loadingEl.prepend(banner);
+      banner.querySelector(".btn-use-similar").onclick = () => { banner.remove(); resolve(true); };
+      banner.querySelector(".btn-gen-fresh").onclick = () => { banner.remove(); resolve(false); };
+    });
   }
 
   async function streamPlanLab(topic, category, signal, levelBackground, levelGoal, material) {
@@ -2148,6 +2181,41 @@
         const doneData = handleSSEEvent(event);
         if (doneData) result = doneData;
       }
+    }
+    // Similar lab found — ask user before spending Gemini credits
+    if (result && result._similar) {
+      const d = result._similar;
+      const useSimilar = await promptSimilarLab(d);
+      if (useSimilar) {
+        // Return the cached lab data directly
+        return { ...d.labData, topicKey: d.similarTopicKey, source: "cached", category };
+      }
+      // User chose "Generate fresh" — re-run without the similarity check by re-requesting
+      // The server will skip findSimilarLab because we pass the already-expanded topic directly
+      const freshResp = await fetch("/plan-lab", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic, category, levelBackground, levelGoal,
+          sourceMaterial: material?.text || null, sourceFocus: material?.focus || null,
+          skipSimilar: true }),
+        signal,
+      });
+      if (!freshResp.ok) { const e = await freshResp.json().catch(() => ({})); throw new Error(e.error || "Request failed"); }
+      const r2 = freshResp.body.getReader();
+      let buf2 = "", res2 = null;
+      while (true) {
+        const { done, value } = await r2.read();
+        if (done) break;
+        buf2 += decoder.decode(value, { stream: true });
+        const lines2 = buf2.split("\n"); buf2 = lines2.pop();
+        for (const l of lines2) {
+          if (!l.startsWith("data: ")) continue;
+          const ev = JSON.parse(l.slice(6));
+          const d2 = handleSSEEvent(ev);
+          if (d2 && !d2._similar) res2 = d2;
+        }
+      }
+      return res2;
     }
     return result;
   }

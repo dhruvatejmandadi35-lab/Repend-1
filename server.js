@@ -92,6 +92,55 @@ async function getCachedLab(key) {
   }
 }
 
+// Fuzzy topic similarity: Jaccard on lowercased word sets (no API call needed).
+const STOPWORDS = new Set(["a","an","the","of","in","and","or","to","how","why","what","is","are","does","do","for","on","with","by","at","its","it","be"]);
+function topicWords(t) {
+  return new Set(t.toLowerCase().replace(/[^a-z0-9\s]/g,"").split(/\s+/).filter(w => w.length > 1 && !STOPWORDS.has(w)));
+}
+function jaccardSim(a, b) {
+  const intersection = [...a].filter(w => b.has(w)).length;
+  const union = new Set([...a, ...b]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+// Look for a highly-rated cached lab similar to `topic` (Jaccard ≥ 0.35, avg rating ≥ 4.0).
+// Returns null if no good match, or { topic, topicKey, rating, labData }.
+async function findSimilarLab(topic) {
+  const sb = getSupabase();
+  if (!sb) return null;
+  try {
+    // Only scan labs that have been rated (at least 2 ratings so the score means something)
+    const { data, error } = await sb
+      .from('labs')
+      .select('topic_key, topic, rating_sum, rating_count, lab_data')
+      .gte('rating_count', 2)
+      .order('rating_sum', { ascending: false })
+      .limit(80);
+    if (error || !data || !data.length) return null;
+    const qWords = topicWords(topic);
+    let best = null, bestScore = 0;
+    for (const row of data) {
+      const avg = row.rating_sum / row.rating_count;
+      if (avg < 4.0) continue;
+      const sim = jaccardSim(qWords, topicWords(row.topic || row.topic_key));
+      // Weight score by similarity + rating bonus
+      const score = sim + (avg - 4.0) * 0.1;
+      if (sim >= 0.35 && score > bestScore) { bestScore = score; best = { ...row, avg }; }
+    }
+    if (!best) return null;
+    return {
+      topic: best.topic,
+      topicKey: best.topic_key,
+      rating: +best.avg.toFixed(1),
+      ratingCount: best.rating_count,
+      labData: best.lab_data,
+    };
+  } catch (err) {
+    console.warn('findSimilarLab failed:', err.message);
+    return null;
+  }
+}
+
 async function saveLab(key, topic, labData) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return;
   try {
@@ -1786,10 +1835,11 @@ Rules:
 
           const rawTopic = data.topic.trim();
           const category = data.category?.trim() || "General";
-          const levelBackground = data.levelBackground || null; // "beginner"|"some"|"advanced"
-          const levelGoal = data.levelGoal || null; // "understand"|"apply"|"master"
+          const levelBackground = data.levelBackground || null;
+          const levelGoal = data.levelGoal || null;
           const sourceMaterial = typeof data.sourceMaterial === "string" ? data.sourceMaterial.slice(0, 8000) : null;
           const sourceFocus = data.sourceFocus || null;
+          const skipSimilar = !!data.skipSimilar; // set true by frontend when user chose "Generate fresh"
 
           send("expand", `Sharpening topic…`);
           const expanded = await expandTopic(rawTopic, category, sourceMaterial, sourceFocus);
@@ -1804,6 +1854,27 @@ Rules:
               send("done", "Lab ready.", { ...cached, topicKey: cached.topicKey || key, source: "cached", category });
               res.end();
               bumpLabPlays(key); // fire-and-forget: track reuse for recommendations
+              return;
+            }
+          }
+
+          // ── Fuzzy similar-lab check: surface a rated-good lab if topic is close ──
+          // Only when no personalisation flags and user hasn't already dismissed the prompt
+          if (!skipSimilar && !levelBackground && !levelGoal && !sourceMaterial) {
+            const similar = await findSimilarLab(topic);
+            if (similar) {
+              // Send a non-terminal event — frontend shows "Use this or Generate fresh?"
+              // The pipeline pauses here; frontend either accepts (sends /plan-lab again with
+              // useSimilar:true skipping this block) or ignores (we continue below).
+              send("similar_found", `Found a similar highly-rated lab`, {
+                similarTopic: similar.topic,
+                similarTopicKey: similar.topicKey,
+                rating: similar.rating,
+                ratingCount: similar.ratingCount,
+                labData: similar.labData,
+                category,
+              });
+              res.end();
               return;
             }
           }
