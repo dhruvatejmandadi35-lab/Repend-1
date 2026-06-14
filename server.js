@@ -105,6 +105,54 @@ async function saveLab(key, topic, labData) {
   }
 }
 
+// Save a lab HTML snapshot for sharing; returns a UUID share ID
+async function createShare(topic, labHtml) {
+  const sb = getSupabase();
+  if (!sb) {
+    // No Supabase — fall back to in-memory map (lost on redeploy, good enough for demo)
+    const id = Math.random().toString(36).slice(2, 10);
+    shareCache.set(id, { topic, html: labHtml, ts: Date.now() });
+    return id;
+  }
+  try {
+    const { data, error } = await sb
+      .from('shared_labs')
+      .insert({ topic, lab_html: labHtml })
+      .select('id')
+      .single();
+    if (error) throw error;
+    return data.id;
+  } catch (err) {
+    console.warn('createShare Supabase failed, using in-memory:', err.message);
+    const id = Math.random().toString(36).slice(2, 10);
+    shareCache.set(id, { topic, html: labHtml, ts: Date.now() });
+    return id;
+  }
+}
+
+// Get a shared lab HTML by ID
+async function getShare(id) {
+  // Check in-memory first (covers no-Supabase path)
+  if (shareCache.has(id)) return shareCache.get(id).html;
+  const sb = getSupabase();
+  if (!sb) return null;
+  try {
+    const { data, error } = await sb
+      .from('shared_labs')
+      .select('lab_html')
+      .eq('id', id)
+      .single();
+    if (error) return null;
+    return data?.lab_html || null;
+  } catch (err) {
+    console.warn('getShare failed:', err.message);
+    return null;
+  }
+}
+
+// In-memory share cache (fallback when Supabase not configured or for demos)
+const shareCache = new Map();
+
 // Save or update a user's progress on a lab (called from /api/progress endpoint)
 async function saveProgress(userId, key, topic, { completed = false, score = 0 } = {}) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return;
@@ -1415,6 +1463,34 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: "Content-Type must be application/json" }));
       return;
     }
+  }
+
+  // POST /share — save lab HTML snapshot, return share ID
+  if (req.method === "POST" && req.url === "/share") {
+    let body = "";
+    req.on("data", c => (body += c));
+    req.on("end", async () => {
+      try {
+        const { topic, labHtml } = JSON.parse(body);
+        if (!labHtml) { res.writeHead(400); res.end(JSON.stringify({ error: "labHtml required" })); return; }
+        const id = await createShare(topic || "Lab", labHtml);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ id }));
+      } catch (e) {
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // GET /s/:id — serve a shared lab HTML directly
+  if (req.method === "GET" && /^\/s\/[\w-]+$/.test(url)) {
+    const id = url.split("/s/")[1];
+    const html = await getShare(id);
+    if (!html) { res.writeHead(404); res.end("Lab not found or expired."); return; }
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(html);
+    return;
   }
 
   // POST /api/progress — record lab completion for authenticated user
