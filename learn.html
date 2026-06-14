@@ -2135,16 +2135,45 @@ function initAuth() {
   };
 
   // Share button — copies URL with ?topic= for instant lab replay
-  document.getElementById('shareBtn').addEventListener('click', () => {
+  document.getElementById('shareBtn').addEventListener('click', async () => {
     if (!currentPlan) return;
-    const url = new URL('/learn', window.location.origin);
-    url.searchParams.set('topic', currentPlan.topic);
-    url.searchParams.set('cat', lastCategory);
-    navigator.clipboard.writeText(url.toString()).then(() => {
-      const toast = document.getElementById('shareToast');
+    const shareBtn = document.getElementById('shareBtn');
+    const toast = document.getElementById('shareToast');
+    const labHtml = currentPlan.labHtml;
+    if (!labHtml) {
+      // Fallback: copy topic URL (no HTML to share yet)
+      const url = new URL('/learn', window.location.origin);
+      url.searchParams.set('topic', currentPlan.topic);
+      url.searchParams.set('cat', lastCategory);
+      navigator.clipboard.writeText(url.toString()).then(() => {
+        toast.textContent = 'Link copied!';
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2500);
+      });
+      return;
+    }
+    shareBtn.textContent = '⏳ Saving…';
+    shareBtn.disabled = true;
+    try {
+      const res = await fetch('/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: currentPlan.topic, labHtml }),
+      });
+      const { id } = await res.json();
+      const shareUrl = new URL('/s/' + id, window.location.origin).toString();
+      await navigator.clipboard.writeText(shareUrl);
+      toast.textContent = '🔗 Share link copied! Anyone can open this exact lab.';
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3000);
+    } catch (e) {
+      toast.textContent = 'Could not create share link.';
       toast.classList.add('show');
       setTimeout(() => toast.classList.remove('show'), 2500);
-    });
+    } finally {
+      shareBtn.textContent = '↗ Share';
+      shareBtn.disabled = false;
+    }
   });
 
   // Save progress to Supabase when lab completes (in addition to localStorage via RependGame)
