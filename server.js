@@ -287,7 +287,16 @@ function categoryArchetypeHints(category) {
 // "ML" → "Gradient Descent: how a model finds the bottom of a loss landscape"
 // "Physics" → "Newton's Second Law: why heavier objects need more force to accelerate"
 // "Compound Interest" → passes through unchanged (already specific enough)
-async function expandTopic(rawTopic, category = "General") {
+async function expandTopic(rawTopic, category = "General", sourceMaterial = null, sourceFocus = null) {
+  const sourceCtx = sourceMaterial ? `
+
+THE LEARNER UPLOADED THEIR OWN MATERIAL. Derive the sharpened concept FROM this material${sourceFocus ? ` (they want to focus on: "${sourceFocus}")` : ""}. Pick the single most important teachable concept in it that has a surprising, drawable insight. The topic name should reflect what their material is actually about.
+
+THEIR MATERIAL (excerpt):
+"""
+${sourceMaterial.slice(0, 4000)}
+"""` : "";
+
   const res = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     max_tokens: 200,
@@ -296,7 +305,7 @@ async function expandTopic(rawTopic, category = "General") {
       {
         role: "system",
         content: `You sharpen vague learning topics into one specific, teachable concept.
-Course category: ${category}. ${categoryGuidance(category)}
+Course category: ${category}. ${categoryGuidance(category)}${sourceCtx}
 
 Return ONLY JSON:
 {
@@ -320,18 +329,26 @@ RULES:
   return JSON.parse(res.choices[0].message.content.trim());
 }
 
-async function thinkAboutTopic(topic, category = "General", levelBackground = null, levelGoal = null) {
+async function thinkAboutTopic(topic, category = "General", levelBackground = null, levelGoal = null, sourceMaterial = null, sourceFocus = null) {
   const levelCtx = levelBackground ? `
 LEARNER CONTEXT:
 - Background: ${levelBackground === "beginner" ? "Complete beginner — never touched this topic" : levelBackground === "some" ? "Some familiarity — has heard of it but doesn't deeply get it" : "Pretty solid — wants to go deeper or apply it"}
 - Goal: ${levelGoal === "understand" ? "Get the 'aha' moment — conceptual clarity" : levelGoal === "apply" ? "Apply it in the real world — practical use" : "Master it deeply — be able to explain it to anyone"}
 Tune the lab complexity and scenario accordingly. Beginners need simpler controls and more scaffolding. Advanced learners need edge cases and real-world stakes.` : "";
 
+  const sourceCtx = sourceMaterial ? `
+THE LEARNER UPLOADED THEIR OWN MATERIAL${sourceFocus ? ` and wants to focus on "${sourceFocus}"` : ""}. Ground your analysis, scenario, and the lab's specifics in THIS material — use its examples, terminology, and framing so the lab feels built from their content.
+THEIR MATERIAL (excerpt):
+"""
+${sourceMaterial.slice(0, 6000)}
+"""
+` : "";
+
   return openaiText(`You are an expert at designing immersive 3D interactive learning experiences for ANY topic — STEM, sports, history, economics, psychology, arts.
 
 COURSE CATEGORY: ${category}
 CATEGORY AESTHETIC: ${categoryGuidance(category)}
-${levelCtx}
+${levelCtx}${sourceCtx}
 Write a short analysis of "${topic}" covering exactly these six things:
 
 STEP 0 — INTERACTION CLASSIFIER: Classify this topic and pick the interaction type.
@@ -1447,15 +1464,17 @@ const server = http.createServer(async (req, res) => {
           const category = data.category?.trim() || "General";
           const levelBackground = data.levelBackground || null; // "beginner"|"some"|"advanced"
           const levelGoal = data.levelGoal || null; // "understand"|"apply"|"master"
+          const sourceMaterial = typeof data.sourceMaterial === "string" ? data.sourceMaterial.slice(0, 8000) : null;
+          const sourceFocus = data.sourceFocus || null;
 
           send("expand", `Sharpening topic…`);
-          const expanded = await expandTopic(rawTopic, category);
+          const expanded = await expandTopic(rawTopic, category, sourceMaterial, sourceFocus);
           const topic = expanded.topic;
           const key = topicKey(topic);
           send("expanded", `Building lab for: ${topic}`, { topic, why: expanded.why, category });
 
-          // ── Cache hit: serve instantly (bypass if learner gave level context) ──
-          if (!levelBackground && !levelGoal) {
+          // ── Cache hit: serve instantly (bypass for personalised/source-based labs) ──
+          if (!levelBackground && !levelGoal && !sourceMaterial) {
             const cached = await getCachedLab(key);
             if (cached) {
               send("done", "Lab ready.", { ...cached, topicKey: cached.topicKey || key, source: "cached", category });
@@ -1464,9 +1483,9 @@ const server = http.createServer(async (req, res) => {
             }
           }
 
-          // ── Cache miss (or level-tuned): run full pipeline then save ──
+          // ── Cache miss (or level-tuned/source-based): run full pipeline then save ──
           send("think", `Reasoning about "${topic}"…`);
-          const thinking = await thinkAboutTopic(topic, category, levelBackground, levelGoal);
+          const thinking = await thinkAboutTopic(topic, category, levelBackground, levelGoal, sourceMaterial, sourceFocus);
 
           send("design", "Translating insight into lab spec…");
           const design = await specFromThinking(topic, thinking, category);
@@ -1497,8 +1516,11 @@ const server = http.createServer(async (req, res) => {
           send("done", "Lab ready.", { ...labData, source: "generated" });
           res.end();
 
-          // Fire-and-forget save — don't block the response
-          saveLab(key, design.topic, labData);
+          // Fire-and-forget save — don't block the response.
+          // Skip caching personalised/source-based labs (they're learner-specific).
+          if (!levelBackground && !levelGoal && !sourceMaterial) {
+            saveLab(key, design.topic, labData);
+          }
 
         } else if (req.url === "/plan") {
           if (!data.topic?.trim()) {
