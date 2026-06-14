@@ -805,33 +805,155 @@
     .auth-msg { font-size: 0.82rem; text-align: center; margin-top: 12px; min-height: 20px; }
     .auth-msg.error { color: #FCA5A5; }
     .auth-msg.success { color: #6EE7B7; }
-  </style>
+
+    /* ── SIDEBAR LAYOUT ── */
+    body { display: flex; }
+    .sidebar {
+      width: 220px; min-width: 220px;
+      height: 100vh;
+      position: fixed; left: 0; top: 0;
+      background: rgba(8,9,16,0.97);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      z-index: 200;
+      padding: 20px 0;
+      backdrop-filter: blur(16px);
+    }
+    .sidebar-logo {
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 20px 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .sidebar-logo svg { flex-shrink: 0; }
+    .sidebar-logo-text { font-size: 1.1rem; font-weight: 800; letter-spacing: -0.03em; color: var(--text); }
+    .sidebar-nav { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 0 10px; }
+    .sidebar-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 11px 12px; border-radius: 10px;
+      font-size: 0.88rem; font-weight: 600;
+      color: var(--muted); cursor: pointer;
+      text-decoration: none; border: none; background: none;
+      font-family: inherit; transition: all 0.15s;
+      width: 100%; text-align: left;
+    }
+    .sidebar-item:hover { background: rgba(232,93,4,0.08); color: var(--text); }
+    .sidebar-item.active { background: rgba(232,93,4,0.12); color: var(--mars); }
+    .sidebar-item-icon { width: 18px; text-align: center; font-size: 1rem; flex-shrink: 0; }
+    .sidebar-xp {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      margin-top: auto;
+    }
+    .sidebar-auth {
+      padding: 12px 10px;
+      border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .sidebar-auth .btn-login, .sidebar-auth .btn-signup { width: 100%; text-align: center; border-radius: 10px; padding: 9px 12px; font-size: 0.84rem; }
+    .sidebar-profile {
+      display: none; align-items: center; gap: 10px;
+      padding: 10px 14px; border-radius: 10px;
+      cursor: pointer;
+    }
+    .sidebar-profile.visible { display: flex; }
+    .sidebar-profile:hover { background: rgba(255,255,255,0.05); }
+    .sidebar-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--mars), var(--ice)); display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 800; color: #fff; flex-shrink: 0; }
+    .sidebar-profile-info { min-width: 0; }
+    .sidebar-profile-name { font-size: 0.82rem; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sidebar-profile-email { font-size: 0.68rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sidebar-signout { margin-top: 2px; background: none; border: none; color: var(--muted); font-size: 0.75rem; cursor: pointer; font-family: inherit; text-align: left; padding: 2px 0; }
+    .sidebar-signout:hover { color: #FCA5A5; }
+
+    /* Main content shifts right of sidebar */
+    .ui-layer { margin-left: 220px; width: calc(100% - 220px); }
+    nav { display: none; } /* hide old top nav */
+
+    /* Share button */
+    .share-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 6px 12px; font-size: 0.78rem; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .share-btn:hover { border-color: var(--ice); color: var(--ice); }
+    .share-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: rgba(12,14,24,0.95); border: 1px solid var(--green); color: #6EE7B7; border-radius: 10px; padding: 10px 22px; font-size: 0.85rem; font-weight: 600; z-index: 999; opacity: 0; transition: opacity 0.25s; pointer-events: none; }
+    .share-toast.show { opacity: 1; }
+
+    /* Level modal */
+    .level-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 600; align-items: center; justify-content: center; }
+    .level-modal.open { display: flex; }
+    .level-card { background: rgba(12,14,24,0.98); border: 1px solid var(--border); border-radius: 20px; padding: 36px 40px; width: 100%; max-width: 480px; box-shadow: 0 24px 80px rgba(0,0,0,0.5); }
+    .level-title { font-size: 1.2rem; font-weight: 800; margin-bottom: 6px; }
+    .level-topic { color: var(--mars); }
+    .level-sub { font-size: 0.84rem; color: var(--muted); margin-bottom: 28px; }
+    .level-q { font-size: 0.88rem; font-weight: 700; margin-bottom: 10px; color: var(--text); }
+    .level-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 22px; }
+    .level-opt { background: rgba(18,20,32,0.9); border: 1.5px solid var(--border); border-radius: 10px; padding: 11px 14px; font-size: 0.88rem; color: var(--muted); cursor: pointer; text-align: left; font-family: inherit; transition: all 0.15s; }
+    .level-opt:hover { border-color: var(--mars); color: var(--text); }
+    .level-opt.selected { border-color: var(--mars); background: rgba(232,93,4,0.1); color: var(--text); }
+    .level-go { width: 100%; background: var(--mars); border: none; color: #fff; border-radius: 12px; padding: 13px; font-size: 0.95rem; font-weight: 700; cursor: pointer; margin-top: 4px; font-family: inherit; }
+    .level-go:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    @media (max-width: 780px) {
+      .sidebar { width: 60px; min-width: 60px; }
+      .sidebar-logo-text, .sidebar-item span:not(.sidebar-item-icon), .sidebar-profile-info, .sidebar-xp, .sidebar-auth .btn-login, .sidebar-auth .btn-signup { display: none; }
+      .sidebar-logo { padding: 0 10px 20px; justify-content: center; }
+      .sidebar-item { justify-content: center; padding: 11px; }
+      .sidebar-auth { padding: 8px 6px; }
+      .sidebar-avatar { margin: 0 auto; }
+      .sidebar-profile { padding: 8px 6px; justify-content: center; }
+      .ui-layer { margin-left: 60px; width: calc(100% - 60px); }
+    }
 </head>
 <body>
-<div class="ui-layer">
-<nav>
-  <a href="/" class="logo">Rep<em>end</em></a>
-  <div class="nav-links">
-    <a href="/">Home</a>
-    <a href="/learn" class="active">Learn</a>
-    <a href="/achievements">Achievements</a>
-    <div id="nav-xp-bar"></div>
-    <div class="nav-auth" id="navAuth">
-      <button class="btn-login" id="btnLogin">Log in</button>
-      <button class="btn-signup" id="btnSignup">Sign up</button>
-    </div>
-    <div class="auth-avatar" id="authAvatar">
-      <div class="avatar-circle" id="avatarCircle">
-        <span id="avatarInitial">?</span>
-        <div class="avatar-menu">
-          <div class="avatar-name" id="avatarName"></div>
-          <div class="avatar-email" id="avatarEmail"></div>
-          <button class="avatar-menu-item danger" id="btnSignOut">Sign out</button>
-        </div>
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <a href="#" class="sidebar-logo" id="sidebarLogo" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">
+    <svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="28" cy="12" r="7" stroke="#0d1b3e" stroke-width="5" fill="none"/>
+      <circle cx="28" cy="88" r="7" stroke="#0d1b3e" stroke-width="5" fill="none"/>
+      <circle cx="80" cy="88" r="7" stroke="#0d1b3e" stroke-width="5" fill="none"/>
+      <line x1="28" y1="19" x2="28" y2="81" stroke="#0d1b3e" stroke-width="5"/>
+      <path d="M28 12 Q28 12 60 12 Q82 12 82 34 Q82 56 60 56 L28 56" stroke="#0d1b3e" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <path d="M55 56 L80 88" stroke="#0d1b3e" stroke-width="5" stroke-linecap="round"/>
+      <line x1="8" y1="50" x2="38" y2="50" stroke="#E85D04" stroke-width="4" stroke-linecap="round"/>
+      <polyline points="38,50 46,34 54,66 62,42 70,50 92,50" stroke="#E85D04" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="sidebar-logo-text">Repend</span>
+  </a>
+  <nav class="sidebar-nav">
+    <a href="/learn" class="sidebar-item active" id="sidebarLearn">
+      <span class="sidebar-item-icon">⚗️</span><span>Learn</span>
+    </a>
+    <button class="sidebar-item" id="sidebarSaved" onclick="showSavedPanel()">
+      <span class="sidebar-item-icon">📚</span><span>Saved Courses</span>
+    </button>
+    <a href="/achievements" class="sidebar-item" id="sidebarAchievements">
+      <span class="sidebar-item-icon">🏆</span><span>Achievements</span>
+    </a>
+    <button class="sidebar-item" id="sidebarProfile" onclick="showProfilePanel()">
+      <span class="sidebar-item-icon">⚙️</span><span>Profile & Settings</span>
+    </button>
+  </nav>
+  <div class="sidebar-xp" id="nav-xp-bar"></div>
+  <!-- Auth: shown when signed out -->
+  <div class="sidebar-auth" id="navAuth">
+    <button class="btn-login" id="btnLogin">Log in</button>
+    <button class="btn-signup" id="btnSignup">Sign up</button>
+  </div>
+  <!-- Profile: shown when signed in -->
+  <div class="sidebar-auth" id="authAvatar" style="display:none">
+    <div class="sidebar-profile visible" id="avatarCircle">
+      <div class="sidebar-avatar"><span id="avatarInitial">?</span></div>
+      <div class="sidebar-profile-info">
+        <div class="sidebar-profile-name" id="avatarName"></div>
+        <div class="sidebar-profile-email" id="avatarEmail"></div>
+        <button class="sidebar-signout" id="btnSignOut">Sign out</button>
       </div>
     </div>
   </div>
-</nav>
+</aside>
+
+<div class="ui-layer">
+<nav style="display:none"></nav><!-- stub to keep JS refs alive -->
 
 <!-- AUTH MODAL -->
 <div class="modal-overlay" id="authModal">
@@ -860,6 +982,30 @@
     <div class="auth-msg" id="authMsg"></div>
   </div>
 </div>
+
+<!-- LEVEL ASSESSMENT MODAL -->
+<div class="level-modal" id="levelModal">
+  <div class="level-card">
+    <div class="level-title">Quick check before we build <span class="level-topic" id="levelTopicName"></span></div>
+    <div class="level-sub">2 quick questions so the lab matches your level.</div>
+    <div class="level-q">What's your background with this topic?</div>
+    <div class="level-options" id="levelOpts1">
+      <button class="level-opt" data-q="1" data-v="beginner">🌱 Complete beginner — I've never really touched it</button>
+      <button class="level-opt" data-q="1" data-v="some">📖 Some familiarity — I've heard of it but don't deeply get it</button>
+      <button class="level-opt" data-q="1" data-v="advanced">🔬 Pretty solid — I want to go deeper or apply it</button>
+    </div>
+    <div class="level-q">What's your goal?</div>
+    <div class="level-options" id="levelOpts2">
+      <button class="level-opt" data-q="2" data-v="understand">💡 Understand the concept — I want the "aha" moment</button>
+      <button class="level-opt" data-q="2" data-v="apply">🛠️ Apply it — I need to use this in the real world</button>
+      <button class="level-opt" data-q="2" data-v="master">🎯 Master it deeply — I want to be able to explain it to anyone</button>
+    </div>
+    <button class="level-go" id="levelGo" disabled>Build my lab →</button>
+  </div>
+</div>
+
+<!-- SHARE TOAST -->
+<div class="share-toast" id="shareToast">Link copied! Share it with anyone.</div>
 
 <div id="learnDashboard" class="learn-dashboard" style="display:none">
   <div class="dash-grid" id="dashCards"></div>
@@ -940,6 +1086,7 @@
     <span id="topicBadgeText"></span>
     <span class="badge-cached" id="cachedBadge" style="display:none">Instant</span>
     <button type="button" class="bookmark-btn" id="bookmarkBtn" title="Save for later">☆ Save</button>
+    <button type="button" class="share-btn" id="shareBtn" title="Share this lab">↗ Share</button>
   </div>
 </div>
 
@@ -1445,11 +1592,11 @@
     return null;
   }
 
-  async function streamPlanLab(topic, category, signal) {
+  async function streamPlanLab(topic, category, signal, levelBackground, levelGoal) {
     const response = await fetch("/plan-lab", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic, category }),
+      body: JSON.stringify({ topic, category, levelBackground, levelGoal }),
       signal,
     });
     if (!response.ok) {
@@ -1552,9 +1699,57 @@
     });
   }
 
+  // Level assessment state
+  let _levelBackground = null;
+  let _levelGoal = null;
+
+  function showLevelModal(topic, onConfirm) {
+    const modal = document.getElementById("levelModal");
+    document.getElementById("levelTopicName").textContent = topic;
+    _levelBackground = null; _levelGoal = null;
+    modal.querySelectorAll(".level-opt").forEach(b => b.classList.remove("selected"));
+    document.getElementById("levelGo").disabled = true;
+    modal.classList.add("open");
+    modal.querySelectorAll(".level-opt").forEach(btn => {
+      btn.onclick = () => {
+        const q = btn.dataset.q;
+        modal.querySelectorAll(`.level-opt[data-q="${q}"]`).forEach(b => b.classList.remove("selected"));
+        btn.classList.add("selected");
+        if (q === "1") _levelBackground = btn.dataset.v;
+        if (q === "2") _levelGoal = btn.dataset.v;
+        document.getElementById("levelGo").disabled = !(_levelBackground && _levelGoal);
+      };
+    });
+    document.getElementById("levelGo").onclick = () => {
+      modal.classList.remove("open");
+      onConfirm(_levelBackground, _levelGoal);
+    };
+  }
+
+  function showProfilePanel() { /* stub — expand later */ alert("Profile & Settings coming soon!"); }
+  function showSavedPanel() {
+    heroSection.style.display = "block";
+    document.getElementById("myLabsSection").scrollIntoView({ behavior: "smooth" });
+    setSidebarActive("sidebarSaved");
+  }
+  function setSidebarActive(id) {
+    document.querySelectorAll(".sidebar-item").forEach(el => el.classList.remove("active"));
+    const el = document.getElementById(id);
+    if (el) el.classList.add("active");
+  }
+
   async function generate() {
     const topic = topicInput.value.trim();
     if (!topic) { topicInput.focus(); return; }
+    // Show level check on fresh topics (not when re-generating same topic)
+    if (topic !== lastTopic) {
+      showLevelModal(topic, (bg, goal) => _doGenerate(topic, bg, goal));
+      return;
+    }
+    _doGenerate(topic, _levelBackground, _levelGoal);
+  }
+
+  async function _doGenerate(topic, levelBackground, levelGoal) {
     lastTopic = topic;
     lastCategory = window._rependCat || (typeof RependGame !== "undefined" ? RependGame.inferCategory(topic) : "General");
     if (typeof RependGame !== "undefined") {
@@ -1579,16 +1774,17 @@
     stageThinkText.textContent = `Reasoning about "${topic}"…`;
     setStage("expand");
     try {
-      let result = await streamPlanLab(topic, lastCategory, generateAbort.signal);
+      let result = await streamPlanLab(topic, lastCategory, generateAbort.signal, levelBackground, levelGoal);
       if (!result) {
         resetStages();
         setStage("expand");
-        result = await streamPlanLab(topic, lastCategory, generateAbort.signal);
+        result = await streamPlanLab(topic, lastCategory, generateAbort.signal, levelBackground, levelGoal);
       }
       if (!result) throw new Error("No result received from server. Please try again.");
       showResult(result);
       LabLibrary.save(result, lastCategory);
       renderMyLabs();
+      setSidebarActive("sidebarLearn");
     } catch (err) {
       if (err.name === "AbortError") return;
       showError(err.message || "Something went wrong");
@@ -1752,9 +1948,24 @@
   document.getElementById('btnGoogle').onclick = googleHandler;
   document.getElementById('btnGoogleUp').onclick = googleHandler;
 
-  avatarCircle.addEventListener('click', e => { e.stopPropagation(); avatarCircle.classList.toggle('open'); });
-  document.addEventListener('click', () => avatarCircle.classList.remove('open'));
-  document.getElementById('btnSignOut').onclick = async () => { await sb.auth.signOut(); avatarCircle.classList.remove('open'); };
+  // Sidebar sign out — no dropdown needed, sign out goes to landing
+  document.getElementById('btnSignOut').onclick = async () => {
+    await sb.auth.signOut();
+    window.location.href = '/';
+  };
+
+  // Share button — copies URL with ?topic= for instant lab replay
+  document.getElementById('shareBtn').addEventListener('click', () => {
+    if (!currentPlan) return;
+    const url = new URL('/learn', window.location.origin);
+    url.searchParams.set('topic', currentPlan.topic);
+    url.searchParams.set('cat', lastCategory);
+    navigator.clipboard.writeText(url.toString()).then(() => {
+      const toast = document.getElementById('shareToast');
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2500);
+    });
+  });
 
   // Save progress to Supabase when lab completes (in addition to localStorage via RependGame)
   window.addEventListener('message', async (e) => {

@@ -320,12 +320,18 @@ RULES:
   return JSON.parse(res.choices[0].message.content.trim());
 }
 
-async function thinkAboutTopic(topic, category = "General") {
+async function thinkAboutTopic(topic, category = "General", levelBackground = null, levelGoal = null) {
+  const levelCtx = levelBackground ? `
+LEARNER CONTEXT:
+- Background: ${levelBackground === "beginner" ? "Complete beginner — never touched this topic" : levelBackground === "some" ? "Some familiarity — has heard of it but doesn't deeply get it" : "Pretty solid — wants to go deeper or apply it"}
+- Goal: ${levelGoal === "understand" ? "Get the 'aha' moment — conceptual clarity" : levelGoal === "apply" ? "Apply it in the real world — practical use" : "Master it deeply — be able to explain it to anyone"}
+Tune the lab complexity and scenario accordingly. Beginners need simpler controls and more scaffolding. Advanced learners need edge cases and real-world stakes.` : "";
+
   return openaiText(`You are an expert at designing immersive 3D interactive learning experiences for ANY topic — STEM, sports, history, economics, psychology, arts.
 
 COURSE CATEGORY: ${category}
 CATEGORY AESTHETIC: ${categoryGuidance(category)}
-
+${levelCtx}
 Write a short analysis of "${topic}" covering exactly these six things:
 
 STEP 0 — INTERACTION CLASSIFIER: Classify this topic and pick the interaction type.
@@ -1104,6 +1110,16 @@ REVEAL (triggered by hitting the aha moment or success condition):
 • After 4 seconds the card fades and the learner can keep exploring.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LIVE CONSEQUENCE BARS — make cause→effect visceral (non-negotiable):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Every lab must show 2–4 live metric bars as horizontal progress bars (0→max) in a panel in Zone A.
+Each metric must be something a real operator in this domain actually tracks (e.g. Revenue, Customer Trust, Carbon Emissions, Reaction Rate — NOT "score" or "progress").
+Every user action (slider move, drag, click) must update the bars IMMEDIATELY with smooth CSS transitions (<300ms).
+Under each bar, show a one-line consequence string that updates to explain WHY the bar moved (e.g. "Higher temperature breaks more molecular bonds → rate spikes"). This text is the pedagogical payload.
+At success/win: compute a verdict tier (S/A/B/C/D) from the final metric values vs real-world thresholds and show it prominently — "Grade: A — You optimized for both growth and sustainability."
+This is the most important engagement mechanism: the bar animating fast makes the learner wait to see where it lands. Do not skip it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FORMULA PANEL — teach the rule, not just the animation:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 The formulas below are the governing equations. The learner must see them, not just watch the result.
@@ -1429,6 +1445,8 @@ const server = http.createServer(async (req, res) => {
 
           const rawTopic = data.topic.trim();
           const category = data.category?.trim() || "General";
+          const levelBackground = data.levelBackground || null; // "beginner"|"some"|"advanced"
+          const levelGoal = data.levelGoal || null; // "understand"|"apply"|"master"
 
           send("expand", `Sharpening topic…`);
           const expanded = await expandTopic(rawTopic, category);
@@ -1436,17 +1454,19 @@ const server = http.createServer(async (req, res) => {
           const key = topicKey(topic);
           send("expanded", `Building lab for: ${topic}`, { topic, why: expanded.why, category });
 
-          // ── Cache hit: serve instantly, zero AI cost ──────────────────
-          const cached = await getCachedLab(key);
-          if (cached) {
-            send("done", "Lab ready.", { ...cached, topicKey: cached.topicKey || key, source: "cached", category });
-            res.end();
-            return;
+          // ── Cache hit: serve instantly (bypass if learner gave level context) ──
+          if (!levelBackground && !levelGoal) {
+            const cached = await getCachedLab(key);
+            if (cached) {
+              send("done", "Lab ready.", { ...cached, topicKey: cached.topicKey || key, source: "cached", category });
+              res.end();
+              return;
+            }
           }
 
-          // ── Cache miss: run full pipeline then save ───────────────────
+          // ── Cache miss (or level-tuned): run full pipeline then save ──
           send("think", `Reasoning about "${topic}"…`);
-          const thinking = await thinkAboutTopic(topic, category);
+          const thinking = await thinkAboutTopic(topic, category, levelBackground, levelGoal);
 
           send("design", "Translating insight into lab spec…");
           const design = await specFromThinking(topic, thinking, category);
