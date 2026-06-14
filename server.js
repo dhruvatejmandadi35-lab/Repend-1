@@ -770,7 +770,28 @@ async function geminiGenerate(request, { label = "gemini", openaiFallback = null
   throw lastErr;
 }
 
-async function codeFromImageBrief(design, labThinking, imageDataUrl, category = "General") {
+// Step 3b — per-topic visual pedagogy: how THIS specific concept is best taught in a WebGL 3D scene.
+async function thinkAboutVisualPedagogy(topic, archetype, category) {
+  const prompt = `You are an expert in visual pedagogy and interactive learning design. Your job is to reason specifically about how the concept "${topic}" (archetype: ${archetype}, category: ${category}) should be taught in an interactive WebGL/Three.js 3D scene.
+
+Answer these five questions concisely (2-4 sentences each):
+
+1. OBJECT IDENTITY: What are the key objects/entities in this concept that the learner must distinguish? What one-word labels should appear on each so the learner never wonders "what is this thing"?
+
+2. WIN STATE: What specific, observable thing must happen in the 3D world for the learner to know they've "got it"? Describe it as a visual event (not a score), e.g. "the tRNA anticodon snaps into the ribosome A-site and the polypeptide chain extends by one bead."
+
+3. CORE MECHANIC: What is the ONE action the learner performs that IS the learning — not earns points for learning, but where doing the action correctly requires understanding the concept? It must be a direct 3D manipulation (drag, steer, place, aim), not reading or watching.
+
+4. FEEDBACK DESIGN: When the learner makes a wrong move, what should happen within 300ms to teach WHY it was wrong in the concept's own terms? Be specific about what text appears and on which object in the scene.
+
+5. ANTI-BROCCOLI CHECK: How does this design avoid "chocolate-covered broccoli" (where the game and the learning are separate layers)? Confirm the mechanic = the learning or describe the fix.
+
+Be specific to "${topic}". Do not give generic answers. Do not repeat the archetype patterns verbatim.`;
+
+  return openaiText(prompt, 800, "gpt-4o-mini");
+}
+
+async function codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category = "General") {
   const cat = design.spec.course_category || category;
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -921,6 +942,12 @@ A lab that nails the visuals but misses any pillar below is a FAILED lab. These 
      • Open on a CONCRETE real instance (a real role/place/dollar amount/news moment) and, when quantitative, draw the real target (ghost curve / dotted trajectory / historical line, labeled with real name + units) the learner reverse-engineers.
      • The REVEAL lands the real_world_payoff as one concrete sentence: "[What you just did] is why [real-world consequence]." — not a generic topic summary.
      • Real units on every readout (N, m/s², $, %, °). The learner should leave seeing this concept in their savings account, the ISS overhead, the bridge they drive over — not just on a screen.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━ TOPIC-SPECIFIC VISUAL PEDAGOGY (apply these rules above all generic patterns) ━━━
+The following analysis was written specifically for "${design.topic}" — use it to override any generic instruction that conflicts:
+
+${pedagogy}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 You are building a single self-contained interactive learning lab. LAB ARCHETYPE: ${archetype.toUpperCase()}. You MUST output a complete, working HTML file right now — no summaries, no explanations.
@@ -1702,7 +1729,10 @@ Rules:
           const design = await specFromThinking(topic, thinking, category);
 
           send("labthink", "Thinking about how to build it…");
-          const labThinking = await thinkAboutLab(design, category);
+          const [labThinking, pedagogy] = await Promise.all([
+            thinkAboutLab(design, category),
+            thinkAboutVisualPedagogy(design.topic, design.spec.lab_archetype || "physics-sim", category),
+          ]);
 
           let imageDataUrl = null;
           if (process.env.USE_MOCKUP === "1") {
@@ -1711,7 +1741,7 @@ Rules:
           }
 
           send("code", "Writing your lab…");
-          const html = await codeFromImageBrief(design, labThinking, imageDataUrl, category);
+          const html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category);
 
           const labData = {
             topicKey: key,
