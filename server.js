@@ -1360,6 +1360,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Brand assets (logo icon, wordmark, favicon)
+  if (req.method === "GET" && /^\/[\w.-]+\.(png|svg|ico)$/.test(url)) {
+    const name = path.basename(url);
+    const file = path.join(__dirname, name);
+    if (fs.existsSync(file)) {
+      const ext = name.split(".").pop();
+      const types = { png: "image/png", svg: "image/svg+xml", ico: "image/x-icon" };
+      res.writeHead(200, { "Content-Type": types[ext] || "application/octet-stream", "Cache-Control": "public, max-age=86400" });
+      res.end(fs.readFileSync(file));
+    } else {
+      res.writeHead(404); res.end("Not found");
+    }
+    return;
+  }
+
   if (req.method === "GET" && url === "/engine.html") {
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(fs.readFileSync(path.join(__dirname, "engine.html")));
