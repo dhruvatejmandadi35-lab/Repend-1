@@ -820,7 +820,34 @@
       z-index: 200;
       padding: 20px 0;
       backdrop-filter: blur(16px);
+      transition: width 0.22s ease, min-width 0.22s ease;
     }
+    /* Collapse toggle button */
+    .sidebar-toggle {
+      position: absolute; top: 22px; right: -13px;
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--mars); color: #fff; border: 2px solid var(--bg0);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; z-index: 201; font-size: 0.7rem; line-height: 1;
+      transition: transform 0.22s ease; padding: 0;
+    }
+    .sidebar-toggle:hover { filter: brightness(1.1); }
+    /* Collapsed state (toggled) */
+    body.sidebar-collapsed .sidebar { width: 60px; min-width: 60px; }
+    body.sidebar-collapsed .sidebar-logo-text,
+    body.sidebar-collapsed .sidebar-item span:not(.sidebar-item-icon),
+    body.sidebar-collapsed .sidebar-profile-info,
+    body.sidebar-collapsed .sidebar-xp,
+    body.sidebar-collapsed .sidebar-auth .btn-login,
+    body.sidebar-collapsed .sidebar-auth .btn-signup { display: none; }
+    body.sidebar-collapsed .sidebar-logo { padding: 0 10px 20px; justify-content: center; }
+    body.sidebar-collapsed .sidebar-logo img { height: 22px; }
+    body.sidebar-collapsed .sidebar-item { justify-content: center; padding: 11px; }
+    body.sidebar-collapsed .sidebar-auth { padding: 8px 6px; }
+    body.sidebar-collapsed .sidebar-avatar { margin: 0 auto; }
+    body.sidebar-collapsed .sidebar-profile { padding: 8px 6px; justify-content: center; }
+    body.sidebar-collapsed .sidebar-toggle { transform: rotate(180deg); }
+    body.sidebar-collapsed .ui-layer { margin-left: 60px; width: calc(100% - 60px); }
     .sidebar-logo {
       display: flex; align-items: center; gap: 10px;
       padding: 0 20px 20px;
@@ -870,7 +897,7 @@
     .sidebar-signout:hover { color: #FCA5A5; }
 
     /* Main content shifts right of sidebar */
-    .ui-layer { margin-left: 220px; width: calc(100% - 220px); }
+    .ui-layer { margin-left: 220px; width: calc(100% - 220px); transition: margin-left 0.22s ease, width 0.22s ease; }
     nav { display: none; } /* hide old top nav */
 
     /* Share button */
@@ -936,6 +963,7 @@
 <body>
 <!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar">
+  <button class="sidebar-toggle" id="sidebarToggle" title="Collapse sidebar" aria-label="Toggle sidebar">‹</button>
   <a href="/" class="sidebar-logo" id="sidebarLogo">
     <img src="/repend-logo.svg" alt="Repend" style="height:32px;width:auto;display:block;" />
   </a>
@@ -1564,6 +1592,18 @@
       renderDashboard();
     }
     renderMyLabs();
+    // Sidebar collapse toggle (persisted)
+    const sidebarToggle = document.getElementById("sidebarToggle");
+    if (localStorage.getItem("repend_sidebar_collapsed") === "1") {
+      document.body.classList.add("sidebar-collapsed");
+    }
+    if (sidebarToggle) {
+      sidebarToggle.addEventListener("click", () => {
+        const collapsed = document.body.classList.toggle("sidebar-collapsed");
+        localStorage.setItem("repend_sidebar_collapsed", collapsed ? "1" : "0");
+        sidebarToggle.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+      });
+    }
     document.getElementById("bookmarkBtn").addEventListener("click", () => {
       if (!currentPlan || typeof RependGame === "undefined") return;
       RependGame.toggleBookmark(currentPlan.topic, lastCategory);
