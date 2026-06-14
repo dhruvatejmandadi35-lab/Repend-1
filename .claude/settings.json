@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__516f4d53-4530-4673-841c-4e634c7edb22__restore_project",
+      "mcp__842db29b-4982-43be-bf57-4a6911636a5a__search_files",
+      "mcp__842db29b-4982-43be-bf57-4a6911636a5a__list_recent_files",
+      "mcp__842db29b-4982-43be-bf57-4a6911636a5a__read_file_content",
+      "mcp__842db29b-4982-43be-bf57-4a6911636a5a__download_file_content",
+      "mcp__842db29b-4982-43be-bf57-4a6911636a5a__get_file_metadata"
+    ]
+  }
+}

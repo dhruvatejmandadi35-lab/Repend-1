@@ -1,0 +1,21 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Circuit R — navy strokes with terminal nodes -->
+  <g stroke="#0d1b3e" stroke-width="26" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- top-left node + horizontal top bar into the bowl -->
+    <circle cx="168" cy="150" r="22" fill="#f7f9fc"/>
+    <path d="M168 150 H300 Q392 150 392 242 Q392 330 300 330 H210" />
+    <!-- vertical spine -->
+    <line x1="170" y1="208" x2="170" y2="430" />
+    <!-- bottom-left node -->
+    <circle cx="170" cy="430" r="22" fill="#f7f9fc"/>
+    <!-- diagonal leg to bottom-right node -->
+    <path d="M300 330 L408 438" />
+    <circle cx="408" cy="438" r="22" fill="#f7f9fc"/>
+  </g>
+  <!-- Orange heartbeat line across the middle -->
+  <g stroke="#E85D04" stroke-width="20" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="78" cy="300" r="13" fill="none"/>
+    <path d="M78 300 H210 L246 220 L288 392 L322 256 L356 300 H452" />
+    <circle cx="452" cy="300" r="13" fill="none"/>
+  </g>
+</svg>
