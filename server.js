@@ -1465,6 +1465,43 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // POST /plan-course — generate a course outline (title + ordered modules)
+  if (req.method === "POST" && req.url === "/plan-course") {
+    let body = "";
+    req.on("data", c => (body += c));
+    req.on("end", async () => {
+      try {
+        const { subject, category = "General" } = JSON.parse(body);
+        if (!subject) { res.writeHead(400); res.end(JSON.stringify({ error: "subject required" })); return; }
+        const outline = await openaiJSON(`You are a curriculum designer. Create a tight, practical course outline for: "${subject}" (category: ${category}).
+
+Return JSON exactly like this:
+{
+  "title": "Course title (short, punchy, e.g. 'Physics of Motion')",
+  "tagline": "One sentence selling the course (what the learner will be able to do)",
+  "category": "${category}",
+  "modules": [
+    { "order": 1, "topic": "Specific interactive lab topic", "why": "One sentence: why this comes first / what it unlocks" },
+    { "order": 2, "topic": "...", "why": "..." }
+  ]
+}
+
+Rules:
+- 4 to 6 modules, each a self-contained interactive lab topic
+- Order from foundational to advanced — each module builds on the previous
+- Topics must be SPECIFIC enough to generate a 3D interactive lab (e.g. "Newton's Second Law: F=ma on an ice rink" not "Forces")
+- No duplicate concepts
+- The last module should be an applied/real-world challenge that uses all previous concepts`, 800);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(outline));
+      } catch (e) {
+        console.error("plan-course error:", e.message);
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   // POST /share — save lab HTML snapshot, return share ID
   if (req.method === "POST" && req.url === "/share") {
     let body = "";
