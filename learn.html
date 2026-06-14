@@ -958,6 +958,36 @@
       .sidebar-profile { padding: 8px 6px; justify-content: center; }
       .ui-layer { margin-left: 60px; width: calc(100% - 60px); }
     }
+
+    /* ── COURSE STRUCTURE ── */
+    .btn-course-build { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 10px; padding: 7px 16px; font-size: 0.83rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .btn-course-build:hover { border-color: var(--mars); color: var(--mars); }
+    #courseView { padding: 24px 32px 60px; max-width: 760px; margin: 0 auto; }
+    .course-header { padding: 24px 28px; margin-bottom: 24px; }
+    .course-back-btn { background: none; border: none; color: var(--muted); font-size: 0.85rem; cursor: pointer; font-family: inherit; padding: 0 0 12px; transition: color 0.15s; }
+    .course-back-btn:hover { color: var(--text); }
+    .course-title { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 4px; }
+    .course-tagline { font-size: 0.9rem; color: var(--muted); margin-bottom: 16px; }
+    .course-progress-wrap { display: flex; align-items: center; gap: 12px; }
+    .course-progress-bar { flex: 1; height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+    .course-progress-fill { height: 100%; background: linear-gradient(90deg, var(--mars), var(--ice)); border-radius: 99px; transition: width 0.4s ease; width: 0%; }
+    .course-progress-label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .course-modules { display: flex; flex-direction: column; gap: 12px; }
+    .course-module { display: flex; align-items: center; gap: 16px; padding: 18px 22px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; transition: all 0.15s; position: relative; }
+    .course-module:hover { border-color: var(--mars); background: var(--surface2); }
+    .course-module.done { border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.04); }
+    .course-module.active { border-color: var(--mars); background: rgba(232,93,4,0.06); }
+    .course-module-num { width: 36px; height: 36px; border-radius: 50%; background: var(--surface2); border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 800; color: var(--muted); flex-shrink: 0; font-family: 'JetBrains Mono', monospace; }
+    .course-module.done .course-module-num { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.5); color: #6EE7B7; }
+    .course-module.done .course-module-num::before { content: "✓"; }
+    .course-module-body { flex: 1; min-width: 0; }
+    .course-module-topic { font-size: 0.97rem; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+    .course-module-why { font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
+    .course-module-cta { font-size: 0.78rem; font-weight: 700; color: var(--mars); white-space: nowrap; }
+    .course-module.done .course-module-cta { color: #6EE7B7; }
+    .course-generating { display: flex; align-items: center; gap: 10px; justify-content: center; padding: 40px; color: var(--muted); font-size: 0.9rem; }
+    .course-spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--mars); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -1096,6 +1126,9 @@
     <input type="text" id="topicInput" placeholder="Try: Basketball shooting arc, Compound Interest, Ohm's Law…" maxlength="150" autocomplete="off" />
     <button id="genBtn">Generate →</button>
   </div>
+  <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
+    <button id="buildCourseBtn" class="btn-course-build">🎓 Build a Course →</button>
+  </div>
 
   <div class="upload-row">
     <button type="button" class="upload-trigger" id="uploadTrigger">📎 Or build a lab from your own material — PDF, notes, slides</button>
@@ -1126,6 +1159,22 @@
 
   <div class="cat-tabs" id="catTabs"></div>
   <div class="chips" id="topicChips"></div>
+</div>
+
+<!-- COURSE VIEW -->
+<div id="courseView" style="display:none">
+  <div class="course-header glass-panel">
+    <button class="course-back-btn" id="courseBackBtn">← Back</button>
+    <div class="course-meta">
+      <div class="course-title" id="courseTitle"></div>
+      <div class="course-tagline" id="courseTagline"></div>
+    </div>
+    <div class="course-progress-wrap">
+      <div class="course-progress-bar"><div class="course-progress-fill" id="courseProgressFill"></div></div>
+      <div class="course-progress-label" id="courseProgressLabel">0 / 0 complete</div>
+    </div>
+  </div>
+  <div class="course-modules" id="courseModules"></div>
 </div>
 
 <div id="loading">
@@ -1352,6 +1401,102 @@
   document.addEventListener("click", () => {
     document.querySelectorAll(".lab-card-menu.open").forEach(m => m.classList.remove("open"));
   });
+
+  // ── COURSE STRUCTURE ─────────────────────────────────────────────────
+  const COURSE_STORE_KEY = "repend_courses_v1";
+  let activeCourse = null; // { title, tagline, category, modules: [{order,topic,why,done}] }
+
+  function loadCourses() { try { return JSON.parse(localStorage.getItem(COURSE_STORE_KEY)) || []; } catch { return []; } }
+  function saveCourses(courses) { try { localStorage.setItem(COURSE_STORE_KEY, JSON.stringify(courses)); } catch {} }
+
+  function markModuleDone(courseTitle, moduleOrder) {
+    const courses = loadCourses();
+    const c = courses.find(x => x.title === courseTitle);
+    if (c) { const m = c.modules.find(x => x.order === moduleOrder); if (m) m.done = true; }
+    saveCourses(courses);
+    if (activeCourse && activeCourse.title === courseTitle) {
+      activeCourse = courses.find(x => x.title === courseTitle) || activeCourse;
+      renderCourseView(activeCourse);
+    }
+  }
+
+  function renderCourseView(course) {
+    activeCourse = course;
+    const done = course.modules.filter(m => m.done).length;
+    const total = course.modules.length;
+    document.getElementById("courseTitle").textContent = course.title;
+    document.getElementById("courseTagline").textContent = course.tagline;
+    document.getElementById("courseProgressFill").style.width = `${Math.round(done / total * 100)}%`;
+    document.getElementById("courseProgressLabel").textContent = `${done} / ${total} complete`;
+    const list = document.getElementById("courseModules");
+    list.innerHTML = "";
+    course.modules.forEach(mod => {
+      const card = document.createElement("div");
+      card.className = "course-module" + (mod.done ? " done" : "");
+      card.innerHTML = `
+        <div class="course-module-num">${mod.done ? "" : mod.order}</div>
+        <div class="course-module-body">
+          <div class="course-module-topic">${mod.topic}</div>
+          <div class="course-module-why">${mod.why}</div>
+        </div>
+        <div class="course-module-cta">${mod.done ? "Replay" : "Start →"}</div>`;
+      card.addEventListener("click", () => {
+        showCourseModule(course, mod);
+      });
+      list.appendChild(card);
+    });
+    heroSection.style.display = "none";
+    document.getElementById("learnDashboard").style.display = "none";
+    document.getElementById("courseView").style.display = "block";
+  }
+
+  function showCourseModule(course, mod) {
+    document.getElementById("courseView").style.display = "none";
+    window._rependCat = course.category;
+    window._activeCourseTitle = course.title;
+    window._activeCourseModuleOrder = mod.order;
+    startLab(mod.topic, course.category);
+  }
+
+  document.getElementById("courseBackBtn").addEventListener("click", () => {
+    document.getElementById("courseView").style.display = "none";
+    heroSection.style.display = "block";
+    renderDashboard();
+    renderMyLabs();
+  });
+
+  document.getElementById("buildCourseBtn").addEventListener("click", async () => {
+    const subject = topicInput.value.trim();
+    if (!subject) { topicInput.focus(); return; }
+    const btn = document.getElementById("buildCourseBtn");
+    btn.textContent = "⏳ Building course…";
+    btn.disabled = true;
+    try {
+      const cat = typeof RependGame !== "undefined" ? RependGame.inferCategory(subject) : "General";
+      const res = await fetch("/plan-course", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject, category: cat }),
+      });
+      if (!res.ok) throw new Error("Server error");
+      const outline = await res.json();
+      if (!outline.modules || !outline.modules.length) throw new Error("No modules returned");
+      // Persist course
+      const courses = loadCourses();
+      const existing = courses.findIndex(c => c.title === outline.title);
+      const course = { ...outline, modules: outline.modules.map(m => ({ ...m, done: false })) };
+      if (existing >= 0) courses[existing] = course; else courses.unshift(course);
+      saveCourses(courses);
+      renderCourseView(course);
+    } catch (e) {
+      alert("Couldn't build course: " + e.message);
+    } finally {
+      btn.textContent = "🎓 Build a Course →";
+      btn.disabled = false;
+    }
+  });
+
+  // Course module completion is handled inside onLabComplete (below)
 
   function renderDashboard() {
     if (typeof RependGame === "undefined") return;
@@ -1584,6 +1729,20 @@
     RependGame.handleCompletion(result);
     showNextSteps(result.recommendations);
     renderDashboard();
+    // If inside a course, mark this module done and show a "Next module" prompt
+    if (window._activeCourseTitle && window._activeCourseModuleOrder != null) {
+      markModuleDone(window._activeCourseTitle, window._activeCourseModuleOrder);
+      const courses = loadCourses();
+      const course = courses.find(c => c.title === window._activeCourseTitle);
+      if (course) {
+        const nextMod = course.modules.find(m => m.order === window._activeCourseModuleOrder + 1 && !m.done);
+        if (typeof RependGame !== "undefined") {
+          RependGame.showToast(nextMod ? `Module done! Next: ${nextMod.topic}` : "🎓 Course complete!");
+        }
+      }
+      window._activeCourseTitle = null;
+      window._activeCourseModuleOrder = null;
+    }
   }
 
   document.addEventListener("DOMContentLoaded", () => {
