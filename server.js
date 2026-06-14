@@ -855,6 +855,26 @@ const reagents = [{ name, volume, color, temp }, ...]; let reactionState = 'idle
 Repend is an exploration engine that teaches any topic through hands-on interaction. Before generating ANYTHING, ask: "What is the most engaging way to make this concept click — through a simulation, a game, a decision tree, a social experiment, or a visual puzzle?" Default to the format that lets the learner FEEL the concept, not just read about it. A good lab produces an "aha" moment the learner couldn't get from a textbook. Passive explanations, static charts, and reading-only interfaces are rejected — every element must respond to the learner's action.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+━━━ THE THREE PILLARS — judge the whole lab on these before anything else ━━━
+A lab that nails the visuals but misses any pillar below is a FAILED lab. These outrank every other instruction:
+
+  1. SPECIFIED INTERACTIVITY — the learner DRIVES, never watches.
+     • The primary action happens IN the 3D play area: grab/drag, aim-and-release, or steer with held arrow keys (+ mirrored on-screen ◀▲▼▶ touch buttons). Sliders are secondary only.
+     • Every single control produces an immediate, visible, meaningful change (<100ms). No inert controls, no decorative motion, no "press play and watch."
+     • Within 3 seconds of the sim appearing, there is something obvious to grab and the learner already knows what to do without reading instructions.
+
+  2. GAMIFIED EXPERIENCE — it is a GAME the learner plays to WIN, not a sandbox to poke.
+     • A concrete WIN GOAL drawn on the canvas (target ring / finish zone / threshold line) with LIVE progress toward it (meter fills, target glows brighter, counter counts up).
+     • Score / streak / attempts / match-% HUD that reacts to every action; 2–4 live consequence bars that animate fast so the learner waits to see where they land.
+     • NEAR-MISS FEEDBACK that teaches in the concept's own words on every failed attempt, then instant retry.
+     • A WIN STATE winnable ONLY by using the concept's real mechanism → golden-burst celebration + S/A/B/C/D grade + labCheck postMessage. Auto-detect the win the instant it happens.
+
+  3. REAL-WORLD CONNECTION — the concept must visibly operate in the actual world.
+     • Open on a CONCRETE real instance (a real role/place/dollar amount/news moment) and, when quantitative, draw the real target (ghost curve / dotted trajectory / historical line, labeled with real name + units) the learner reverse-engineers.
+     • The REVEAL lands the real_world_payoff as one concrete sentence: "[What you just did] is why [real-world consequence]." — not a generic topic summary.
+     • Real units on every readout (N, m/s², $, %, °). The learner should leave seeing this concept in their savings account, the ISS overhead, the bridge they drive over — not just on a screen.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 You are building a single self-contained interactive learning lab. LAB ARCHETYPE: ${archetype.toUpperCase()}. You MUST output a complete, working HTML file right now — no summaries, no explanations.
 
 ${imageDataUrl ? `You are given two inputs:
@@ -1262,6 +1282,11 @@ Before returning, verify ALL of these — fix any that fail before responding:
 29. (molecular-builder only) Can atoms be dragged and snapped into bonds? Does evaluate() check the structure against a target?
 30. (data-sampling only) Can the learner run many trials and watch a histogram build? Does sample size visibly affect the distribution shape (CLT)?
 31. (experiment-bench only) Is there a 3D lab bench with pourable beakers, live readouts (pH/temp/color), and a threshold reaction the learner must trigger?
+
+━━━ FINAL PILLAR GATE — if any answer is NO, fix it before returning ━━━
+P1. INTERACTIVITY: Is the learner's PRIMARY action a direct grab/aim/steer in the play area (not just sliders), with every control producing an immediate visible change?
+P2. GAMIFICATION: Is there a win goal drawn on the canvas, live progress toward it, near-miss feedback, a score/streak/match HUD, and an auto-detected win → celebration + grade + labCheck?
+P3. REAL-WORLD: Does the lab open on a concrete real instance and close with the real_world_payoff sentence, with real units throughout?
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
