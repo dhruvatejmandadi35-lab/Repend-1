@@ -988,6 +988,41 @@
     .course-generating { display: flex; align-items: center; gap: 10px; justify-content: center; padding: 40px; color: var(--muted); font-size: 0.9rem; }
     .course-spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--mars); border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── CLEAN DASHBOARD ── */
+    .hero-eyebrow-pill { display: inline-block; font-size: 0.75rem; font-weight: 700; color: var(--mars); background: rgba(232,93,4,0.12); border: 1px solid rgba(232,93,4,0.25); border-radius: 99px; padding: 4px 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 20px; }
+    .hero-headline { font-size: clamp(2.2rem, 5vw, 3.5rem); font-weight: 900; letter-spacing: -0.04em; line-height: 1.05; margin: 0 0 12px; }
+    .headline-gradient { background: linear-gradient(135deg, var(--mars), var(--ice)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .create-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 14px; margin: 20px 0 10px; }
+    .upload-trigger-inline { background: none; border: none; color: var(--muted); font-size: 1.1rem; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: color 0.15s; flex-shrink: 0; }
+    .upload-trigger-inline:hover { color: var(--text); }
+    .create-row input[type="text"] { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 0.95rem; font-family: inherit; min-width: 0; }
+    .create-row input[type="text"]::placeholder { color: var(--muted); }
+    .btn-create-course { background: var(--mars); color: #fff; border: none; border-radius: 10px; padding: 8px 18px; font-size: 0.88rem; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; transition: opacity 0.15s; }
+    .btn-create-course:hover { opacity: 0.85; }
+    .dash-actions { display: flex; gap: 10px; margin-bottom: 28px; }
+    .dash-action-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 10px; padding: 8px 18px; font-size: 0.85rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    .dash-action-btn:hover, .dash-action-btn.active { border-color: var(--mars); color: var(--mars); }
+    .dashboard-section { margin: 28px 0; }
+    .section-header { font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 14px; }
+    .courses-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    @media (max-width: 700px) { .courses-grid { grid-template-columns: 1fr; } }
+    .course-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; transition: all 0.15s; }
+    .course-card:hover { border-color: var(--mars); }
+    .course-card-title { font-size: 0.97rem; font-weight: 800; color: var(--text); line-height: 1.3; }
+    .course-card-tagline { font-size: 0.8rem; color: var(--muted); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .course-card-progress { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+    .course-card-cta { font-size: 0.8rem; font-weight: 700; color: var(--mars); margin-top: auto; padding-top: 8px; }
+    .course-card-cat { display: inline-block; font-size: 0.7rem; font-weight: 700; color: var(--ice); background: rgba(76,201,240,0.1); border-radius: 6px; padding: 2px 8px; }
+    .course-card-upvotes { font-size: 0.78rem; color: var(--muted); }
+    .empty-state { color: var(--muted); font-size: 0.88rem; padding: 20px 0; }
+    .collapse-toggle { background: none; border: none; color: var(--muted); font-size: 0.85rem; font-weight: 600; cursor: pointer; font-family: inherit; padding: 0; margin-bottom: 10px; transition: color 0.15s; }
+    .collapse-toggle:hover { color: var(--text); }
+    .btn-publish-course { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 10px; padding: 7px 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s; white-space: nowrap; margin-left: auto; }
+    .btn-publish-course:hover { border-color: var(--ice); color: var(--ice); }
+    .btn-publish-course.published { border-color: rgba(34,197,94,0.4); color: #6EE7B7; cursor: default; }
+    .toast-msg { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 10px 22px; border-radius: 99px; font-size: 0.88rem; font-weight: 600; z-index: 9999; box-shadow: 0 8px 32px rgba(0,0,0,0.4); animation: toastIn 0.25s ease; }
+    @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
   </style>
 </head>
 <body>
@@ -1113,52 +1148,63 @@
 </div>
 
 <div class="hero" id="heroSection">
-  <div class="hero-eyebrow">Course generator</div>
-  <h1>
-    <div class="line1">Learn by doing.</div>
-    <div class="line2">Not watching.</div>
+  <!-- Badge + headline -->
+  <div class="hero-eyebrow-pill">AI-Powered Learning</div>
+  <h1 class="hero-headline">
+    Learn <span class="headline-gradient">Anything</span>
   </h1>
   <p class="hero-sub">
-    Type any concept. The AI reasons about it, builds an interactive lab from scratch, then checks that you actually understood it.
+    Type any topic and our AI creates a full course with interactive 3D labs.
   </p>
 
-  <div class="input-wrap glass-panel">
-    <input type="text" id="topicInput" placeholder="Try: Basketball shooting arc, Compound Interest, Ohm's Law…" maxlength="150" autocomplete="off" />
-    <button id="genBtn">Generate →</button>
-  </div>
-  <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;">
-    <button id="buildCourseBtn" class="btn-course-build">🎓 Build a Course →</button>
-  </div>
-
-  <div class="upload-row">
-    <button type="button" class="upload-trigger" id="uploadTrigger">📎 Or build a lab from your own material — PDF, notes, slides</button>
+  <!-- Create input row -->
+  <div class="create-row glass-panel">
+    <button type="button" class="upload-trigger upload-trigger-inline" id="uploadTrigger" title="Attach PDF, notes or slides">📎</button>
     <div class="upload-chip" id="uploadChip" style="display:none">
       <span id="uploadChipName"></span>
       <button type="button" id="uploadChipClear" title="Remove">×</button>
     </div>
+    <input type="text" id="topicInput" placeholder="e.g. React Hooks, Cybersecurity, Basketball…" maxlength="150" autocomplete="off" />
+    <button id="genBtn" style="display:none">Generate →</button>
+    <button id="buildCourseBtn" class="btn-create-course">+ Create Course</button>
   </div>
 
-  <div class="search-wrap">
-    <input type="search" id="topicSearch" placeholder="Search topics in catalog…" autocomplete="off" />
+  <!-- Dashboard action buttons -->
+  <div class="dash-actions">
+    <button class="dash-action-btn" id="dashBuildBtn">🎓 Build a Course</button>
+    <button class="dash-action-btn" id="dashExploreBtn">🌐 Explore Public</button>
   </div>
 
-  <div class="section-block" id="myLabsSection" style="display:none">
-    <h3>🧪 Your labs · instant replay, no regeneration</h3>
-    <div class="my-labs-grid" id="myLabsGrid"></div>
+  <!-- Hidden search + catalog inputs (kept for compatibility) -->
+  <div style="display:none">
+    <input type="search" id="topicSearch" autocomplete="off" />
+    <div class="cat-tabs" id="catTabs"></div>
+    <div class="chips" id="topicChips"></div>
+    <div id="reviewSection"><div class="chips" id="reviewChips"></div></div>
+    <div id="recSection"><div class="chips" id="recChips"></div></div>
   </div>
 
-  <div class="section-block" id="reviewSection" style="display:none">
-    <h3>📚 Review due — spaced repetition</h3>
-    <div class="chips" id="reviewChips"></div>
+  <!-- Your Courses section -->
+  <div class="dashboard-section" id="yourCoursesSection">
+    <div class="section-header">Your Courses</div>
+    <div class="courses-grid" id="coursesGrid">
+      <div class="empty-state">No courses yet — create one above.</div>
+    </div>
   </div>
 
-  <div class="section-block" id="recSection" style="display:none">
-    <h3>✨ Recommended for you</h3>
-    <div class="chips" id="recChips"></div>
+  <!-- Explore Public section (hidden by default) -->
+  <div class="dashboard-section" id="exploreSection" style="display:none">
+    <div class="section-header">Explore Public Courses</div>
+    <div class="courses-grid" id="publicCoursesGrid">
+      <div class="empty-state">Loading…</div>
+    </div>
   </div>
 
-  <div class="cat-tabs" id="catTabs"></div>
-  <div class="chips" id="topicChips"></div>
+  <!-- Saved labs (collapsible) -->
+  <div class="dashboard-section" id="myLabsSection" style="display:none">
+    <button class="collapse-toggle" id="myLabsToggle">🧪 Your saved labs (<span id="myLabsCount">0</span>) ▶</button>
+    <div class="my-labs-grid" id="myLabsGrid" style="display:none"></div>
+  </div>
 </div>
 
 <!-- COURSE VIEW -->
@@ -1173,6 +1219,7 @@
       <div class="course-progress-bar"><div class="course-progress-fill" id="courseProgressFill"></div></div>
       <div class="course-progress-label" id="courseProgressLabel">0 / 0 complete</div>
     </div>
+    <button class="btn-publish-course" id="publishCourseBtn">🌐 Publish</button>
   </div>
   <div class="course-modules" id="courseModules"></div>
 </div>
@@ -1332,6 +1379,10 @@
     const labs = LabLibrary.all();
     if (!labs.length) { sec.style.display = "none"; return; }
     sec.style.display = "block";
+    const countEl = document.getElementById("myLabsCount");
+    if (countEl) countEl.textContent = labs.length;
+    const toggle = document.getElementById("myLabsToggle");
+    if (toggle) toggle.textContent = `🧪 Your saved labs (${labs.length}) ▶`;
     grid.innerHTML = "";
     labs.forEach(lab => {
       const card = document.createElement("div");
@@ -1448,6 +1499,9 @@
     heroSection.style.display = "none";
     document.getElementById("learnDashboard").style.display = "none";
     document.getElementById("courseView").style.display = "block";
+    // Reset publish button
+    const pubBtn = document.getElementById("publishCourseBtn");
+    if (pubBtn) { pubBtn.textContent = "🌐 Publish"; pubBtn.classList.remove("published"); pubBtn.disabled = false; }
   }
 
   function showCourseModule(course, mod) {
@@ -1463,6 +1517,7 @@
     heroSection.style.display = "block";
     renderDashboard();
     renderMyLabs();
+    renderYourCourses();
   });
 
   document.getElementById("buildCourseBtn").addEventListener("click", async () => {
@@ -1494,6 +1549,150 @@
       btn.textContent = "🎓 Build a Course →";
       btn.disabled = false;
     }
+  });
+
+  // ── RENDER YOUR COURSES GRID ─────────────────────────────────────────
+  function renderYourCourses() {
+    const grid = document.getElementById("coursesGrid");
+    if (!grid) return;
+    const courses = loadCourses();
+    if (!courses.length) {
+      grid.innerHTML = '<div class="empty-state">No courses yet — create one above.</div>';
+      return;
+    }
+    grid.innerHTML = "";
+    courses.forEach(course => {
+      const done = course.modules.filter(m => m.done).length;
+      const total = course.modules.length;
+      const card = document.createElement("div");
+      card.className = "course-card";
+      card.innerHTML = `
+        <div class="course-card-title">${course.title}</div>
+        <div class="course-card-tagline">${course.tagline || ""}</div>
+        <div class="course-card-progress">${done} / ${total} modules</div>
+        <div class="course-card-cta">Continue →</div>`;
+      card.addEventListener("click", () => renderCourseView(course));
+      grid.appendChild(card);
+    });
+  }
+
+  // ── EXPLORE PUBLIC ────────────────────────────────────────────────────
+  let exploreVisible = false;
+  async function loadPublicCourses() {
+    const grid = document.getElementById("publicCoursesGrid");
+    if (!grid) return;
+    grid.innerHTML = '<div class="empty-state">Loading…</div>';
+    try {
+      const res = await fetch("/api/public-courses");
+      const courses = await res.json();
+      if (!courses.length) { grid.innerHTML = '<div class="empty-state">No public courses yet.</div>'; return; }
+      grid.innerHTML = "";
+      courses.forEach(course => {
+        const modules = typeof course.modules === "string" ? JSON.parse(course.modules) : (course.modules || []);
+        const card = document.createElement("div");
+        card.className = "course-card";
+        card.innerHTML = `
+          <div class="course-card-title">${course.title}</div>
+          ${course.category ? `<span class="course-card-cat">${course.category}</span>` : ""}
+          <div class="course-card-tagline">${course.tagline || ""}</div>
+          <div class="course-card-upvotes" data-id="${course.id}">👍 ${course.upvotes || 0}</div>
+          <div style="display:flex;gap:8px;margin-top:auto;padding-top:8px;">
+            <div class="course-card-cta" style="flex:1">Start Course →</div>
+            <button class="upvote-btn" data-id="${course.id}" style="background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:0.75rem;cursor:pointer;padding:2px 8px;font-family:inherit;">👍</button>
+          </div>`;
+        // Start course: clone into localStorage
+        card.querySelector(".course-card-cta").addEventListener("click", () => {
+          const cloned = { title: course.title, tagline: course.tagline, category: course.category, modules: modules.map(m => ({ ...m, done: false })) };
+          const courses2 = loadCourses();
+          const existing = courses2.findIndex(c => c.title === cloned.title);
+          if (existing >= 0) courses2[existing] = cloned; else courses2.unshift(cloned);
+          saveCourses(courses2);
+          renderCourseView(cloned);
+        });
+        // Upvote
+        card.querySelector(".upvote-btn").addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const id = course.id;
+          try {
+            const r = await fetch(`/upvote-course/${id}`, { method: "POST" });
+            const data = await r.json();
+            card.querySelector(`.course-card-upvotes[data-id="${id}"]`).textContent = `👍 ${data.upvotes}`;
+          } catch (_) {}
+        });
+        grid.appendChild(card);
+      });
+    } catch (e) {
+      grid.innerHTML = '<div class="empty-state">Could not load public courses.</div>';
+    }
+  }
+
+  document.getElementById("dashExploreBtn").addEventListener("click", () => {
+    exploreVisible = !exploreVisible;
+    const explSec = document.getElementById("exploreSection");
+    const coursesSec = document.getElementById("yourCoursesSection");
+    const btn = document.getElementById("dashExploreBtn");
+    if (exploreVisible) {
+      explSec.style.display = "block";
+      coursesSec.style.display = "none";
+      btn.classList.add("active");
+      loadPublicCourses();
+    } else {
+      explSec.style.display = "none";
+      coursesSec.style.display = "block";
+      btn.classList.remove("active");
+    }
+  });
+
+  document.getElementById("dashBuildBtn").addEventListener("click", () => {
+    topicInput.focus();
+  });
+
+  // ── PUBLISH COURSE ────────────────────────────────────────────────────
+  function showToast(msg) {
+    const t = document.createElement("div");
+    t.className = "toast-msg";
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3200);
+  }
+
+  document.getElementById("publishCourseBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("publishCourseBtn");
+    if (!activeCourse || btn.classList.contains("published")) return;
+    btn.textContent = "Publishing…";
+    btn.disabled = true;
+    try {
+      const payload = {
+        title: activeCourse.title,
+        tagline: activeCourse.tagline,
+        category: activeCourse.category,
+        modules: activeCourse.modules.map(({ order, topic, why }) => ({ order, topic, why })),
+      };
+      const res = await fetch("/publish-course", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Server error");
+      btn.textContent = "✓ Published";
+      btn.classList.add("published");
+      btn.disabled = false;
+      showToast("Course published! Others can now find and use it.");
+    } catch (e) {
+      btn.textContent = "🌐 Publish";
+      btn.disabled = false;
+      showToast("Could not publish — try again.");
+    }
+  });
+
+  // ── LABS COLLAPSE TOGGLE ──────────────────────────────────────────────
+  document.getElementById("myLabsToggle").addEventListener("click", () => {
+    const grid = document.getElementById("myLabsGrid");
+    const toggle = document.getElementById("myLabsToggle");
+    const open = grid.style.display !== "none";
+    grid.style.display = open ? "none" : "block";
+    const count = document.getElementById("myLabsCount").textContent;
+    toggle.textContent = `🧪 Your saved labs (${count}) ${open ? "▶" : "▼"}`;
   });
 
   // Course module completion is handled inside onLabComplete (below)
@@ -1751,6 +1950,7 @@
       renderDashboard();
     }
     renderMyLabs();
+    renderYourCourses();
     // Sidebar collapse toggle (persisted)
     const sidebarToggle = document.getElementById("sidebarToggle");
     if (localStorage.getItem("repend_sidebar_collapsed") === "1") {
