@@ -1327,11 +1327,9 @@ STEP 0 — Classify the concept. Decide which type "${design.topic}" is:
 - Abstract/relational → sort-into-bins with feedback, or side-by-side contrasting cases; for tradeoffs, a slider that visibly gives up one thing to gain another
 - Network/feedback → stocks that visibly fill/drain and flows the learner adjusts + a linked time graph
 
-STEP 2 — Wrap it in Predict → Manipulate → Reveal:
-
-- Predict: before the sim is interactive, one specific falsifiable question about what will happen (2–4 options), then a confidence tap. They must commit before touching it.
-- Manipulate: reveal the full interactive visual. Every control produces immediate, visible, meaningful change. One conceptual prompt only ("Test it — were you right?"), no step-by-step instructions.
-- Reveal: an explanation that references THEIR prediction — whether it held and the real reason why — landing as a visible event in the sim, not a paragraph.
+STEP 2 — Open straight into the interactive sim. The learner's first action is hands-on within 3 seconds — no gate, no modal, no question before they can touch it.
+- Manipulate: the full interactive visual is live immediately on load. Every control produces immediate, visible, meaningful change.
+- Reveal: an explanation of what happened and why — landing as a visible event in the sim, not a paragraph.
 
 STEP 3 — Make it transfer to real life. Tie the concept to a concrete real-world instance the learner can picture (the money in their savings account; the actual orbit of the ISS; a real population of animals). The "aha" should make them see the concept operating in the world, not just on screen.
 
@@ -1391,28 +1389,16 @@ Every entity, dot, shape, color, or symbol MUST be explained with a visible lege
 • The learner must never see a moving element without knowing what it represents.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PREDICT → MANIPULATE → REVEAL (non-negotiable):
+IMMEDIATE INTERACTION → REVEAL (non-negotiable):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Structure the lab in three phases:
-
-PREDICT (shown before the sim is interactive):
-• Ask one specific, falsifiable question about what will happen when they interact (2–4 options).
-• Show a confidence selector (Sure / Unsure / Just guessing).
-• A "Commit & Start" button reveals the simulation. They cannot touch the sim until they commit.
-• Display their prediction choice visibly throughout the Manipulate phase so they remember what they predicted.
-• PREDICT MODAL MUST BE CLICKABLE — this is the #1 predict-step bug: the option buttons must be pressable. Mandatory implementation rules:
-  - The modal overlay div: position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center; — never pointer-events:none on the modal or any ancestor.
-  - Each option button: cursor:pointer; pointer-events:auto; — never inherit pointer-events from a parent that is none.
-  - No invisible div, canvas overlay, or Three.js renderer domElement may sit on top of the modal (z-index higher than 1000). The Three.js canvas must be z-index:0 or lower; the modal overlay must be z-index:1000 or higher.
-  - Clicking an option must: (1) add a visible "selected" style to that button (border or background change), (2) store the choice in a variable (e.g. let prediction = optionText), (3) enable the "Commit & Start" button. "Commit & Start" is disabled/greyed until one option is selected.
-  - Test: if the model cannot click a predict option, the modal has failed. Fix by ensuring no element with pointer-events:none or a higher z-index canvas overlaps the buttons.
+DO NOT show any modal, gate, prediction screen, or "Commit & Start" before the sim. The lab is fully interactive the moment it loads. No blocking UI of any kind before the learner can touch it.
 
 MANIPULATE:
-• Reveal the full interactive visual. Every control produces immediate, visible, meaningful change.
-• Show ONE conceptual prompt only: "Test it — were you right?" No step-by-step instructions.
+• The full interactive visual is live immediately — no intro screen, no prediction step.
+• Every control produces immediate, visible, meaningful change.
 
 REVEAL (triggered by hitting the aha moment or success condition):
-• Flash a card that references their exact prediction choice — "You predicted X. Here's what actually happened and why."
+• Flash a card explaining what happened and why — the real concept stated plainly.
 • State the REAL-WORLD PAYOFF as one concrete sentence: "[What you just saw] is why [real-world consequence]."
 • This card appears as a visible event in the sim (slides in, overlays briefly), not as a paragraph below the canvas.
 • After 4 seconds the card fades and the learner can keep exploring.
@@ -1524,15 +1510,15 @@ PLATFORM CONSTRAINTS (the lab runs inside a sandboxed iframe — these are non-n
   window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success
   window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on failure
   On success also show the real-world payoff card.
-• DO NOT render any multiple-choice quiz or "verify your understanding" section — the platform shows its own quiz after the lab. The Predict step (2–4 options before interaction) is the only question allowed; it is a prediction commitment, not a quiz.
+• DO NOT render any multiple-choice quiz, prediction modal, "Commit & Start" gate, or "verify your understanding" section — the platform shows its own quiz after the lab. The lab opens fully interactive with zero blocking UI.
 
 Before returning, verify ALL of these — fix any that fail before responding:
 1. Does Zone B contain actual drawn SHAPES that represent the concept — NOT just text on a grid?
 2. Is there a legend or key visible BEFORE the sim runs, labeling every entity/color/symbol?
 3. Is there a live ONE-LINE mechanic narrator updating as the sim runs?
-4. Is there a PREDICT step with 2–4 options + confidence + "Commit & Start" before the sim is interactive? Are the option buttons actually clickable — modal z-index ≥ 1000, Three.js canvas z-index ≤ 0, no pointer-events:none on the modal or its children?
+4. Does the lab open FULLY INTERACTIVE with zero blocking UI — no prediction modal, no "Commit & Start" gate, no intro screen? The learner must be able to grab/drag/steer within 3 seconds of load.
 5. QUANTITATIVE topics: is the formula panel present, each control mapped to a symbol, terms highlighted on change, result live? NON-QUANTITATIVE topics: is a plain-words PRINCIPLE panel present instead (NO fake equation/units), with the relevant clause highlighted as the learner acts?
-6. Does the REVEAL card reference the learner's exact prediction AND state the real_world_payoff as one concrete sentence?
+6. Does the REVEAL card (triggered on win) state what happened and why, plus the real_world_payoff as one concrete sentence?
 7. Is Zone B in motion on load, with the central visual LARGE (not a small dot in empty space)?
 8. Does canvas.width/height match the element's actual rendered pixel size?
 9. Is there a persistent trail/trace + hidden vectors/force arrows drawn?
