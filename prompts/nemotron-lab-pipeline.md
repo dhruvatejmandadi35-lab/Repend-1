@@ -204,13 +204,17 @@ then one retry with the failure pasted back:
 
 ## Wiring it into `server.js` (later — June 18/19)
 
-The codegen call currently goes to OpenAI. To swap in Nemotron, add an
-OpenRouter client and route only the **codegen** request to
-`nvidia/nemotron-3-ultra-550b-a55b:free`, keeping the plan/brief stages on
-GPT/Gemini. Keep a feature flag so we can A/B the two codegen models on the same
-spec and compare output against the `proof-lab.html` bar before committing.
+Implemented: codegen routes through NVIDIA Build's free endpoint
+(`https://integrate.api.nvidia.com/v1`, model `nvidia/nemotron-3-ultra-550b-a55b`)
+via the OpenAI SDK. Controlled by `CODEGEN_MODEL` (`nemotron` default, `gemini` to
+revert) and gated on `NVIDIA_API_KEY`. Plan/brief/spec stages stay on GPT-4o.
+Falls back to Gemini automatically when Nemotron fails, when a mockup image is
+present (Nemotron is text-only), or when the key is missing.
 
-> Note: OpenRouter's free tier is rate-limited. For batch course generation,
-> expect to queue/throttle requests or hold a paid OpenRouter balance as
-> fallback — "free" holds for low volume, not for generating a whole course at
-> once.
+> Note 1: NVIDIA Build's free endpoint is rate-limited and caps output at
+> ~16384 tokens. For batch course generation expect to throttle requests; a
+> single very large lab could brush the output cap.
+>
+> Note 2: this is the direct-from-NVIDIA path. The OpenRouter route
+> (`nvidia/nemotron-3-ultra-550b-a55b:free`) is an alternative — same model,
+> different base URL and key.

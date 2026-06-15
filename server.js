@@ -18,20 +18,16 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
-// OpenRouter client — uses the OpenAI SDK against a different base URL.
-// Set OPENROUTER_API_KEY in env to enable; codegen falls back to Gemini when missing.
-const openrouter = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY || "missing-openrouter-key",
-  baseURL: "https://openrouter.ai/api/v1",
-  defaultHeaders: {
-    "HTTP-Referer": "https://repend.app",
-    "X-Title": "Repend Lab Generator",
-  },
+// NVIDIA Build client — uses the OpenAI SDK against NVIDIA's hosted endpoint.
+// Set NVIDIA_API_KEY in env to enable; codegen falls back to Gemini when missing.
+const nvidia = new OpenAI({
+  apiKey: process.env.NVIDIA_API_KEY || "missing-nvidia-key",
+  baseURL: "https://integrate.api.nvidia.com/v1",
 });
 
 // Codegen model selector.
-// "nemotron"  → nvidia/nemotron-3-ultra-550b-a55b:free via OpenRouter (free tier)
-// "gemini"    → gemini-2.5-pro via Google SDK (current default)
+// "nemotron"  → nvidia/nemotron-3-ultra-550b-a55b via NVIDIA Build (free endpoint)
+// "gemini"    → gemini-2.5-pro via Google SDK
 // Set CODEGEN_MODEL=gemini in env to revert to Gemini.
 const CODEGEN_MODEL = process.env.CODEGEN_MODEL || "nemotron";
 
@@ -1574,22 +1570,22 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   // --- END GEMINI FALLBACK ---
 
   // ── CODEGEN DISPATCH ──────────────────────────────────────────────────────
-  // CODEGEN_MODEL=nemotron → nvidia/nemotron-3-ultra-550b-a55b:free on OpenRouter
+  // CODEGEN_MODEL=nemotron → nvidia/nemotron-3-ultra-550b-a55b on NVIDIA Build
   // CODEGEN_MODEL=gemini   → gemini-2.5-pro on Google SDK (fallback when Nemotron fails)
   // Nemotron does not support inline image data, so when a mockup imageDataUrl is
   // present we fall back to Gemini automatically (it can see the image).
   const useNemotron = CODEGEN_MODEL === "nemotron"
-    && !!process.env.OPENROUTER_API_KEY
+    && !!process.env.NVIDIA_API_KEY
     && !imageDataUrl;   // Nemotron is text-only
 
   if (useNemotron) {
-    console.log("[codegen] routing to Nemotron 3 Ultra via OpenRouter");
+    console.log("[codegen] routing to Nemotron 3 Ultra via NVIDIA Build");
     let lastErr;
     for (let attempt = 1; attempt <= 4; attempt++) {
       try {
-        const res = await openrouter.chat.completions.create({
-          model: "nvidia/nemotron-3-ultra-550b-a55b:free",
-          max_tokens: 32000,
+        const res = await nvidia.chat.completions.create({
+          model: "nvidia/nemotron-3-ultra-550b-a55b",
+          max_tokens: 16384,   // NVIDIA Build free endpoint output cap
           temperature: 0.7,
           messages: [{ role: "user", content: briefText }],
         });
