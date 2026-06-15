@@ -23,7 +23,7 @@ const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY || "missing-nvidia-key",
   baseURL: "https://integrate.api.nvidia.com/v1",
-  timeout: 60000,   // 60s — if the free endpoint hasn't responded, give up and fall back to Gemini
+  timeout: 180000,  // 3min — generous because we stream; a hang still aborts and falls back to Gemini
   maxRetries: 0,    // we handle retries ourselves; don't let the SDK silently double the wait
 });
 
@@ -918,7 +918,7 @@ Be specific to "${topic}". Do not give generic answers. Do not repeat the archet
   return openaiText(prompt, 800, "gpt-4o-mini");
 }
 
-async function codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category = "General") {
+async function codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category = "General", onProgress = null) {
   const cat = design.spec.course_category || category;
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -1585,13 +1585,28 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
     let lastErr;
     for (let attempt = 1; attempt <= 4; attempt++) {
       try {
-        const res = await nvidia.chat.completions.create({
+        // Stream the response so tokens arrive continuously — the connection
+        // never idles (no proxy/browser drop) and we can report live progress.
+        const stream = await nvidia.chat.completions.create({
           model: "nvidia/nemotron-3-ultra-550b-a55b",
           max_tokens: 16384,   // NVIDIA Build free endpoint output cap
           temperature: 0.7,
+          stream: true,
           messages: [{ role: "user", content: briefText }],
         });
-        let html = (res.choices[0].message.content || "").trim();
+        let raw = "";
+        let lastReport = 0;
+        for await (const chunk of stream) {
+          const delta = chunk.choices?.[0]?.delta?.content || "";
+          if (!delta) continue;
+          raw += delta;
+          // Report progress roughly every 2000 chars so the client sees life.
+          if (onProgress && raw.length - lastReport >= 2000) {
+            lastReport = raw.length;
+            try { onProgress(raw.length); } catch (_) {}
+          }
+        }
+        let html = raw.trim();
         html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
         if (!html.startsWith("<!doctype") && !html.startsWith("<html")) {
           throw new Error("Nemotron returned non-HTML content");
@@ -2042,7 +2057,8 @@ Rules:
           }
 
           send("code", "Writing your lab…");
-          const html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category);
+          const html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category,
+            (chars) => send("code", `Writing your lab… (${Math.round(chars / 1000)}k chars)`));
 
           const labData = {
             topicKey: key,
