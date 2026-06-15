@@ -1398,6 +1398,12 @@ PREDICT (shown before the sim is interactive):
 • Show a confidence selector (Sure / Unsure / Just guessing).
 • A "Commit & Start" button reveals the simulation. They cannot touch the sim until they commit.
 • Display their prediction choice visibly throughout the Manipulate phase so they remember what they predicted.
+• PREDICT MODAL MUST BE CLICKABLE — this is the #1 predict-step bug: the option buttons must be pressable. Mandatory implementation rules:
+  - The modal overlay div: position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center; — never pointer-events:none on the modal or any ancestor.
+  - Each option button: cursor:pointer; pointer-events:auto; — never inherit pointer-events from a parent that is none.
+  - No invisible div, canvas overlay, or Three.js renderer domElement may sit on top of the modal (z-index higher than 1000). The Three.js canvas must be z-index:0 or lower; the modal overlay must be z-index:1000 or higher.
+  - Clicking an option must: (1) add a visible "selected" style to that button (border or background change), (2) store the choice in a variable (e.g. let prediction = optionText), (3) enable the "Commit & Start" button. "Commit & Start" is disabled/greyed until one option is selected.
+  - Test: if the model cannot click a predict option, the modal has failed. Fix by ensuring no element with pointer-events:none or a higher z-index canvas overlaps the buttons.
 
 MANIPULATE:
 • Reveal the full interactive visual. Every control produces immediate, visible, meaningful change.
@@ -1516,7 +1522,7 @@ Before returning, verify ALL of these — fix any that fail before responding:
 1. Does Zone B contain actual drawn SHAPES that represent the concept — NOT just text on a grid?
 2. Is there a legend or key visible BEFORE the sim runs, labeling every entity/color/symbol?
 3. Is there a live ONE-LINE mechanic narrator updating as the sim runs?
-4. Is there a PREDICT step with 2–4 options + confidence + "Commit & Start" before the sim is interactive?
+4. Is there a PREDICT step with 2–4 options + confidence + "Commit & Start" before the sim is interactive? Are the option buttons actually clickable — modal z-index ≥ 1000, Three.js canvas z-index ≤ 0, no pointer-events:none on the modal or its children?
 5. Is the formula panel present, with each control mapped to a symbol, terms highlighted on change, and computed result live?
 6. Does the REVEAL card reference the learner's exact prediction AND state the real_world_payoff as one concrete sentence?
 7. Is Zone B in motion on load, with the central visual LARGE (not a small dot in empty space)?
