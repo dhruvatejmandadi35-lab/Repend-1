@@ -18,6 +18,23 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
 const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+// OpenRouter client — uses the OpenAI SDK against a different base URL.
+// Set OPENROUTER_API_KEY in env to enable; codegen falls back to Gemini when missing.
+const openrouter = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY || "missing-openrouter-key",
+  baseURL: "https://openrouter.ai/api/v1",
+  defaultHeaders: {
+    "HTTP-Referer": "https://repend.app",
+    "X-Title": "Repend Lab Generator",
+  },
+});
+
+// Codegen model selector.
+// "nemotron"  → nvidia/nemotron-3-ultra-550b-a55b:free via OpenRouter (free tier)
+// "gemini"    → gemini-2.5-pro via Google SDK (current default)
+// Set CODEGEN_MODEL=gemini in env to revert to Gemini.
+const CODEGEN_MODEL = process.env.CODEGEN_MODEL || "nemotron";
+
 const { createClient } = require("@supabase/supabase-js");
 let supabase = null;
 function getSupabase() {
@@ -1556,10 +1573,51 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   // return html;
   // --- END GEMINI FALLBACK ---
 
-  // Gemini 2.5 Pro via the native @google/generative-ai SDK. Build the parts
-  // array: text brief plus, if present, the mockup image as inline base64.
-  // (The OpenAI-compatible endpoint returns opaque "400 no body" errors, so we
-  // use the native SDK which surfaces the real error message.)
+  // ── CODEGEN DISPATCH ──────────────────────────────────────────────────────
+  // CODEGEN_MODEL=nemotron → nvidia/nemotron-3-ultra-550b-a55b:free on OpenRouter
+  // CODEGEN_MODEL=gemini   → gemini-2.5-pro on Google SDK (fallback when Nemotron fails)
+  // Nemotron does not support inline image data, so when a mockup imageDataUrl is
+  // present we fall back to Gemini automatically (it can see the image).
+  const useNemotron = CODEGEN_MODEL === "nemotron"
+    && !!process.env.OPENROUTER_API_KEY
+    && !imageDataUrl;   // Nemotron is text-only
+
+  if (useNemotron) {
+    console.log("[codegen] routing to Nemotron 3 Ultra via OpenRouter");
+    let lastErr;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        const res = await openrouter.chat.completions.create({
+          model: "nvidia/nemotron-3-ultra-550b-a55b:free",
+          max_tokens: 32000,
+          temperature: 0.7,
+          messages: [{ role: "user", content: briefText }],
+        });
+        let html = (res.choices[0].message.content || "").trim();
+        html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+        if (!html.startsWith("<!doctype") && !html.startsWith("<html")) {
+          throw new Error("Nemotron returned non-HTML content");
+        }
+        return html;
+      } catch (err) {
+        lastErr = err;
+        const status = err && (err.status || err.statusCode);
+        const retryable = status === 429 || status === 503 || status === 500;
+        if (retryable && attempt < 4) {
+          const wait = Math.pow(2, attempt) * 1000;
+          console.warn(`[codegen/nemotron] attempt ${attempt}/4 status ${status} — retrying in ${wait}ms`);
+          await new Promise(r => setTimeout(r, wait));
+        } else if (attempt === 4 || !retryable) {
+          break;
+        }
+      }
+    }
+    // Nemotron failed — fall through to Gemini
+    console.warn("[codegen/nemotron] failed, falling back to Gemini:", lastErr && lastErr.message);
+  }
+
+  // ── GEMINI CODEGEN (primary when CODEGEN_MODEL=gemini, or Nemotron fallback) ─
+  console.log("[codegen] routing to Gemini:", LAB_MODEL);
   const model = gemini.getGenerativeModel({ model: LAB_MODEL });
   const parts = [{ text: briefText }];
   if (imageDataUrl) {
@@ -1580,7 +1638,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
       const status = err && (err.status || err.statusCode);
       const retryable = status === 503 || status === 429 || status === 500;
       if (retryable && attempt < MAX_ATTEMPTS) {
-        const wait = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+        const wait = Math.pow(2, attempt) * 1000;
         console.warn(`GEMINI ${status} on attempt ${attempt}/${MAX_ATTEMPTS} — retrying in ${wait}ms`);
         await new Promise(r => setTimeout(r, wait));
         continue;
