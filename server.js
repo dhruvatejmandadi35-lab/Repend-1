@@ -1374,11 +1374,13 @@ SUCCESS CONDITION: ${design.spec.success_condition}
 REAL-WORLD PAYOFF: "${design.spec.real_world_payoff || ""}"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PHYSICAL TRUTH — nothing on screen may be false or meaningless:
+TRUTH — nothing on screen may be false or meaningless:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Every readout shows a NAMED quantity with a REAL unit: "Acceleration: 3.2 m/s²", "Balance: $4,820". NEVER a bare number ("Resulting Motion: 7.12") and NEVER pixels ("Separation: 154 px") — define a world scale (e.g. 50 px = 1 m) and always display converted physical values.
+${formulas ? `• Every readout shows a NAMED quantity with a REAL unit: "Acceleration: 3.2 m/s²", "Balance: $4,820". NEVER a bare number ("Resulting Motion: 7.12") and NEVER pixels ("Separation: 154 px") — define a world scale (e.g. 50 px = 1 m) and always display converted physical values.
 • Every control must visibly change an output through one of the formulas. If moving a control changes nothing the learner can see, DELETE the control — a dead or fake control teaches something false.
-• Only implement variables that appear in the formulas. If the brief or spec includes a variable that drives no formula, drop it.
+• Only implement variables that appear in the formulas. If the brief or spec includes a variable that drives no formula, drop it.` : `• This is a NON-QUANTITATIVE topic — do NOT fabricate units (m/s², kg), a numeric "score", or a fake formula. Readouts are CATEGORICAL/qualitative and meaningful: "Tense: past", "Register: formal", "Argument: valid ✓", "Key: A minor".
+• Every control must visibly change a real, observable OUTCOME (the word changes, the argument reassembles, the chord resolves, the translation matches). If moving a control changes nothing the learner can see, DELETE it — a dead control teaches something false.
+• Every label must be true to the domain. Never show a meaningless number; if a value isn't a real quantity in this subject, express it as a category, state, or correctness mark instead.`}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXPLAIN EVERYTHING ON SCREEN (non-negotiable):
@@ -1426,7 +1428,7 @@ At success/win: compute a verdict tier (S/A/B/C/D) from the final metric values 
 This is the most important engagement mechanism: the bar animating fast makes the learner wait to see where it lands. Do not skip it.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FORMULA PANEL — teach the rule, not just the animation:
+${formulas ? `FORMULA PANEL — teach the rule, not just the animation (QUANTITATIVE topic):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 The formulas below are the governing equations. The learner must see them, not just watch the result.
 Render a formula panel (pinned inside Zone A or at the top of Zone B):
@@ -1436,7 +1438,13 @@ Render a formula panel (pinned inside Zone A or at the top of Zone B):
 • The learner sees: the animation, the equation, and the result number — all changing together as linked representations of the same thing.
 • Render equations with the renderFormula helper (KaTeX + plain-text fallback) so they look like a textbook, never like code.
 FORMULAS (implement exactly, highlight live):
-${formulas || "  (derive from the concept — no approximations)"}
+${formulas}` : `PRINCIPLE PANEL — teach the rule, not just the animation (NON-QUANTITATIVE / humanities topic):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This topic has NO formula — do NOT invent a fake equation, fake units, or fake numeric "score". Forcing math onto a language, history, art, ethics, music, or literature topic is a FAILURE. Instead:
+• Render a PRINCIPLE panel stating the governing rule in plain words (e.g. "Spanish adjectives agree with the noun's gender and number", "A counterargument concedes a point, then refutes it", "Minor keys are built on the natural minor scale: W-H-W-W-H-W-W").
+• Each control/choice the learner makes maps to a part of that rule — HIGHLIGHT the relevant clause of the principle (color flash/bold) the moment their action engages it, so they see WHICH part of the rule they just exercised.
+• Readouts are CATEGORICAL or qualitative, not numeric units: "Tense: past", "Tone: formal", "Match: correct ✓", "Mood: minor". Never "3.2 m/s²" for a humanities topic, and never a bare number with no meaning.
+• The "result" the learner watches change is the conjugated word, the assembled argument, the resolved chord, the matched translation — a concrete linguistic/historical/artistic OUTCOME, not a plotted curve.`}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 REAL SCENARIO MATCHING — reality first, equation earned:
@@ -1523,7 +1531,7 @@ Before returning, verify ALL of these — fix any that fail before responding:
 2. Is there a legend or key visible BEFORE the sim runs, labeling every entity/color/symbol?
 3. Is there a live ONE-LINE mechanic narrator updating as the sim runs?
 4. Is there a PREDICT step with 2–4 options + confidence + "Commit & Start" before the sim is interactive? Are the option buttons actually clickable — modal z-index ≥ 1000, Three.js canvas z-index ≤ 0, no pointer-events:none on the modal or its children?
-5. Is the formula panel present, with each control mapped to a symbol, terms highlighted on change, and computed result live?
+5. QUANTITATIVE topics: is the formula panel present, each control mapped to a symbol, terms highlighted on change, result live? NON-QUANTITATIVE topics: is a plain-words PRINCIPLE panel present instead (NO fake equation/units), with the relevant clause highlighted as the learner acts?
 6. Does the REVEAL card reference the learner's exact prediction AND state the real_world_payoff as one concrete sentence?
 7. Is Zone B in motion on load, with the central visual LARGE (not a small dot in empty space)?
 8. Does canvas.width/height match the element's actual rendered pixel size?
@@ -1534,10 +1542,10 @@ Before returning, verify ALL of these — fix any that fail before responding:
 13. Did you load a CDN library only if the concept genuinely needs it (p5/GSAP/Matter/D3/KaTeX — don't load what you don't use)?
 14. Does the canvas use gradients and glow — polished simulation, not a flat grey box?
 15. If the brief gave a real scenario: is the real target drawn from the start (labeled, with units), is there a live match % readout, and does crossing the match threshold reveal the equation with the learner's values plugged in?
-16. Are formulas rendered via renderFormula (KaTeX with plain-text fallback) — never raw ASCII math?
+16. QUANTITATIVE topics: are formulas rendered via renderFormula (KaTeX with plain-text fallback) — never raw ASCII math? NON-QUANTITATIVE topics: is there NO invented formula/units (a plain-words principle panel instead)?
 17. Does EVERY object on the canvas have a one-word label drawn on/beside it, with labels/readouts placed adjacent to what they describe (not in a far panel)?
-18. Does EVERY control map to a real formula term and visibly change a real output? (No inert, topical-sounding fake variables.)
-19. Are ALL readouts real units with a declared world scale — zero pixel or bare-number readouts?
+18. Does EVERY control visibly change a real output — a formula term (quantitative) or a real domain outcome like a conjugated word / reassembled argument / resolved chord (non-quantitative)? (No inert, topical-sounding fake variables.)
+19. Are readouts truthful — real units with a declared world scale for quantitative topics, OR categorical/qualitative labels ("Tense: past", "valid ✓") for non-quantitative topics? Zero pixel or meaningless bare-number readouts either way; zero fabricated units on humanities topics.
 20. If two objects are drawn as solid, do they collide instead of overlapping/intertwining — including while being dragged?
 21. Do draggable objects show grab/grabbing cursors + a hover affordance, with hit radius ≥24px and touch-action:none?
 21b. If the learner must choose/drag/match the CORRECT object among several candidates, does EACH candidate display its decision-relevant identity (anticodon, value, name, payload) as a label anchored to it, AND is the target it matches against labeled too — so the choice is never a blind guess?
