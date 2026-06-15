@@ -23,6 +23,8 @@ const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY || "missing-nvidia-key",
   baseURL: "https://integrate.api.nvidia.com/v1",
+  timeout: 60000,   // 60s — if the free endpoint hasn't responded, give up and fall back to Gemini
+  maxRetries: 0,    // we handle retries ourselves; don't let the SDK silently double the wait
 });
 
 // Codegen model selector.
