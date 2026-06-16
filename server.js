@@ -1188,20 +1188,49 @@ The 3D world must DEPICT "${design.topic}" literally. The "NASA / cinematic" ref
 • If you catch yourself drawing an unlabeled sphere called "Body" or a generic orbit, STOP — that means you defaulted to space instead of depicting the real topic. Build the real subject instead.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-MANDATORY 3D IMMERSIVE — EVERY LAB USES THREE.JS (cinematic WebGL production quality: geometry-rich worlds, atmospheric fog, smooth camera motion, glass HUD overlays, particle dust, emissive accents — applied to the LITERAL TOPIC, never a space scene unless the topic is space):
+CHOOSE THE RIGHT MEDIUM — 3D IS NOT ALWAYS CORRECT:
 
-ALL labs MUST be built with Three.js r128+ as the primary rendering engine. No canvas-only 2D labs.
+Pick 2D (D3/SVG/canvas) or 3D (Three.js) based on what the topic actually IS — never default to 3D out of habit:
+- Use 2D (D3 chart/SVG as the PRIMARY visual) when the concept is fundamentally a chart, curve, distribution, or dataset the learner reads on axes: compound interest, supply & demand, sampling distributions, population growth curves, budget tradeoffs, any "value over time/inputs" topic. A 3D mesh sitting on top of axes makes data unreadable — never let geometry occlude a chart.
+- Use 3D (Three.js as the PRIMARY visual) when the concept is spatial, physical, or about objects in space: projectile motion, orbital mechanics, molecular structure, anatomy, pendulums, vectors, anything the learner manipulates as a literal 3D object.
+- Either is fine for emergent/agent-based or sequential-process topics — pick whichever depicts the literal topic most legibly; Three.js may render flat/orthographic if that reads better than perspective.
+- If you chose 2D, Three.js becomes OPTIONAL decorative chrome only (subtle particles, ambient glow) — it must NEVER block, underlap z-order, or compete with the chart/data layer. When in doubt, leave Three.js out entirely; a clean D3/SVG lab beats a cluttered hybrid.
+
+WHEN 3D IS THE PRIMARY VISUAL (cinematic WebGL production quality: geometry-rich worlds, atmospheric fog, smooth camera motion, glass HUD overlays, particle dust, emissive accents — applied to the LITERAL TOPIC, never a space scene unless the topic is space):
+
 - Load: <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 - Also load GSAP for cinematic camera/object transitions; OrbitControls (from three/examples) for optional orbit
 - Scene fills the viewport — dark UI palette: bg #050508, fog #1a0800, accent #E85D04, copper #D4A574, ice HUD #4CC9F0 (these are the app's THEME COLORS, not a space setting)
 - Environment: fog (FogExp2), particle dust (Points), animated rim light, and a backdrop that FITS THE TOPIC (a classroom, a board, a map, a stage — a starfield ONLY for space topics)
 - Camera: cinematic — slow idle drift, smooth lerp on changes, dramatic zoom on aha moments
 - HUD: floating glass panels (backdrop-filter blur) for controls/readouts — NASA mission-control aesthetic
-- TOPIC FIDELITY: 3D world MUST match the topic literally. Basketball = court, hoop, ball arc (TubeGeometry trail), release angle°, power, distance m. Compound interest = 3D coin stacks. Waves = 3D ripple surface. NEVER generic empty grid.
+- TOPIC FIDELITY: 3D world MUST match the topic literally. Basketball = court, hoop, ball arc (TubeGeometry trail), release angle°, power, distance m. Waves = 3D ripple surface. NEVER generic empty grid.
 - VISUAL REFERENCE — cinematic production quality (Pablo Coronel craft level): MeshStandardMaterial with emissive accents, FogExp2 atmosphere, dust particles, warm directional + cool rim PointLight, ACESFilmicToneMapping, toneMappingExposure 1.2. Labs must feel like a real, polished place built FROM THE TOPIC — NOT flat UI mockups, NOT placeholder cubes, and NOT a generic space scene.
 - REAL OBJECTS: build recognizable 3D meshes for EVERY topic element. Use procedural textures via CanvasTexture where needed (wood court grain, pebbled basketball, grass field). Never use untextured gray boxes as stand-ins.
 - Sports/projectile: show optimal arc as ghost reference line; learner adjusts angle/power/distance; ball flies in real-time physics
 - Interaction: raycasting, 3D aim handles, HUD sliders updating meshes/materials live
+
+WHEN 2D IS THE PRIMARY VISUAL (D3/SVG production quality — this is NOT a fallback, it is the correct choice for chart-shaped topics):
+
+- Full-viewport SVG with clearly labeled axes (units in the axis label, not just numbers).
+- Two visually distinct curves/series when comparing (target vs learner's model): bright solid for the learner's live result, faded/dotted for a reference/target.
+- Smooth D3 transitions (150-300ms ease) on every redraw — never a hard jump-cut when a slider moves.
+- Same dark theme/accent colors as the 3D path (bg #050508, accent #E85D04, ice HUD #4CC9F0) so the lab still feels like one product.
+- Optional: a thin decorative Three.js/CSS particle layer BEHIND the SVG (lower z-index, low opacity) for ambience — never in front of, or touching, the data.
+
+FIXED LAYOUT SKELETON — every lab (2D or 3D) uses the same zones so nothing is ad-hoc or confusing:
+- Title bar (top): topic name + one-line goal.
+- Zone B — main stage (center, largest area): the primary visual (3D scene OR D3 chart). This is the only place complex visuals live.
+- Zone A — controls/HUD (docked left or right, fixed width): sliders/buttons/toggles, never floating loose over Zone B.
+- Readout panel (pinned within Zone A or a thin strip under the title): live numeric/categorical results, formula/principle panel.
+- HARD RULE — NO OVERLAP: Zone A must never visually cover Zone B. No control, panel, or decorative mesh may sit on top of the chart/3D stage such that any axis, curve, mesh, or label becomes hard to read. If a panel must float over the stage (e.g. a modal win-card), it appears only momentarily and dismisses, never persists during normal interaction.
+
+ANIMATION POLISH — motion must read as professional, not janky:
+- Durations: small UI transitions 150-200ms, larger/full-stage transitions 300-400ms. Exits are shorter than entrances.
+- Easing: entrances use ease-out (fast start, gentle settle); exits use ease-in; everything else uses ease-in-out. Never linear easing for discrete UI motion (linear is fine only for continuous idle motion like a slow ambient rotation).
+- Stagger related elements entering together by ~20-50ms each — never move a whole group in perfect unison, it looks cheap.
+- CSS animations: animate ONLY transform and opacity (never top/left/width/height — those cause layout reflow/jank).
+- Three.js camera moves: use GSAP tweens (gsap.to(camera.position, {...duration, ease:"power2.out"})) or a damped lerp scaled by dt — never an instant snap cut and never a raw per-frame lerp that ignores dt (that runs at different speeds on different frame rates).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 VISIBILITY CONTRACT — a black scene is a broken lab
@@ -1440,6 +1469,20 @@ Render a formula panel (pinned inside Zone A or at the top of Zone B):
 • When the learner moves a control, HIGHLIGHT the corresponding term in the equation (color flash or bold) AND update the computed result live beside the equation.
 • The learner sees: the animation, the equation, and the result number — all changing together as linked representations of the same thing.
 • Render equations with the renderFormula helper (KaTeX + plain-text fallback) so they look like a textbook, never like code.
+
+HIGHLIGHTABLE TERMS — copy this exact pattern (this is the #1 source of broken labs showing raw "<span..." text instead of a rendered formula):
+  KaTeX cannot highlight a piece of an equation by itself, so wrap EACH highlightable variable in its OWN renderFormula call placed inline with plain text/HTML around it — never hand-build a span tag as a string and dump it into the same element KaTeX renders into.
+  <div id="formula-row">
+    <span id="term-v"></span><span> · sin(2</span><span id="term-theta"></span><span>) / </span><span id="term-g"></span>
+  </div>
+  <script>
+    renderFormula(document.getElementById('term-v'), 'v^2', 'v²');
+    renderFormula(document.getElementById('term-theta'), '\\\\theta', 'θ');
+    renderFormula(document.getElementById('term-g'), 'g', 'g');
+    function highlightTerm(id){ const el=document.getElementById(id); el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'), 400); }
+    // on slider input: highlightTerm('term-v');
+  </script>
+  CRITICAL: set HTML content with .innerHTML, never .textContent, when the string contains tags — .textContent prints the literal tag characters on screen instead of rendering them. If you are not inserting any tags (just a plain number/string), use .textContent. Never hand-assemble a template string containing "<span...>" and assign it with .textContent — that is exactly the bug that produces visible raw tag text.
 FORMULAS (implement exactly, highlight live):
 ${formulas}` : `PRINCIPLE PANEL — teach the rule, not just the animation (NON-QUANTITATIVE / humanities topic):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1475,8 +1518,8 @@ Implement the mission from section G of the brief exactly. Requirements:
 PLATFORM CONSTRAINTS (the lab runs inside a sandboxed iframe — these are non-negotiable):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • ONE complete self-contained HTML file. Inline CSS and JS.
-• CDN libraries — THREE.JS IS MANDATORY FOR EVERY LAB (load from jsDelivr; include inline fallback check):
-  - Three.js r128 — ALWAYS REQUIRED, primary render engine:
+• CDN libraries (load from jsDelivr; include inline fallback check):
+  - Three.js r128 — load ONLY if you chose 3D as the primary visual, or want a thin decorative chrome layer behind a 2D chart. Chart-shaped topics (compound interest, supply/demand, sampling distributions, etc.) should skip Three.js and use D3 as the primary engine instead — see "CHOOSE THE RIGHT MEDIUM" above:
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
     <script>if(typeof THREE==='undefined'){document.body.innerHTML='<p style="color:#E85D04;padding:2rem">Three.js failed to load</p>';}</script>
   - GSAP — ALWAYS REQUIRED for cinematic transitions:
