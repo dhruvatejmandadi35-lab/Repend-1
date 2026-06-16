@@ -1082,9 +1082,11 @@ SECTION 2 — Lighting (UNCONDITIONAL — add these three lights with no if-chec
   const rim = new THREE.PointLight(0x4CC9F0, 0.9, 60); rim.position.set(-6,4,-4); scene.add(rim);
   Plus ambient dust particles (THREE.Points, ~240 pts, slow drift) for depth.
 
-SECTION 3 — Topic objects (FILL THIS IN for the topic — the meshes, geometries, labels)
+SECTION 3 — Palette + topic objects (FILL THIS IN for the topic — the meshes, geometries, labels)
+  • Use the spec's palette colors for all materials: purple #9B59B6, white #f2f2f2, orange #E85D04, ice #4CC9F0, green #22C55E
+  • Build the main topic-specific environment first (the stage/grid/court/lab-bench/vault) before placing interactive objects
   • Every mesh has a meaningful name label via CSS2DObject (never an unlabeled shape)
-  • Colors from theme: purple #9B59B6, white #f2f2f2, orange #E85D04, ice #4CC9F0, green #22C55E
+  • IDLE ANIMATION: key objects must bob, pulse, or rotate gently when the learner isn't interacting — the scene must feel alive on load, never frozen
 
 SECTION 4 — HUD (position:fixed, glass-panel style, top-left)
   #hud { position:fixed; top:18px; left:18px; padding:16px 20px; width:300px;
@@ -1254,20 +1256,6 @@ ${archetypeArchitecture[archetype] || archetypeArchitecture["physics-sim"]}
 ` : ""}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-━━━ THE HARNESS (MANDATORY STRUCTURE) ━━━
-You MUST follow this 11-section structure in your code. Do not invent your own architecture.
-1. RENDERER + SCENE + CAMERA: Positioned so objects are in view at (0,0.2,13) looking at (0,0.3,0).
-2. LIGHTING: Visibility guaranteed. Ambient(0.75) + Directional(1.25) + Ice-blue Rim + Warm Point.
-3. PALETTE: Use spec.palette colors for all materials.
-4. GRID/STAGE: Build the main topic-specific environment (court, lab bench, vault).
-5. INTERACTIVE OBJECTS: The primary 3D meshes the learner moves or steers.
-6. DRAG/STEER LOGIC: Implementation of raycaster or keyboard-held Set.
-7. WIN/FAIL LOGIC: checkWin() called every frame. On win: reveal real_world_payoff.
-8. TWEEN SYSTEM: Tiny helper for smooth mesh.position.lerp.
-9. PARTICLE BURSTS: For feedback (correct/wrong/win).
-10. THE ANIMATION LOOP: ONE loop, one clock.getDelta(), updateTweens(dt), update(dt), renderer.render().
-11. RESIZE + RESET: Fullscreen responsive + restore initial state.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 LABEL EVERYTHING, ONE WORD (PhET: one-word labels are read correctly without over-guiding):
 • Every distinct object on the canvas carries a one-word label drawn ON or beside it — "Box A", "Earth", "Buyer". The learner must never see a shape and wonder what it is. In your Newton's-third-law example the two circles were unlabeled — that is the failure to fix: label them ("Hand", "Wall" / "Cart A", "Cart B") and draw the force arrow pointing FROM each onto the other.
