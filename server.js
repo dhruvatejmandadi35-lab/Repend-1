@@ -28,10 +28,16 @@ const nvidia = new OpenAI({
 });
 
 // Codegen model selector.
-// "nemotron"  → nvidia/nemotron-3-ultra-550b-a55b via NVIDIA Build (free endpoint)
-// "gemini"    → gemini-2.5-pro via Google SDK
+// "nvidia"  → an NVIDIA Build model (id from CODEGEN_MODEL_ID) via the OpenAI-compatible endpoint
+// "gemini"  → gemini-2.5-pro via Google SDK
+// "nemotron" is accepted as a legacy alias for "nvidia".
 // Set CODEGEN_MODEL=gemini in env to revert to Gemini.
-const CODEGEN_MODEL = process.env.CODEGEN_MODEL || "nemotron";
+const CODEGEN_MODEL = process.env.CODEGEN_MODEL || "nvidia";
+// The exact NVIDIA Build model id to call. Swap this (env var, no code change)
+// to switch between e.g. Nemotron and Kimi:
+//   nvidia/nemotron-3-ultra-550b-a55b   (default)
+//   moonshotai/kimi-k2-instruct         (set CODEGEN_MODEL_ID to the exact id shown on the NVIDIA Build model card)
+const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "nvidia/nemotron-3-ultra-550b-a55b";
 
 const { createClient } = require("@supabase/supabase-js");
 let supabase = null;
@@ -1751,23 +1757,23 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   // --- END GEMINI FALLBACK ---
 
   // ── CODEGEN DISPATCH ──────────────────────────────────────────────────────
-  // CODEGEN_MODEL=nemotron → nvidia/nemotron-3-ultra-550b-a55b on NVIDIA Build
-  // CODEGEN_MODEL=gemini   → gemini-2.5-pro on Google SDK (fallback when Nemotron fails)
-  // Nemotron does not support inline image data, so when a mockup imageDataUrl is
+  // CODEGEN_MODEL=nvidia → CODEGEN_MODEL_ID on NVIDIA Build (Nemotron, Kimi, …)
+  // CODEGEN_MODEL=gemini → gemini-2.5-pro on Google SDK (also the fallback)
+  // NVIDIA Build models here are text-only, so when a mockup imageDataUrl is
   // present we fall back to Gemini automatically (it can see the image).
-  const useNemotron = CODEGEN_MODEL === "nemotron"
+  const useNvidia = (CODEGEN_MODEL === "nvidia" || CODEGEN_MODEL === "nemotron")
     && !!process.env.NVIDIA_API_KEY
-    && !imageDataUrl;   // Nemotron is text-only
+    && !imageDataUrl;   // NVIDIA Build text-only
 
-  if (useNemotron) {
-    console.log("[codegen] routing to Nemotron 3 Ultra via NVIDIA Build");
+  if (useNvidia) {
+    console.log(`[codegen] routing to NVIDIA Build model: ${CODEGEN_MODEL_ID}`);
     let lastErr;
     for (let attempt = 1; attempt <= 4; attempt++) {
       try {
         // Stream the response so tokens arrive continuously — the connection
         // never idles (no proxy/browser drop) and we can report live progress.
         const stream = await nvidia.chat.completions.create({
-          model: "nvidia/nemotron-3-ultra-550b-a55b",
+          model: CODEGEN_MODEL_ID,
           max_tokens: 16384,   // NVIDIA Build free endpoint output cap
           temperature: 0.7,
           stream: true,
@@ -1788,7 +1794,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
         let html = raw.trim();
         html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
         if (!html.startsWith("<!doctype") && !html.startsWith("<html")) {
-          throw new Error("Nemotron returned non-HTML content");
+          throw new Error(`${CODEGEN_MODEL_ID} returned non-HTML content`);
         }
         return html;
       } catch (err) {
@@ -1797,18 +1803,18 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
         const retryable = status === 429 || status === 503 || status === 500;
         if (retryable && attempt < 4) {
           const wait = Math.pow(2, attempt) * 1000;
-          console.warn(`[codegen/nemotron] attempt ${attempt}/4 status ${status} — retrying in ${wait}ms`);
+          console.warn(`[codegen/nvidia] attempt ${attempt}/4 status ${status} — retrying in ${wait}ms`);
           await new Promise(r => setTimeout(r, wait));
         } else if (attempt === 4 || !retryable) {
           break;
         }
       }
     }
-    // Nemotron failed — fall through to Gemini
-    console.warn("[codegen/nemotron] failed, falling back to Gemini:", lastErr && lastErr.message);
+    // NVIDIA Build model failed — fall through to Gemini
+    console.warn(`[codegen/nvidia] ${CODEGEN_MODEL_ID} failed, falling back to Gemini:`, lastErr && lastErr.message);
   }
 
-  // ── GEMINI CODEGEN (primary when CODEGEN_MODEL=gemini, or Nemotron fallback) ─
+  // ── GEMINI CODEGEN (primary when CODEGEN_MODEL=gemini, or NVIDIA fallback) ─
   console.log("[codegen] routing to Gemini:", LAB_MODEL);
   const model = gemini.getGenerativeModel({ model: LAB_MODEL });
   const parts = [{ text: briefText }];
