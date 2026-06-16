@@ -1,3 +1,7 @@
 node_modules/
 .env
 .claude/worktrees/
+
+# stray runtime logs
+*.log
+server_output.log
