@@ -950,10 +950,25 @@ const state = { value: defaultVal, threshold: X, crossed: false };
 // At threshold: trigger golden particle burst + emissive pulse on key mesh + HUD message`,
 
     "accumulation": `
-━━━ ARCHITECTURE: ACCUMULATION (Three.js) ━━━
-Time advances via play/pause. Show TWO 3D curves or growing stacks: linear expectation AND actual compound curve. Use TubeGeometry ribbons or stacked BoxGeometry coins.
-const state = { t: 0, playing: false, data: [] };
-// 3D graph terrain or coin stacks grow with time; gap between curves shown as filled transparent mesh`,
+━━━ ARCHITECTURE: ACCUMULATION (D3 + minimal Three.js chrome) ━━━
+This archetype is fundamentally a TIME-SERIES CHART — force 3D on it and the data becomes unreadable (dark meshes block the axes). Use D3 for the chart itself; Three.js chrome (particles, glow) is optional decoration only.
+
+D3 CHART (required):
+• Full-viewport SVG with labeled axes: X = years (0–40), Y = balance ($).
+• TWO live curves drawn as D3 paths, both visible at once:
+  - Faded/dotted: linear expectation (no compounding).
+  - Bright solid: actual compound curve (the learner's values).
+• Ghost target line labeled with the mission goal (e.g. "$500k by 30 yrs").
+• As learner drags sliders, both curves redraw instantly via D3 transition (200ms ease).
+• Area between the two curves filled with a semi-transparent accent color so the compounding gap is visceral.
+• Tooltip on hover showing exact year + balance.
+
+STATE:
+const state = { principal:1000, rate:0.07, monthly:100, years:30, won:false };
+// recompute both curves on every slider input, redraw via d3.select(path).datum(data).attr("d", line)
+
+INTERACTION: HUD sliders for Principal ($), Monthly Contribution ($), Interest Rate (%), Years. Each updates state.* then redraws immediately.
+WIN: when compound curve crosses the target line → golden glow on the crossing point + "MISSION COMPLETE" card.`,
 
     "process-flow": `
 ━━━ ARCHITECTURE: PROCESS FLOW (Three.js) ━━━
