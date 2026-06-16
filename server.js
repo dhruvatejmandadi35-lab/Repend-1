@@ -34,10 +34,11 @@ const nvidia = new OpenAI({
 // Set CODEGEN_MODEL=gemini in env to revert to Gemini.
 const CODEGEN_MODEL = process.env.CODEGEN_MODEL || "nvidia";
 // The exact NVIDIA Build model id to call. Swap this (env var, no code change)
-// to switch between e.g. Nemotron and Kimi:
-//   nvidia/nemotron-3-ultra-550b-a55b   (default)
-//   moonshotai/kimi-k2-instruct         (set CODEGEN_MODEL_ID to the exact id shown on the NVIDIA Build model card)
-const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "nvidia/nemotron-3-ultra-550b-a55b";
+// to switch NVIDIA Build models:
+//   moonshotai/kimi-k2.6              (default — current pick)
+//   nvidia/nemotron-3-ultra-550b-a55b (previous pick)
+// The id must match exactly what the NVIDIA Build model card's code snippet shows.
+const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "moonshotai/kimi-k2.6";
 
 const { createClient } = require("@supabase/supabase-js");
 let supabase = null;
