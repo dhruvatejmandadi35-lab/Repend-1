@@ -1066,6 +1066,103 @@ const reagents = [{ name, volume, color, temp }, ...]; let reactionState = 'idle
 Repend is an exploration engine that teaches any topic through hands-on interaction. Before generating ANYTHING, ask: "What is the most engaging way to make this concept click — through a simulation, a game, a decision tree, a social experiment, or a visual puzzle?" Default to the format that lets the learner FEEL the concept, not just read about it. A good lab produces an "aha" moment the learner couldn't get from a textbook. Passive explanations, static charts, and reading-only interfaces are rejected — every element must respond to the learner's action.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+━━━ GOLD-STANDARD HARNESS — COPY THIS EXACT 11-SECTION STRUCTURE ━━━
+The file proof-lab.html is a HAND-WRITTEN gold standard. Every generated lab must follow its exact 11-section skeleton. DO NOT invent a different structure. Fill in the topic-specific objects/logic inside each section while keeping every section present and in order.
+
+SECTION 1 — Renderer + scene + camera
+  • THREE.WebGLRenderer with antialias, pixelRatio, ACESFilmicToneMapping, toneMappingExposure 1.15
+  • renderer.domElement appended to a position:fixed #app div (NOT body)
+  • CSS2DRenderer ALSO appended — same size, position:fixed, pointerEvents:'none'
+  • Camera positioned so ALL objects are in view on the first frame (never at origin)
+
+SECTION 2 — Lighting (UNCONDITIONAL — add these three lights with no if-checks, no conditions)
+  scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+  const key = new THREE.DirectionalLight(0xffffff, 1.25); key.position.set(5,10,7); scene.add(key);
+  const rim = new THREE.PointLight(0x4CC9F0, 0.9, 60); rim.position.set(-6,4,-4); scene.add(rim);
+  Plus ambient dust particles (THREE.Points, ~240 pts, slow drift) for depth.
+
+SECTION 3 — Topic objects (FILL THIS IN for the topic — the meshes, geometries, labels)
+  • Every mesh has a meaningful name label via CSS2DObject (never an unlabeled shape)
+  • Colors from theme: purple #9B59B6, white #f2f2f2, orange #E85D04, ice #4CC9F0, green #22C55E
+
+SECTION 4 — HUD (position:fixed, glass-panel style, top-left)
+  #hud { position:fixed; top:18px; left:18px; padding:16px 20px; width:300px;
+    background:rgba(10,15,30,.75); backdrop-filter:blur(10px);
+    border:1px solid rgba(232,93,4,.3); border-radius:14px; }
+  Contains: topic title, subtitle/goal, progress meter (bar + count), ratio/result line.
+  Legend fixed bottom-left. Reset button fixed bottom-right. Hint strip fixed bottom-center.
+  CRITICAL: HUD is NOT inside the Three.js canvas. It is a plain HTML div with higher z-index.
+
+SECTION 5 — Drag / interaction
+  • Raycaster for 3D drag: pointerdown → find intersected object → pointerup → snap/reject
+  • For 2D labs: addEventListener('input'/'click') on every control writing to a shared state object
+  • canvas pointer-events must NOT block HUD clicks — set CSS2DRenderer layer to pointer-events:none and confirm HUD divs are above the canvas in z-order.
+
+SECTION 6 — Place / win logic (topic-specific)
+  • Correct drop/match/target → tweenTo snap + offspring bloom + burst(x,y,color) + increment counter
+  • Wrong → flashWrong (red emissive flash 260ms + hint text 1.8s) then tweenTo back to home
+  • When complete: update ratio display, setTimeout 500ms then show #win overlay + 6 staggered bursts + postMessage
+
+SECTION 7 — Win overlay + postMessage (MANDATORY, copy verbatim)
+  <div id="win" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(5,5,8,.6);backdrop-filter:blur(3px);z-index:5">
+    <div class="grade">[grade]</div><div class="msg">[win message]</div><div class="sub2">[payoff sentence]</div>
+  </div>
+  try { window.parent.postMessage({ type:'labCheck', result:{ ok:true, score:1, total:1 } }, '*'); } catch(_){}
+
+SECTION 8 — Tween system (copy verbatim — this is what makes motion smooth, not CSS transitions)
+  const tweens = [];
+  function ease(t){ return t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+  function tweenTo(obj, to, dur, done){ tweens.push({obj,kind:'pos',from:obj.position.clone(),to:to.clone(),t:0,dur,done}); }
+  function tweenScale(obj, to, dur, done){ tweens.push({obj,kind:'scale',from:obj.scale.x,to,t:0,dur,done}); }
+  function updateTweens(dt){ for(let i=tweens.length-1;i>=0;i--){ const tw=tweens[i]; tw.t+=dt/tw.dur;
+    const k=ease(Math.min(tw.t,1)); if(tw.kind==='pos') tw.obj.position.lerpVectors(tw.from,tw.to,k);
+    else tw.obj.scale.setScalar(tw.from+(tw.to-tw.from)*k); if(tw.t>=1){if(tw.done)tw.done();tweens.splice(i,1);} } }
+
+SECTION 9 — Particle bursts (copy verbatim)
+  const bursts = [];
+  function burst(x,y,color){ const n=70,g=new THREE.BufferGeometry(),pos=new Float32Array(n*3),vel=[];
+    for(let i=0;i<n;i++){ pos[i*3]=x;pos[i*3+1]=y;pos[i*3+2]=0.8;
+      const a=Math.random()*Math.PI*2,s=2+Math.random()*4;
+      vel.push(new THREE.Vector3(Math.cos(a)*s,Math.sin(a)*s,(Math.random()-.5)*3)); }
+    g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    const p=new THREE.Points(g,new THREE.PointsMaterial({color,size:0.16,transparent:true,opacity:1,blending:THREE.AdditiveBlending}));
+    scene.add(p); bursts.push({p,vel,life:0}); }
+  function updateBursts(dt){ for(let i=bursts.length-1;i>=0;i--){ const b=bursts[i];b.life+=dt;
+    const arr=b.p.geometry.attributes.position.array;
+    for(let j=0;j<b.vel.length;j++){arr[j*3]+=b.vel[j].x*dt;arr[j*3+1]+=b.vel[j].y*dt-2*dt*b.life;arr[j*3+2]+=b.vel[j].z*dt;}
+    b.p.geometry.attributes.position.needsUpdate=true;b.p.material.opacity=Math.max(0,1-b.life/1.3);
+    if(b.life>1.3){scene.remove(b.p);bursts.splice(i,1);} } }
+
+SECTION 10 — THE ANIMATION LOOP (THE only place rendering ever happens — copy this structure verbatim)
+  const clock = new THREE.Clock();
+  function animate(){
+    requestAnimationFrame(animate);           // always reschedules itself
+    const dt = clock.getDelta();             // called EXACTLY ONCE per frame
+    const t  = clock.elapsedTime;
+    updateTweens(dt);
+    updateBursts(dt);
+    // [topic-specific per-frame updates here: move meshes, rotate objects, advance physics]
+    // idle life: objects bob/rotate; dust drifts; camera.position.x = Math.sin(t*0.15)*0.5; camera.lookAt(0,0.3,0)
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+  }
+  animate(); // ← called ONCE to start the loop
+
+SECTION 11 — Resize + reset (copy verbatim structure)
+  addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight); labelRenderer.setSize(innerWidth,innerHeight); });
+  document.getElementById('reset').onclick = () => { /* restore all objects to home positions, clear placed/won state */ };
+
+CDN URLS (use EXACTLY these — no other versions):
+  Three.js r128:  https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js
+  CSS2DRenderer:  https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js
+  GSAP 3.12.5:    https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js
+  D3 v7.9.0:      https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js
+  KaTeX 0.16.11:  https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js
+                  https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css
+  Google Fonts:   https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 ━━━ THE THREE PILLARS — judge the whole lab on these before anything else ━━━
 A lab that nails the visuals but misses any pillar below is a FAILED lab. These outrank every other instruction:
 
