@@ -411,7 +411,7 @@ const CATEGORY_GUIDANCE = {
   "Math & Data": "3D data landscape: terrain from mathematical functions, holographic axes rising from the ground, glowing scatter points, D3-style curves as 3D ribbons",
   "Everyday Science": "Photorealistic real-world 3D environments — kitchen, sky dome, road, human body cross-section — with accurate lighting and recognizable everyday objects",
   "Language & Humanities": "A 3D world built from the SUBJECT ITSELF — never space. For language: large legible 3D letters/characters/words the learner drags, matches, and assembles; audio-waveform ribbons; speech-bubble panels; floating translation cards that snap together. For history/literature/art: timelines you walk along, 3D artifacts/scenes/maps, document panels. Warm museum/library lighting, NOT a starfield. The scene must literally show the words, characters, or artifacts being learned.",
-  "General": "Build the scene OUT OF THE TOPIC ITSELF — depict the actual subject literally, never a default space/Mars scene. A lab about Telugu shows Telugu letters and words; a lab about cooking shows a kitchen; a lab about chess shows a board. Use cinematic WebGL polish (good lighting, soft fog, glass HUD, particle depth) as production QUALITY, but the CONTENT of the 3D world is always the literal topic — only use planets/space if the topic is actually about space.",
+  "General": "Build the scene OUT OF THE TOPIC ITSELF — depict the actual subject literally, never a default space/Mars scene. A lab about Telugu shows Telugu letters and words; a lab about cooking shows a kitchen; a lab about chess shows a board; a lab about an Archimedean spiral shows a coiled rope or a vinyl record. Use cinematic WebGL polish (good lighting, soft fog, glass HUD, particle depth) as production QUALITY, but the CONTENT of the 3D world is always the literal topic — only use planets/space if the topic is actually about space.",
 };
 
 function categoryGuidance(category) {
@@ -540,7 +540,7 @@ For SPORTS/SKILLS category: use sports-game, NOT physics-sim.
 State: "INTERACTION TYPE: [chosen type] because [one sentence reason]."
 
 1. THE CORE INSIGHT — what single thing, once experienced interactively, makes this concept truly click? Not a definition — the moment of understanding.
-2. THE 3D VISUAL/INTERACTIVE METAPHOR — what immersive Three.js world does this concept live in? Be vivid and TOPIC-SPECIFIC. Basketball = night court under stadium lights, ball leaving hands toward rim. Mars geology = crater rim with rover. Be specific to ${topic} — never a generic grid.
+2. THE 3D VISUAL/INTERACTIVE METAPHOR — what immersive Three.js world does this concept live in? Be vivid and TOPIC-SPECIFIC. Basketball = night court under stadium lights, ball leaving hands toward rim. Mars geology = crater rim with rover. Be specific to ${topic} — never a generic grid. NEVER use a generic "space" or "planet" background unless the topic is astronomy. The metaphor must be NEAT and ANIMATED: things should bob, rotate, or pulse gently when idle.
 3. THE KEY VARIABLES or CHOICES — what 2-4 things can a learner change or decide? For each, explain WHY it matters to the insight.
 4. THE AHA MOMENT — the precise moment when the learner says "oh!". What did they just see or experience?
 5. THE REAL-WORLD COST — one concrete situation where not understanding this costs something real (money, health, justice, a relationship, a historical outcome).
@@ -622,7 +622,8 @@ RULES:
 - PHYSICAL TRUTH: every variable MUST appear in at least one formula expression. If a variable affects no formula, it is fake — DELETE it. Never invent decorative variables that sound topical but don't drive the physics (e.g. "contact surface" for Newton's third law). Three honest variables beat four where one is a lie — the learner WILL move it and learn something false.
 - UNITS ARE REAL: every variable unit and every readout is a real physical/financial unit (N, m/s, kg, %, $, years). NEVER pixels, NEVER unitless numbers. If the canvas measures something spatially, define a scale (e.g. 50 px = 1 m) and display the converted value.
 - DIMENSIONALITY: ALWAYS 3D IMMERSIVE. Every lab is a full Three.js WebGL scene — cinematic camera, real depth, environmental lighting, particles/fog. The visualMetaphor MUST describe a 3D world the learner enters (a basketball court at night, a Mars crater, a molecular space, an orbital vista). Even graph/economics topics get a 3D data landscape or holographic terrain — never flat 2D canvas-only.
-- TOPIC FIDELITY: variables, environment, and mission MUST match the exact topic. Basketball → court, hoop, ball arc, release angle°, power N, distance m. Compound interest → 3D coin stacks growing in a vault. Supply/demand → 3D market floor with animated price surfaces. Never generic placeholders.
+- TOPIC FIDELITY: variables, environment, and mission MUST match the exact topic. Basketball → court, hoop, ball arc, release angle°, power N, distance m. Compound interest → 3D coin stacks growing in a vault. Supply/demand → 3D market floor with animated price surfaces. Never generic placeholders. NEVER use a generic "space" or "planet" background unless the topic is astronomy.
+- NEATNESS & ANIMATION: the scene must feel alive and polished. Specify idle animations (bobbing, pulsing, slow rotation) for key objects.
 - LABELS: every object the learner sees must be nameable in one word. If a variable or object can't be given a clear one-word on-screen label, it's probably too abstract — reconsider it.
 - rules MUST include at least one threshold that triggers the aha moment visually
 - the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
@@ -1189,7 +1190,7 @@ The following analysis was written specifically for "${design.topic}" — use it
 ${pedagogy}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-You are building a single self-contained interactive learning lab. LAB ARCHETYPE: ${archetype.toUpperCase()}. You MUST output a complete, working HTML file right now — no summaries, no explanations.
+You are building a single self-contained interactive learning lab. LAB ARCHETYPE: ${archetype.toUpperCase()}. You MUST output a complete, working HTML file right now — no summaries, no explanations. You must not redesign the harness; use its structure exactly and only replace the domain-specific contents.
 
 ${imageDataUrl ? `You are given two inputs:
 1. A VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement.
@@ -1251,6 +1252,21 @@ window.addEventListener('resize', () => { camera.aspect=innerWidth/innerHeight; 
 ARCHETYPE PATTERN (${archetype}):
 ${archetypeArchitecture[archetype] || archetypeArchitecture["physics-sim"]}
 ` : ""}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━ THE HARNESS (MANDATORY STRUCTURE) ━━━
+You MUST follow this 11-section structure in your code. Do not invent your own architecture.
+1. RENDERER + SCENE + CAMERA: Positioned so objects are in view at (0,0.2,13) looking at (0,0.3,0).
+2. LIGHTING: Visibility guaranteed. Ambient(0.75) + Directional(1.25) + Ice-blue Rim + Warm Point.
+3. PALETTE: Use spec.palette colors for all materials.
+4. GRID/STAGE: Build the main topic-specific environment (court, lab bench, vault).
+5. INTERACTIVE OBJECTS: The primary 3D meshes the learner moves or steers.
+6. DRAG/STEER LOGIC: Implementation of raycaster or keyboard-held Set.
+7. WIN/FAIL LOGIC: checkWin() called every frame. On win: reveal real_world_payoff.
+8. TWEEN SYSTEM: Tiny helper for smooth mesh.position.lerp.
+9. PARTICLE BURSTS: For feedback (correct/wrong/win).
+10. THE ANIMATION LOOP: ONE loop, one clock.getDelta(), updateTweens(dt), update(dt), renderer.render().
+11. RESIZE + RESET: Fullscreen responsive + restore initial state.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 LABEL EVERYTHING, ONE WORD (PhET: one-word labels are read correctly without over-guiding):
@@ -1627,8 +1643,10 @@ PLATFORM CONSTRAINTS (the lab runs inside a sandboxed iframe — these are non-n
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • ONE complete self-contained HTML file. Inline CSS and JS.
 • CDN libraries (load from jsDelivr; include inline fallback check):
-  - Three.js r128 — load ONLY if you chose 3D as the primary visual, or want a thin decorative chrome layer behind a 2D chart. Chart-shaped topics (compound interest, supply/demand, sampling distributions, etc.) should skip Three.js and use D3 as the primary engine instead — see "CHOOSE THE RIGHT MEDIUM" above:
+  - Three.js r128 — load ONLY if you chose 3D as the primary visual, or want a thin decorative chrome layer behind a 2D chart. Chart-shaped topics (compound interest, supply/demand, sampling distributions, etc.) should skip Three.js and use D3 as the primary engine instead — see "CHOOSE THE RIGHT MEDIUM" above. ALWAYS include the addons if using Three.js:
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script>if(typeof THREE==='undefined'){document.body.innerHTML='<p style="color:#E85D04;padding:2rem">Three.js failed to load</p>';}</script>
   - GSAP — ALWAYS REQUIRED for cinematic transitions:
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
@@ -2486,4 +2504,15 @@ Rules:
 
 const PORT = process.env.PORT || 3000;
 server.timeout = 180_000; // 180 s — lab generation is multi-step and long
-server.listen(PORT, "0.0.0.0", () => console.log(`Repend running at http://0.0.0.0:${PORT}`));
+if (require.main === module) {
+  server.listen(PORT, "0.0.0.0", () => console.log(`Repend running at http://0.0.0.0:${PORT}`));
+}
+
+module.exports = {
+  expandTopic,
+  thinkAboutTopic,
+  specFromThinking,
+  thinkAboutLab,
+  thinkAboutVisualPedagogy,
+  codeFromImageBrief,
+};
