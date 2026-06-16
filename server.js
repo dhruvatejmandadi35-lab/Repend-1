@@ -918,7 +918,7 @@ Be specific to "${topic}". Do not give generic answers. Do not repeat the archet
   return openaiText(prompt, 800, "gpt-4o-mini");
 }
 
-async function codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category = "General", onProgress = null) {
+async function codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category = "General", onProgress = null, critiqueNotes = null) {
   const cat = design.spec.course_category || category;
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -1595,7 +1595,7 @@ Before returning, verify ALL of these — fix any that fail before responding:
 20. If two objects are drawn as solid, do they collide instead of overlapping/intertwining — including while being dragged?
 21. Do draggable objects show grab/grabbing cursors + a hover affordance, with hit radius ≥24px and touch-action:none?
 21b. If the learner must choose/drag/match the CORRECT object among several candidates, does EACH candidate display its decision-relevant identity (anticodon, value, name, payload) as a label anchored to it, AND is the target it matches against labeled too — so the choice is never a blind guess?
-22. Is the lab a full Three.js WebGL 3D scene with fog, particles, cinematic camera, and topic-specific environment (NOT flat 2D canvas)?
+22. If 3D was the right medium for this topic: is it a full Three.js WebGL scene with fog, particles, cinematic camera, and topic-specific environment? If 2D was the right medium (chart-shaped topic): is the D3/SVG chart the unobstructed primary visual, with Three.js (if used at all) only decorative chrome that never occludes the data?
 23. (branching-decision only) Does the tree render visually as a graph? Can the learner backtrack and explore alternate paths? Does each leaf reveal a concrete consequence?
 24. (bias-trap only) Does the learner complete trials WITHOUT knowing the bias first? Is the reveal shown as a distribution plot with the learner's own data highlighted?
 25. (budget-allocation only) Is the total always constrained (sum=TOTAL)? Does each allocation show live consequences, not just a number change?
@@ -1610,7 +1610,14 @@ Before returning, verify ALL of these — fix any that fail before responding:
 P1. INTERACTIVITY: Is the learner's PRIMARY action a direct grab/aim/steer in the play area (not just sliders), with every control producing an immediate visible change?
 P2. GAMIFICATION: Is there a win goal drawn on the canvas, live progress toward it, near-miss feedback, a score/streak/match HUD, and an auto-detected win → celebration + grade + labCheck?
 P3. REAL-WORLD: Does the lab open on a concrete real instance and close with the real_world_payoff sentence, with real units throughout?
-
+${critiqueNotes ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A PREVIOUS ATTEMPT AT THIS LAB WAS RENDERED AND REVIEWED — FIX THESE EXACT PROBLEMS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A reviewer looked at a screenshot of the lab you (or a previous attempt) generated and found real problems. Regenerate the FULL lab from scratch, keeping everything that already works, but make sure every issue below is actually fixed in the new output — these are not suggestions, they are required corrections:
+${critiqueNotes}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+` : ""}
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
   // --- GEMINI FALLBACK (commented out) ---
@@ -1723,6 +1730,120 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
 
   let html = res.response.text().trim();
   html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  return html;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// VISUAL CRITIC LOOP
+// Renders the generated lab headlessly, screenshots it, and asks
+// GPT-4o vision to critique it against a fixed rubric. If the critic
+// finds blockers, we feed a structured fix-list back into Nemotron and
+// regenerate (capped retries so cost/latency stay bounded).
+// ─────────────────────────────────────────────────────────────────
+
+let _puppeteerBrowser = null;
+async function getBrowser() {
+  if (_puppeteerBrowser) return _puppeteerBrowser;
+  const puppeteer = require("puppeteer");
+  _puppeteerBrowser = await puppeteer.launch({
+    headless: "new",
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+  });
+  return _puppeteerBrowser;
+}
+
+// Renders the lab HTML in headless Chrome and returns a base64 PNG screenshot.
+// Waits briefly for the animation loop / first frame to settle before capturing.
+async function screenshotLab(html) {
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+  try {
+    await page.setViewport({ width: 1280, height: 800 });
+    await page.setContent(html, { waitUntil: "load", timeout: 20000 });
+    await new Promise(r => setTimeout(r, 2500)); // let the animate() loop draw a settled frame
+    const buf = await page.screenshot({ type: "png" });
+    return buf.toString("base64");
+  } finally {
+    await page.close();
+  }
+}
+
+const CRITIC_RUBRIC = `You are reviewing a screenshot of an auto-generated interactive educational lab (a self-contained HTML/Three.js/D3 webpage). Score it against this rubric and return ONLY valid JSON, no markdown:
+
+{
+  "score": <0-100 overall quality>,
+  "accept": <true if score >= 70 AND no blockers, else false>,
+  "issues": [
+    { "severity": "blocker" | "minor", "area": "occlusion" | "legibility" | "topic_fidelity" | "interactivity" | "visual_hierarchy" | "purpose", "problem": "<what's wrong, specifically>", "fix": "<concrete instruction the code generator can act on>" }
+  ]
+}
+
+Rubric dimensions:
+- occlusion: is any chart, axis, control, or readout blocked/overlapped by another element (e.g. a 3D mesh sitting on top of a 2D chart, a panel covering data)? This is always a blocker if present.
+- legibility: is all text actually rendered and readable (not raw HTML tags showing as literal text, not low-contrast text on the dark background, not tiny/cut-off labels)? Raw tag text like "<span..." visible on screen is always a blocker.
+- topic_fidelity: does the visual literally depict the stated topic (not a generic/space scene unless the topic is space)?
+- interactivity: are controls (sliders, buttons, draggable objects) visually obvious and is there a clear primary action?
+- visual_hierarchy: is the main visual (chart or 3D scene) the clear focal point, not crowded out by chrome?
+- purpose: does every visible element appear to serve the learning goal, or is there obvious decorative clutter with no purpose?
+
+Be concrete in "fix" — name the exact element and the exact correction, so a code generator with no other context can apply it.`;
+
+async function critiqueLab(imageBase64, design) {
+  try {
+    const resp = await openaiCreate({
+      model: "gpt-4o",
+      max_tokens: 1000,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: `${CRITIC_RUBRIC}\n\nTopic: "${design.topic}". Learning goal: "${design.spec.learning_goal}".` },
+            { type: "image_url", image_url: { url: `data:image/png;base64,${imageBase64}` } },
+          ],
+        },
+      ],
+    }, "critic");
+    let raw = resp.choices[0].message.content.trim();
+    raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+    return JSON.parse(raw);
+  } catch (err) {
+    console.warn("[critic] failed, skipping critique:", err.message);
+    return { score: 100, accept: true, issues: [] }; // fail open — never block lab delivery on critic errors
+  }
+}
+
+function issuesToNotes(issues) {
+  return issues
+    .filter(i => i.severity === "blocker" || i.severity === "minor")
+    .map(i => `- [${i.severity.toUpperCase()}] (${i.area}) ${i.problem} → FIX: ${i.fix}`)
+    .join("\n");
+}
+
+// Wraps codeFromImageBrief with a screenshot → critique → regenerate loop.
+// Only regenerates when the critic finds an actual blocker; minor issues are
+// logged but don't trigger a retry, to keep cost/latency bounded.
+async function codeFromImageBriefWithCritique(design, labThinking, pedagogy, imageDataUrl, category, onProgress, maxRetries = 2) {
+  let html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress);
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    let critique;
+    try {
+      const screenshot = await screenshotLab(html);
+      critique = await critiqueLab(screenshot, design);
+    } catch (err) {
+      console.warn("[critic] screenshot/critique pipeline failed, shipping as-is:", err.message);
+      break;
+    }
+
+    const blockers = (critique.issues || []).filter(i => i.severity === "blocker");
+    console.log(`[critic] attempt ${attempt}: score=${critique.score} accept=${critique.accept} blockers=${blockers.length}`);
+    if (critique.accept || blockers.length === 0) break;
+
+    if (onProgress) { try { onProgress(null, `Reviewing and improving your lab… (fixing ${blockers.length} issue${blockers.length > 1 ? "s" : ""})`); } catch (_) {} }
+    const notes = issuesToNotes(critique.issues);
+    html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress, notes);
+  }
+
   return html;
 }
 
@@ -2115,8 +2236,8 @@ Rules:
           }
 
           send("code", "Writing your lab…");
-          const html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category,
-            (chars) => send("code", `Writing your lab… (${Math.round(chars / 1000)}k chars)`));
+          const html = await codeFromImageBriefWithCritique(design, labThinking, pedagogy, imageDataUrl, category,
+            (chars, msg) => send("code", msg || `Writing your lab… (${Math.round(chars / 1000)}k chars)`));
 
           const labData = {
             topicKey: key,
