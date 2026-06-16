@@ -1225,6 +1225,17 @@ FIXED LAYOUT SKELETON — every lab (2D or 3D) uses the same zones so nothing is
 - Readout panel (pinned within Zone A or a thin strip under the title): live numeric/categorical results, formula/principle panel.
 - HARD RULE — NO OVERLAP: Zone A must never visually cover Zone B. No control, panel, or decorative mesh may sit on top of the chart/3D stage such that any axis, curve, mesh, or label becomes hard to read. If a panel must float over the stage (e.g. a modal win-card), it appears only momentarily and dismisses, never persists during normal interaction.
 
+CLICK-LAYERING CONTRACT — "nothing is clickable" is the #1 fatal bug; prevent it EXACTLY like this:
+A full-viewport Three.js/canvas renderer sits ON TOP of your HUD in the stacking order by default and SILENTLY SWALLOWS every click meant for a slider/button — the controls look fine but do nothing. You MUST layer explicitly:
+  • Canvas/renderer.domElement: position:fixed; inset:0; z-index:0;  (the bottom layer)
+  • Every HUD/control container (Zone A, readouts, mission bar, buttons): position:relative or fixed with z-index:10 AND pointer-events:auto.
+  • If the canvas itself needs NO direct interaction (all input comes from DOM sliders/buttons), set the canvas pointer-events:none so clicks pass straight to the HUD.
+  • If the canvas DOES need interaction (dragging a 3D object via raycaster), keep canvas pointer-events:auto but ensure every HUD element has a HIGHER z-index so it still receives its own clicks.
+SELF-TEST before returning: mentally click each slider and button — does a DOM element with pointer-events:auto and a z-index above the canvas sit under the cursor? If the canvas is on top with pointer-events:auto and no HUD layer above it, the lab is BROKEN.
+
+WIRING CONTRACT — "it's static / nothing happens" is just as fatal:
+Every control MUST have an event listener that writes to state, and the animate() loop MUST read state every frame (see ANIMATION-LOOP CONTRACT below). A slider with no 'input' listener, or a sim whose animate() never started (animate() not called once at the end), produces exactly this dead screen. Before returning: every slider has addEventListener('input',...), every button has addEventListener('click',...), and animate() is invoked once to start the loop.
+
 ANIMATION POLISH — motion must read as professional, not janky:
 - Durations: small UI transitions 150-200ms, larger/full-stage transitions 300-400ms. Exits are shorter than entrances.
 - Easing: entrances use ease-out (fast start, gentle settle); exits use ease-in; everything else uses ease-in-out. Never linear easing for discrete UI motion (linear is fine only for continuous idle motion like a slow ambient rotation).
@@ -1752,17 +1763,47 @@ async function getBrowser() {
   return _puppeteerBrowser;
 }
 
-// Renders the lab HTML in headless Chrome and returns a base64 PNG screenshot.
-// Waits briefly for the animation loop / first frame to settle before capturing.
+// Renders the lab HTML in headless Chrome, screenshots it, AND probes it for
+// liveness — a single screenshot can't tell a frozen/dead lab from a working
+// one. We instrument the page BEFORE its scripts run to count animation-loop
+// frames (requestAnimationFrame) and interaction wiring (addEventListener), which
+// is far more reliable than pixel-diffing (moving a slider thumb changes pixels
+// on its own and would mask a dead sim).
+// Returns { screenshot, jsError, isAnimated, hasInputWiring, controlCount }.
 async function screenshotLab(html) {
   const browser = await getBrowser();
   const page = await browser.newPage();
+  let jsError = null;
+  page.on("pageerror", (e) => { if (!jsError) jsError = e.message; });
   try {
     await page.setViewport({ width: 1280, height: 800 });
-    await page.setContent(html, { waitUntil: "load", timeout: 20000 });
-    await new Promise(r => setTimeout(r, 2500)); // let the animate() loop draw a settled frame
-    const buf = await page.screenshot({ type: "png" });
-    return buf.toString("base64");
+    // Inject instrumentation as the very first script in the document so it runs
+    // before the lab's own scripts (evaluateOnNewDocument doesn't survive setContent).
+    const probeScript = `<script>(function(){window.__rafCount=0;var _raf=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=function(cb){window.__rafCount++;return _raf(cb);};window.__wiring=0;var _add=EventTarget.prototype.addEventListener;EventTarget.prototype.addEventListener=function(t){if(/^(input|change|click|pointer|mouse|touch|key)/.test(t))window.__wiring++;return _add.apply(this,arguments);};})();</script>`;
+    const instrumented = /<head[^>]*>/i.test(html)
+      ? html.replace(/<head[^>]*>/i, (m) => m + probeScript)
+      : /<html[^>]*>/i.test(html)
+      ? html.replace(/<html[^>]*>/i, (m) => m + probeScript)
+      : probeScript + html;
+    await page.setContent(instrumented, { waitUntil: "load", timeout: 20000 });
+    await new Promise(r => setTimeout(r, 2000)); // let the animate() loop draw a settled frame
+
+    // ANIMATION CHECK — sample the rAF counter twice; if it climbs, a loop is running.
+    const raf1 = await page.evaluate(() => window.__rafCount || 0);
+    await new Promise(r => setTimeout(r, 500));
+    const raf2 = await page.evaluate(() => window.__rafCount || 0);
+    const isAnimated = raf2 > raf1 + 2;
+
+    const stats = await page.evaluate(() => ({
+      wiring: window.__wiring || 0,
+      controlCount: document.querySelectorAll('input, button, select, [draggable="true"]').length,
+    }));
+    const hasInputWiring = stats.wiring > 0;
+
+    const screenshot = (await page.screenshot({ type: "png" })).toString("base64");
+    return { screenshot, jsError, isAnimated, hasInputWiring, controlCount: stats.controlCount };
+  } catch (err) {
+    return { screenshot: null, jsError: jsError || err.message, isAnimated: false, hasInputWiring: false, controlCount: 0 };
   } finally {
     await page.close();
   }
@@ -1819,28 +1860,58 @@ function issuesToNotes(issues) {
     .join("\n");
 }
 
-// Wraps codeFromImageBrief with a screenshot → critique → regenerate loop.
-// Only regenerates when the critic finds an actual blocker; minor issues are
-// logged but don't trigger a retry, to keep cost/latency bounded.
+// Deterministic interaction probe → blocker issues the vision model can't see
+// from a single still frame (frozen sim, dead controls, JS crash).
+function probeIssues(probe) {
+  const issues = [];
+  if (probe.jsError) {
+    issues.push({ severity: "blocker", area: "interactivity",
+      problem: `The lab threw a JavaScript error on load: "${probe.jsError}". This usually means the sim never started.`,
+      fix: "Fix the JS error. Ensure all referenced DOM ids/variables exist before use, libraries are loaded before they're called, and animate() runs without throwing." });
+  }
+  if (probe.controlCount > 0 && !probe.hasInputWiring && !probe.jsError) {
+    issues.push({ severity: "blocker", area: "interactivity",
+      problem: "The lab has controls (sliders/buttons) but NOT A SINGLE input/click/pointer event listener was registered — the controls are dead, nothing happens when the learner uses them.",
+      fix: "Wire every control with addEventListener('input'/'click'/'pointerdown', ...) writing to a shared state object that animate() reads each frame. Set the full-viewport canvas to pointer-events:none (or give every HUD element a higher z-index) so clicks reach the controls." });
+  }
+  if (probe.controlCount > 0 && probe.hasInputWiring && !probe.isAnimated && !probe.jsError) {
+    issues.push({ severity: "blocker", area: "interactivity",
+      problem: "No animation loop is running (requestAnimationFrame is never called repeatedly) — the sim is frozen, so even wired controls produce no visible motion.",
+      fix: "Add a self-rescheduling animate(){ requestAnimationFrame(animate); update(dt); renderer.render(...) } loop that reads the shared state every frame, and call animate() once to start it. Controls must write to state; the loop is what moves the visuals." });
+  }
+  if (probe.controlCount === 0 && !probe.jsError) {
+    issues.push({ severity: "blocker", area: "interactivity",
+      problem: "No interactive controls (sliders/buttons) and no draggable response were detected at all — the lab is not interactive.",
+      fix: "Add the controls from the interaction palette: sliders/buttons that change the sim, or a draggable canvas object, each producing immediate visible change." });
+  }
+  return issues;
+}
+
+// Wraps codeFromImageBrief with a render → probe + vision-critique → regenerate
+// loop. Regenerates when EITHER the deterministic probe finds a dead/static lab
+// OR the vision critic finds a visual blocker. Capped retries bound cost/latency.
 async function codeFromImageBriefWithCritique(design, labThinking, pedagogy, imageDataUrl, category, onProgress, maxRetries = 2) {
   let html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress);
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    let critique;
+    let probe, critique;
     try {
-      const screenshot = await screenshotLab(html);
-      critique = await critiqueLab(screenshot, design);
+      probe = await screenshotLab(html);
+      critique = probe.screenshot
+        ? await critiqueLab(probe.screenshot, design)
+        : { score: 0, accept: false, issues: [] };
     } catch (err) {
-      console.warn("[critic] screenshot/critique pipeline failed, shipping as-is:", err.message);
+      console.warn("[critic] render/critique pipeline failed, shipping as-is:", err.message);
       break;
     }
 
-    const blockers = (critique.issues || []).filter(i => i.severity === "blocker");
-    console.log(`[critic] attempt ${attempt}: score=${critique.score} accept=${critique.accept} blockers=${blockers.length}`);
-    if (critique.accept || blockers.length === 0) break;
+    const allIssues = [...probeIssues(probe), ...(critique.issues || [])];
+    const blockers = allIssues.filter(i => i.severity === "blocker");
+    console.log(`[critic] attempt ${attempt}: score=${critique.score} animated=${probe.isAnimated} wired=${probe.hasInputWiring} controls=${probe.controlCount} jsError=${!!probe.jsError} blockers=${blockers.length}`);
+    if (blockers.length === 0) break;
 
     if (onProgress) { try { onProgress(null, `Reviewing and improving your lab… (fixing ${blockers.length} issue${blockers.length > 1 ? "s" : ""})`); } catch (_) {} }
-    const notes = issuesToNotes(critique.issues);
+    const notes = issuesToNotes(allIssues);
     html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress, notes);
   }
 
