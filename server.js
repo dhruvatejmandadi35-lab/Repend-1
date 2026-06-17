@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const OpenAI = require("openai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { groundTopic } = require("./grounding");
 
 // Load .env locally (Railway injects env vars directly, so this is a no-op there).
 try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
@@ -503,7 +504,7 @@ RULES:
   return JSON.parse(res.choices[0].message.content.trim());
 }
 
-async function thinkAboutTopic(topic, category = "General", levelBackground = null, levelGoal = null, sourceMaterial = null, sourceFocus = null) {
+async function thinkAboutTopic(topic, category = "General", levelBackground = null, levelGoal = null, sourceMaterial = null, sourceFocus = null, grounding = null) {
   const levelCtx = levelBackground ? `
 LEARNER CONTEXT:
 - Background: ${levelBackground === "beginner" ? "Complete beginner — never touched this topic" : levelBackground === "some" ? "Some familiarity — has heard of it but doesn't deeply get it" : "Pretty solid — wants to go deeper or apply it"}
@@ -518,11 +519,17 @@ ${sourceMaterial.slice(0, 6000)}
 """
 ` : "";
 
+  const groundCtx = grounding ? `
+━━━ VERIFIED FACTS (ground your analysis in these — do NOT contradict them, do NOT invent numbers that conflict) ━━━
+${grounding}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+` : "";
+
   return openaiText(`You are an expert at designing immersive 3D interactive learning experiences for ANY topic — STEM, sports, history, economics, psychology, arts.
 
 COURSE CATEGORY: ${category}
 CATEGORY AESTHETIC: ${categoryGuidance(category)}
-${levelCtx}${sourceCtx}
+${levelCtx}${sourceCtx}${groundCtx}
 Write a short analysis of "${topic}" covering exactly these six things:
 
 STEP 0 — INTERACTION CLASSIFIER: Classify this topic and pick the interaction type.
@@ -555,7 +562,7 @@ State: "INTERACTION TYPE: [chosen type] because [one sentence reason]."
 Write in plain direct prose. Be specific to ${topic}.`, 1000, "gpt-4o-mini");
 }
 
-async function specFromThinking(topic, thinking, category = "General") {
+async function specFromThinking(topic, thinking, category = "General", grounding = null) {
   const res = await openai.chat.completions.create({
     model: "gpt-4o",
     max_tokens: 2200,
@@ -645,7 +652,7 @@ RULES:
 
 Now produce the spec JSON.`
       },
-      { role: "user", content: `Topic: ${topic}\nCategory: ${category}\n\nReasoning:\n${thinking}\n\nNow produce the spec JSON.` }
+      { role: "user", content: `Topic: ${topic}\nCategory: ${category}\n\nReasoning:\n${thinking}\n${grounding ? `\nVERIFIED FACTS — formulas, constants, units, and real numbers MUST be consistent with these (use the real equation and real magnitudes, never fabricated ones):\n${grounding}\n` : ""}\nNow produce the spec JSON.` }
     ],
   });
   const parsed = JSON.parse(res.choices[0].message.content.trim());
@@ -2421,11 +2428,20 @@ Rules:
           }
 
           // ── Cache miss (or level-tuned/source-based): run full pipeline then save ──
+          // Ground the topic in verified facts (Wikipedia/Wikidata/Tavily) before
+          // reasoning, so formulas and numbers are real. Fail-open: never block.
+          send("ground", "Checking the facts…");
+          let groundingText = null;
+          try {
+            const g = await groundTopic(topic, category);
+            if (g) groundingText = g.text;
+          } catch (e) { console.warn("[grounding] failed, continuing ungrounded:", e.message); }
+
           send("think", `Reasoning about "${topic}"…`);
-          const thinking = await thinkAboutTopic(topic, category, levelBackground, levelGoal, sourceMaterial, sourceFocus);
+          const thinking = await thinkAboutTopic(topic, category, levelBackground, levelGoal, sourceMaterial, sourceFocus, groundingText);
 
           send("design", "Translating insight into lab spec…");
-          const design = await specFromThinking(topic, thinking, category);
+          const design = await specFromThinking(topic, thinking, category, groundingText);
 
           send("labthink", "Thinking about how to build it…");
           const [labThinking, pedagogy] = await Promise.all([
