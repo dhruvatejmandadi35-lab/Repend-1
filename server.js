@@ -4,6 +4,7 @@ const path = require("path");
 const OpenAI = require("openai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { groundTopic } = require("./grounding");
+const courses = require("./courses");
 
 // Load .env locally (Railway injects env vars directly, so this is a no-op there).
 try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
@@ -2148,35 +2149,75 @@ const server = http.createServer(async (req, res) => {
     req.on("data", c => (body += c));
     req.on("end", async () => {
       try {
-        const { subject, category = "General" } = JSON.parse(body);
+        const { subject, category = "General", moduleCount = null } = JSON.parse(body);
         if (!subject) { res.writeHead(400); res.end(JSON.stringify({ error: "subject required" })); return; }
-        const outline = await openaiJSON(`You are a curriculum designer. Create a tight, practical course outline for: "${subject}".
-
-First pick the BEST-FITTING category for this subject from exactly this list (do not invent new ones):
-"Physics", "Biology", "Sports & Skills", "Money & Econ", "Math & Data", "Everyday Science", "Language & Humanities", "General".
-Use "Language & Humanities" for languages (e.g. learning Telugu/Spanish), history, literature, art, philosophy, writing. Use "General" only when nothing else fits.
-
-Return JSON exactly like this:
-{
-  "title": "Course title (short, punchy, e.g. 'Physics of Motion')",
-  "tagline": "One sentence selling the course (what the learner will be able to do)",
-  "category": "the category you picked from the list above",
-  "modules": [
-    { "order": 1, "topic": "Specific interactive lab topic", "why": "One sentence: why this comes first / what it unlocks" },
-    { "order": 2, "topic": "...", "why": "..." }
-  ]
-}
-
-Rules:
-- 4 to 6 modules, each a self-contained interactive lab topic
-- Order from foundational to advanced — each module builds on the previous
-- Topics must be SPECIFIC enough to generate a 3D interactive lab (e.g. "Newton's Second Law: F=ma on an ice rink" not "Forces")
-- No duplicate concepts
-- The last module should be an applied/real-world challenge that uses all previous concepts`, 800);
+        // New course contract: 3-10 modules (AI-picked or user-forced), each with
+        // key_concepts/key_variables constraint lists. Backward-compatible — modules
+        // still carry topic/why for the existing lab flow.
+        const outline = await courses.generateOutline(subject, category, moduleCount);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(outline));
       } catch (e) {
         console.error("plan-course error:", e.message);
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // POST /generate-lesson — Phase 1b. Body: { module, courseTitle?, category? }
+  // Returns { slides, markdown } — the lesson is the course's source of truth.
+  if (req.method === "POST" && req.url === "/generate-lesson") {
+    let body = "";
+    req.on("data", c => (body += c));
+    req.on("end", async () => {
+      try {
+        const { module, courseTitle = "", category = "General" } = JSON.parse(body);
+        if (!module || !module.title) { res.writeHead(400); res.end(JSON.stringify({ error: "module (with title) required" })); return; }
+        const lesson = await courses.generateLesson(module, courseTitle, category);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(lesson));
+      } catch (e) {
+        console.error("generate-lesson error:", e.message);
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // POST /generate-quiz — Phase 2. Body: { module, lessonMarkdown?, category? }
+  // Quiz is constrained to the module's key_concepts (assess, don't introduce).
+  if (req.method === "POST" && req.url === "/generate-quiz") {
+    let body = "";
+    req.on("data", c => (body += c));
+    req.on("end", async () => {
+      try {
+        const { module, lessonMarkdown = "", category = "General" } = JSON.parse(body);
+        if (!module || !module.title) { res.writeHead(400); res.end(JSON.stringify({ error: "module (with title) required" })); return; }
+        const quiz = await courses.generateQuiz(module, lessonMarkdown, category);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(quiz));
+      } catch (e) {
+        console.error("generate-quiz error:", e.message);
+        res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // POST /validate-course — quality gate. Body: { course }
+  // Returns { ok, errors, warnings } enforcing the lesson-is-source-of-truth contract.
+  if (req.method === "POST" && req.url === "/validate-course") {
+    let body = "";
+    req.on("data", c => (body += c));
+    req.on("end", async () => {
+      try {
+        const { course } = JSON.parse(body);
+        if (!course) { res.writeHead(400); res.end(JSON.stringify({ error: "course required" })); return; }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(courses.validateCourse(course)));
+      } catch (e) {
+        console.error("validate-course error:", e.message);
         res.writeHead(500); res.end(JSON.stringify({ error: e.message }));
       }
     });
