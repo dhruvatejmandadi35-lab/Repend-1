@@ -1373,6 +1373,20 @@ Every interactive element carries an explicit, visible role. Unlabeled sliders/o
   • Every control sits next to a LIVE readout of its current value and its consequence, so cause→effect is never a mystery (e.g. "Rate: 5% → doubles in ~14 yrs").
   • Use the verb set deliberately and match the implementation: DRAG (pointer move on canvas), MOVE/SLIDE (range input), CLICK/PLACE (discrete action), TOGGLE (boolean), DECIDE/CHOOSE (pick one of a set). The label's verb MUST equal the actual interaction wired up.
 
+MANDATORY CONTROLS LEGEND — this is REQUIRED and is the #1 thing labs keep missing; build it EXACTLY:
+A persistent, always-visible panel (docked in Zone A, titled "Controls" or "How to play") that ENUMERATES every interactive element as its own line. This is a structural DOM element, not optional inline hints. Each line is:
+    <icon/swatch>  <NAME> — <VERB> it → <the exact effect on the sim>
+e.g.
+    🎚️  Launch Angle — SLIDE → raises/lowers the arc of the shot
+    🟠  The Ball — DRAG on the court → sets where you shoot from
+    🔘  Slow-Mo — TOGGLE → replays the last shot frame-by-frame
+RULES for the legend:
+  • There must be exactly ONE legend line per interactive element in interaction_palette — no control may exist on screen without a corresponding legend line, and no legend line may describe a control that isn't wired.
+  • State the GOAL as the first line of this panel ("GOAL: sink 3 shots in a row"), then list the controls.
+  • Keep each line ≤ 8 words after the verb. Concrete effect, not vague ("changes the graph" is BANNED — say "steepens the growth curve").
+  • The legend stays visible during play (it may collapse to an icon the learner can re-open, but the goal line stays). Never hide all instructions after load.
+SELF-TEST: count the interactive elements on screen, then count the legend lines. If they don't match 1:1, the lab is INCOMPLETE — add the missing lines.
+
 ONBOARDING CONTRACT — the learner must never face a blank, unexplained lab:
   • A short "How this works" strip is visible on load (max 2 lines): what the lab shows + the very first thing to try (use design.spec.first_move). It may auto-dismiss after the first interaction or sit pinned in the title area — but it is ALWAYS present at t=0.
   • The GOAL is stated in one line at the top ("Match the offspring ratio to 3:1") and a progress/mission meter shows how close they are — so there is always a clear objective, never aimless poking.
@@ -1965,7 +1979,7 @@ Rubric dimensions:
 - visual_hierarchy: is the main visual (chart or 3D scene) the clear focal point, not crowded out by chrome?
 - purpose: does every visible element appear to serve the learning goal, or is there obvious decorative clutter with no purpose?
 - clarity: would a first-time learner know, within 3 seconds and with no outside instructions, (a) what they're looking at, (b) what to touch first, and (c) what success looks like? Missing goal line, missing "how this works" / first-move hint, or an unexplained stage is a blocker.
-- affordance: is every control labeled with its ROLE — the action verb + the thing it acts on + the effect (e.g. "Drag the ball → launch angle", "Slide Rate → faster growth")? An unlabeled slider/button/draggable, or a control with no visible live readout of its consequence, is a blocker. Also flag controls that look unbounded or able to reach nonsensical values for the topic.
+- affordance: is every control labeled with its ROLE — the action verb + the thing it acts on + the effect (e.g. "Drag the ball → launch angle", "Slide Rate → faster growth")? Is there a visible "Controls"/"How to play" legend panel that lists EVERY interactive element (one line each: name — verb → effect) plus the goal? A missing legend panel, an unlabeled slider/button/draggable, or a control with no visible live readout of its consequence, is a blocker. Also flag controls that look unbounded or able to reach nonsensical values for the topic.
 
 Be concrete in "fix" — name the exact element and the exact correction, so a code generator with no other context can apply it.`;
 
