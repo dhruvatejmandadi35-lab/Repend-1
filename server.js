@@ -1351,6 +1351,27 @@ ANIMATION POLISH — motion must read as professional, not janky:
 - CSS animations: animate ONLY transform and opacity (never top/left/width/height — those cause layout reflow/jank).
 - Three.js camera moves: use GSAP tweens (gsap.to(camera.position, {...duration, ease:"power2.out"})) or a damped lerp scaled by dt — never an instant snap cut and never a raw per-frame lerp that ignores dt (that runs at different speeds on different frame rates).
 
+CONTROL-BOUNDS CONTRACT — controls must obey the physics of the topic, not be wide-open:
+"A slider that goes anywhere / a button that does anything" makes the lab feel broken and lets the learner reach nonsense states. Every control MUST be constrained to values that are MEANINGFUL for THIS topic:
+  • Sliders: set min, max AND step to the real domain. e.g. probability 0–1 step 0.01; pH 0–14 step 0.1; interest rate 0–20(%) step 0.25; an angle 0–90° step 1. Never leave a slider at the default 0–100 if the concept's real range is different.
+  • Clamp in code too: in the 'input' handler, clamp state to the valid range so keyboard/edge cases can't escape it (state.x = Math.min(max, Math.max(min, +e.target.value))).
+  • Disable controls that don't apply in the current mode: btn.disabled = true and visually dim them (opacity:.4; cursor:not-allowed) rather than letting them do nothing silently. Re-enable when they become relevant.
+  • Discrete choices (an allele, an element, a phase) must be a fixed set of buttons/options — never a free slider that can land between valid values.
+  • If a value is physically impossible (negative mass, >100% efficiency), the control must not be able to produce it — bound it.
+
+AFFORDANCE & ROLE CONTRACT — the learner must instantly know WHAT each control does and HOW it impacts the system:
+Every interactive element carries an explicit, visible role. Unlabeled sliders/objects are rejected.
+  • Each control gets a text label naming (a) the action verb, (b) the thing acted on, and (c) the effect. Format: "<verb> <noun> → <what changes>". e.g. "Drag the ball → changes launch angle", "Slide Rate → faster growth", "Click an allele → place it in the Punnett square".
+  • Draggable canvas objects show a grab cursor (cursor:grab → grabbing) AND a small floating CSS2D hint ("drag me") on first load that fades after the first interaction.
+  • Every control sits next to a LIVE readout of its current value and its consequence, so cause→effect is never a mystery (e.g. "Rate: 5% → doubles in ~14 yrs").
+  • Use the verb set deliberately and match the implementation: DRAG (pointer move on canvas), MOVE/SLIDE (range input), CLICK/PLACE (discrete action), TOGGLE (boolean), DECIDE/CHOOSE (pick one of a set). The label's verb MUST equal the actual interaction wired up.
+
+ONBOARDING CONTRACT — the learner must never face a blank, unexplained lab:
+  • A short "How this works" strip is visible on load (max 2 lines): what the lab shows + the very first thing to try (use design.spec.first_move). It may auto-dismiss after the first interaction or sit pinned in the title area — but it is ALWAYS present at t=0.
+  • The GOAL is stated in one line at the top ("Match the offspring ratio to 3:1") and a progress/mission meter shows how close they are — so there is always a clear objective, never aimless poking.
+  • A legend names every distinct visual element on the stage (what each color/shape/mesh represents). No unexplained symbols.
+  • SELF-TEST before returning: a first-time user with zero instructions from you should know, within 3 seconds, (1) what they're looking at, (2) what to touch first, and (3) what success looks like. If any of the three is unclear, add the missing label/strip.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 VISIBILITY CONTRACT — a black scene is a broken lab
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1925,7 +1946,7 @@ const CRITIC_RUBRIC = `You are reviewing a screenshot of an auto-generated inter
   "score": <0-100 overall quality>,
   "accept": <true if score >= 70 AND no blockers, else false>,
   "issues": [
-    { "severity": "blocker" | "minor", "area": "occlusion" | "legibility" | "topic_fidelity" | "interactivity" | "visual_hierarchy" | "purpose", "problem": "<what's wrong, specifically>", "fix": "<concrete instruction the code generator can act on>" }
+    { "severity": "blocker" | "minor", "area": "occlusion" | "legibility" | "topic_fidelity" | "interactivity" | "visual_hierarchy" | "purpose" | "clarity" | "affordance", "problem": "<what's wrong, specifically>", "fix": "<concrete instruction the code generator can act on>" }
   ]
 }
 
@@ -1936,6 +1957,8 @@ Rubric dimensions:
 - interactivity: are controls (sliders, buttons, draggable objects) visually obvious and is there a clear primary action?
 - visual_hierarchy: is the main visual (chart or 3D scene) the clear focal point, not crowded out by chrome?
 - purpose: does every visible element appear to serve the learning goal, or is there obvious decorative clutter with no purpose?
+- clarity: would a first-time learner know, within 3 seconds and with no outside instructions, (a) what they're looking at, (b) what to touch first, and (c) what success looks like? Missing goal line, missing "how this works" / first-move hint, or an unexplained stage is a blocker.
+- affordance: is every control labeled with its ROLE — the action verb + the thing it acts on + the effect (e.g. "Drag the ball → launch angle", "Slide Rate → faster growth")? An unlabeled slider/button/draggable, or a control with no visible live readout of its consequence, is a blocker. Also flag controls that look unbounded or able to reach nonsensical values for the topic.
 
 Be concrete in "fix" — name the exact element and the exact correction, so a code generator with no other context can apply it.`;
 
