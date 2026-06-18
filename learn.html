@@ -1887,8 +1887,15 @@
     lastCategory = category || "General";
     window._rependCat = lastCategory;
     // Course context is set only by startCourseLab; clear it for standalone labs.
-    if (!(flags && flags.courseContext)) window._courseContext = null;
-    else window._courseContext = flags.courseContext;
+    if (flags && flags.courseContext) {
+      window._courseContext = flags.courseContext;
+    } else {
+      // Standalone lab: clear ALL course state so a stale course title from an
+      // earlier (abandoned) course lab can't get marked complete on this win.
+      window._courseContext = null;
+      window._activeCourseTitle = null;
+      window._activeCourseModuleOrder = null;
+    }
     topicInput.value = topic;
     generate();
   }
