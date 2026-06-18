@@ -51,6 +51,13 @@ const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "moonshotai/kimi-k2.6";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 const OPENAI_MINI_MODEL = process.env.OPENAI_MINI_MODEL || "gpt-4o-mini";
 
+// Optional mockup-image model — runs on NVIDIA Build (free) via the OpenAI-
+// compatible images endpoint, reusing the `nvidia` client. The mockup step is
+// gated behind USE_MOCKUP=1; it is OFF by default because the text brief drives
+// codegen. Swap models from env: black-forest-labs/flux.1-dev (cinematic) or
+// qwen/qwen-image (legible labels).
+const IMAGE_MODEL_ID = process.env.IMAGE_MODEL_ID || "black-forest-labs/flux.1-dev";
+
 const { createClient } = require("@supabase/supabase-js");
 let supabase = null;
 function getSupabase() {
@@ -463,7 +470,7 @@ function categoryArchetypeHints(category) {
 //   1. thinkAboutTopic    — gpt-4o-mini prose: insight, metaphor, variables + why
 //   2. specFromThinking   — gpt-4o JSON: typed spec
 //   3. thinkAboutLab      — gpt-4o prose brief: behavior + visuals, no UI words
-//   4. mockupImage        — gpt-image-1: clean UI mockup (OPTIONAL, USE_MOCKUP=1)
+//   4. mockupImage        — GPT writes a purpose-aware prompt → FLUX on NVIDIA (OPTIONAL, USE_MOCKUP=1)
 //   5. codeFromImageBrief — gpt-4o vision: image + brief → final HTML
 // ─────────────────────────────────────────────────────────────────
 
@@ -828,31 +835,49 @@ RULES:
 
 // Step 4 (optional) — gpt-image-1 generates a clean UI mockup.
 // Returns a base64 data URL or null on failure (pipeline continues without image).
-async function mockupImage(topic, visualMetaphor) {
-  const prompt = `You are an immersive 3D interface designer (NASA Mars Exploration / Pablo Coronel aesthetic). Produce a UI mockup of a cinematic WebGL learning lab — NOT flat 2D.
+// GPT turns the lab's PURPOSE (not just its looks) into an image-gen prompt, so
+// the mockup depicts what the lab teaches — the misconception it kills, what the
+// learner manipulates, and what the "aha" moment looks like — not a generic scene.
+async function mockupPromptFromSpec(design) {
+  const s = design.spec || {};
+  const brief = [
+    `Topic: ${design.topic}`,
+    `Learning goal: ${s.learning_goal || ""}`,
+    `Misconception it corrects: ${s.entry_misconception || ""}`,
+    `What the learner manipulates: ${s.direct_manipulation || s.first_move || ""}`,
+    `The "aha" visual moment: ${s.aha_trigger || ""}`,
+    `Visual metaphor: ${s.visualMetaphor || ""}`,
+  ].join("\n");
 
-Subject: an interactive 3D lab teaching "${topic}".
-Core visual metaphor: ${visualMetaphor}.
+  return openaiText(`You write a single text-to-image prompt for a mockup of an interactive learning lab. The image must visually communicate the lab's PURPOSE — show the exact moment of insight and what the learner controls, not just a pretty scene.
 
-Show a full-viewport Three.js-style scene: deep space background, atmospheric fog, emissive 3D objects, floating glass HUD controls, mission-control readouts. Topic environment must be literal (basketball court, planet surface, molecular space, etc.).
+LAB:
+${brief}
 
-Style: cinematic, immersive, high-contrast. Deep black #050508, Mars rust #E85D04, ice HUD #4CC9F0. Volumetric depth, particle dust, rim lighting.
+Write ONE vivid image prompt (max 100 words). Requirements:
+- Depict the concept's core insight literally (e.g. an exponential curve pulling away from a straight line = the compounding gap IS the lesson).
+- Include the labeled controls the learner uses and a live readout.
+- Cinematic dark theme: near-black #050508 background, teal #4CC9F0 accents, glassmorphic HUD, volumetric rim light, 16:9 landscape.
+- No paragraphs of body text, no browser chrome, no watermark.
+Return ONLY the prompt text.`, 300, OPENAI_MINI_MODEL);
+}
 
-Do NOT include: flat 2D charts only, paragraphs of readable text, fake browser chrome, watermarks.
-Aspect ratio: landscape, edge to edge.`;
-
+// Renders the mockup on NVIDIA Build (free) via the OpenAI-compatible images
+// endpoint, reusing the `nvidia` client. Fail-open: never blocks lab generation.
+async function mockupImage(design) {
+  if (!process.env.NVIDIA_API_KEY) return null;
   try {
-    const res = await openai.images.generate({
-      model: "gpt-image-1",
+    const prompt = await mockupPromptFromSpec(design);
+    const res = await nvidia.images.generate({
+      model: IMAGE_MODEL_ID,
       prompt,
-      size: "1536x1024",
-      n: 1,
+      response_format: "b64_json",
     });
-    const b64 = res.data[0].b64_json;
+    const b64 = res.data?.[0]?.b64_json;
     if (!b64) return null;
     return `data:image/png;base64,${b64}`;
   } catch (err) {
-    console.warn("mockupImage failed, continuing without:", err.message);
+    console.warn(`mockupImage (${IMAGE_MODEL_ID}) failed, continuing without:`, err.message);
     return null;
   }
 }
@@ -2465,7 +2490,7 @@ const server = http.createServer(async (req, res) => {
           let imageDataUrl = null;
           if (process.env.USE_MOCKUP === "1") {
             send("image", "Sketching a visual mockup…");
-            imageDataUrl = await mockupImage(design.topic, design.spec.visualMetaphor);
+            imageDataUrl = await mockupImage(design);
           }
 
           send("code", "Writing your lab…");
