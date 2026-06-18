@@ -520,7 +520,26 @@ RULES:
   return JSON.parse(res.choices[0].message.content.trim());
 }
 
-async function thinkAboutTopic(topic, category = "General", levelBackground = null, levelGoal = null, sourceMaterial = null, sourceFocus = null, grounding = null) {
+// Build a prompt block describing the full course this lab belongs to, so the
+// single course lab weaves in EVERY module's topic + key concepts rather than
+// teaching just one. Returns "" when this is a standalone lab.
+function courseContextBlock(courseContext) {
+  if (!courseContext || !Array.isArray(courseContext.modules) || !courseContext.modules.length) return "";
+  const mods = courseContext.modules.map((m, i) => {
+    const concepts = Array.isArray(m.key_concepts) && m.key_concepts.length ? ` — key concepts: ${m.key_concepts.join(", ")}` : "";
+    return `  ${i + 1}. ${m.topic || m.title}${concepts}`;
+  }).join("\n");
+  return `
+━━━ THIS IS THE SINGLE LAB FOR A WHOLE COURSE — it must cover ALL of these modules ━━━
+COURSE: "${courseContext.title || topic}"${courseContext.tagline ? ` — ${courseContext.tagline}` : ""}
+This one lab is the capstone for the entire course. It must let the learner experience EVERY module's core idea in a single connected interactive experience — do NOT narrow to just one module. Find the through-line that ties these modules together and build the lab around it, surfacing each module's key concepts as the learner progresses:
+${mods}
+Design the lab so each module's concept becomes a stage, mode, or layer the learner unlocks/explores — the whole course's mental model assembled in one place.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+}
+
+async function thinkAboutTopic(topic, category = "General", levelBackground = null, levelGoal = null, sourceMaterial = null, sourceFocus = null, grounding = null, courseContext = null) {
   const levelCtx = levelBackground ? `
 LEARNER CONTEXT:
 - Background: ${levelBackground === "beginner" ? "Complete beginner — never touched this topic" : levelBackground === "some" ? "Some familiarity — has heard of it but doesn't deeply get it" : "Pretty solid — wants to go deeper or apply it"}
@@ -541,11 +560,13 @@ ${grounding}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : "";
 
+  const courseCtx = courseContextBlock(courseContext);
+
   return openaiText(`You are an expert at designing immersive 3D interactive learning experiences for ANY topic — STEM, sports, history, economics, psychology, arts.
 
 COURSE CATEGORY: ${category}
 CATEGORY AESTHETIC: ${categoryGuidance(category)}
-${levelCtx}${sourceCtx}${groundCtx}
+${levelCtx}${sourceCtx}${groundCtx}${courseCtx}
 Write a short analysis of "${topic}" covering exactly these six things:
 
 STEP 0 — INTERACTION CLASSIFIER: Classify this topic and pick the interaction type.
@@ -704,8 +725,9 @@ function normalizeReflection(design) {
 
 // Step 3 — reasons concretely about what to draw and how.
 // Output is a structured visual brief the coder can follow exactly.
-async function thinkAboutLab(design, category = "General") {
+async function thinkAboutLab(design, category = "General", courseContext = null) {
   const cat = design.spec.course_category || category;
+  const courseCtx = courseContextBlock(courseContext);
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}), range ${v.min}–${v.max}, default ${v.default}: ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES: ${v.regimes_note}` : ""}`)
     .join("\n");
@@ -715,7 +737,7 @@ async function thinkAboutLab(design, category = "General") {
 COURSE CATEGORY: ${cat}
 CATEGORY AESTHETIC: ${categoryGuidance(cat)}
 COLOR PALETTE (must match Repend platform exactly): void ${REPEND_THEME.void}, fog ${REPEND_THEME.fog}, Mars rust ${REPEND_THEME.mars}, copper ${REPEND_THEME.copper}, ice HUD ${REPEND_THEME.ice}, muted ${REPEND_THEME.muted}
-
+${courseCtx}
 ━━━ THE PURPOSE OF THIS LAB — design every element to serve these five things ━━━
 TOPIC: ${design.topic}
 LEARNING GOAL: ${design.spec.learning_goal}
@@ -2487,15 +2509,26 @@ const server = http.createServer(async (req, res) => {
           const sourceMaterial = typeof data.sourceMaterial === "string" ? data.sourceMaterial.slice(0, 8000) : null;
           const sourceFocus = data.sourceFocus || null;
           const skipSimilar = !!data.skipSimilar; // set true by frontend when user chose "Generate fresh"
+          // Course context: when present, this is the SINGLE capstone lab for a whole
+          // course and must weave in EVERY module topic. We skip topic-sharpening
+          // (don't narrow a course to one concept) and skip cache/similar reuse.
+          const courseContext = (data.courseContext && Array.isArray(data.courseContext.modules) && data.courseContext.modules.length)
+            ? data.courseContext : null;
 
-          send("expand", `Sharpening topic…`);
-          const expanded = await expandTopic(rawTopic, category, sourceMaterial, sourceFocus);
-          const topic = expanded.topic;
+          let topic, expanded;
+          if (courseContext) {
+            topic = rawTopic;                 // the course title/subject — keep full scope
+            expanded = { topic, why: "" };
+          } else {
+            send("expand", `Sharpening topic…`);
+            expanded = await expandTopic(rawTopic, category, sourceMaterial, sourceFocus);
+            topic = expanded.topic;
+          }
           const key = topicKey(topic);
           send("expanded", `Building lab for: ${topic}`, { topic, why: expanded.why, category });
 
-          // ── Cache hit: serve instantly (bypass for personalised/source-based labs) ──
-          if (!levelBackground && !levelGoal && !sourceMaterial) {
+          // ── Cache hit: serve instantly (bypass for personalised/source-based/course labs) ──
+          if (!levelBackground && !levelGoal && !sourceMaterial && !courseContext) {
             const cached = await getCachedLab(key);
             if (cached) {
               clearInterval(heartbeat);
@@ -2508,7 +2541,7 @@ const server = http.createServer(async (req, res) => {
 
           // ── Fuzzy similar-lab check: surface a rated-good lab if topic is close ──
           // Only when no personalisation flags and user hasn't already dismissed the prompt
-          if (!skipSimilar && !levelBackground && !levelGoal && !sourceMaterial) {
+          if (!skipSimilar && !levelBackground && !levelGoal && !sourceMaterial && !courseContext) {
             const similar = await findSimilarLab(topic);
             if (similar) {
               // Send a non-terminal event — frontend shows "Use this or Generate fresh?"
@@ -2539,14 +2572,14 @@ const server = http.createServer(async (req, res) => {
           } catch (e) { console.warn("[grounding] failed, continuing ungrounded:", e.message); }
 
           send("think", `Reasoning about "${topic}"…`);
-          const thinking = await thinkAboutTopic(topic, category, levelBackground, levelGoal, sourceMaterial, sourceFocus, groundingText);
+          const thinking = await thinkAboutTopic(topic, category, levelBackground, levelGoal, sourceMaterial, sourceFocus, groundingText, courseContext);
 
           send("design", "Translating insight into lab spec…");
           const design = await specFromThinking(topic, thinking, category, groundingText);
 
           send("labthink", "Thinking about how to build it…");
           const [labThinking, pedagogy] = await Promise.all([
-            thinkAboutLab(design, category),
+            thinkAboutLab(design, category, courseContext),
             thinkAboutVisualPedagogy(design.topic, design.spec.lab_archetype || "physics-sim", category),
           ]);
 
@@ -2576,8 +2609,8 @@ const server = http.createServer(async (req, res) => {
           res.end();
 
           // Fire-and-forget save — don't block the response.
-          // Skip caching personalised/source-based labs (they're learner-specific).
-          if (!levelBackground && !levelGoal && !sourceMaterial) {
+          // Skip caching personalised/source-based/course labs (they're learner- or course-specific).
+          if (!levelBackground && !levelGoal && !sourceMaterial && !courseContext) {
             saveLab(key, design.topic, labData);
           }
 
