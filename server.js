@@ -2217,12 +2217,14 @@ const server = http.createServer(async (req, res) => {
     req.on("data", c => (body += c));
     req.on("end", async () => {
       try {
-        const { subject, category = "General", moduleCount = null } = JSON.parse(body);
+        const { subject, category = "General", moduleCount = null, sourceMaterial = null, sourceFocus = null } = JSON.parse(body);
         if (!subject) { res.writeHead(400); res.end(JSON.stringify({ error: "subject required" })); return; }
         // New course contract: 3-10 modules (AI-picked or user-forced), each with
         // key_concepts/key_variables constraint lists. Backward-compatible — modules
-        // still carry topic/why for the existing lab flow.
-        const outline = await courses.generateOutline(subject, category, moduleCount);
+        // still carry topic/why for the existing lab flow. When sourceMaterial is
+        // present (uploaded PDF/notes), the whole course is derived from it.
+        const src = typeof sourceMaterial === "string" ? sourceMaterial.slice(0, 12000) : null;
+        const outline = await courses.generateOutline(subject, category, moduleCount, src, sourceFocus);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(outline));
       } catch (e) {
@@ -2240,9 +2242,10 @@ const server = http.createServer(async (req, res) => {
     req.on("data", c => (body += c));
     req.on("end", async () => {
       try {
-        const { module, courseTitle = "", category = "General" } = JSON.parse(body);
+        const { module, courseTitle = "", category = "General", sourceMaterial = null, sourceFocus = null } = JSON.parse(body);
         if (!module || !module.title) { res.writeHead(400); res.end(JSON.stringify({ error: "module (with title) required" })); return; }
-        const lesson = await courses.generateLesson(module, courseTitle, category);
+        const src = typeof sourceMaterial === "string" ? sourceMaterial.slice(0, 12000) : null;
+        const lesson = await courses.generateLesson(module, courseTitle, category, src, sourceFocus);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(lesson));
       } catch (e) {

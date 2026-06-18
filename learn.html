@@ -961,6 +961,8 @@
     .upload-actions { display: flex; gap: 10px; margin-top: 20px; }
     .upload-build { flex: 1; background: var(--mars); border: none; color: #fff; border-radius: 12px; padding: 13px; font-size: 0.92rem; font-weight: 700; cursor: pointer; font-family: inherit; }
     .upload-build:disabled { opacity: 0.4; cursor: not-allowed; }
+    .upload-build.secondary { background: transparent; border: 1px solid var(--border); color: var(--copper); flex: 0 0 auto; }
+    .upload-build.secondary:hover:not(:disabled) { border-color: var(--mars); color: var(--mars); }
     .upload-cancel { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 12px; padding: 13px 20px; font-size: 0.92rem; cursor: pointer; font-family: inherit; }
 
     @media (max-width: 780px) {
@@ -992,6 +994,37 @@
     .btn-build-course-lab:hover { transform: translateY(-1px); }
     .btn-build-course-lab:disabled { opacity: 0.5; cursor: default; transform: none; }
     .course-modules-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 10px; }
+    /* 3-step flow */
+    .course-flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
+    .course-step { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 16px 18px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; cursor: pointer; transition: all 0.15s; text-align: left; }
+    .course-step:hover { border-color: var(--mars); background: var(--surface2); transform: translateY(-1px); }
+    .course-step:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .course-step.done { border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.05); }
+    .course-step-n { font-family: "JetBrains Mono", monospace; font-size: 0.7rem; color: var(--muted); }
+    .course-step-t { font-size: 1rem; font-weight: 800; }
+    .course-step-s { font-size: 0.74rem; color: var(--muted); }
+    /* Lesson viewer */
+    .lesson-wrap, .quiz-wrap { max-width: 720px; margin: 0 auto; padding: 24px 32px 60px; }
+    .lesson-modtitle { font-size: 1.3rem; font-weight: 800; margin: 12px 0 18px; }
+    .lesson-slide { padding: 30px 32px; min-height: 280px; border-radius: 16px; line-height: 1.6; font-size: 0.98rem; }
+    .lesson-slide h2 { font-size: 1.25rem; font-weight: 800; margin-bottom: 14px; }
+    .lesson-slide .slide-type { display: inline-block; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ice); border: 1px solid var(--border); border-radius: 99px; padding: 3px 10px; margin-bottom: 14px; }
+    .lesson-slide p { margin-bottom: 12px; } .lesson-slide ul, .lesson-slide ol { margin: 0 0 12px 20px; } .lesson-slide li { margin-bottom: 6px; }
+    .lesson-slide strong { color: var(--copper); } .lesson-slide code { background: var(--surface2); padding: 1px 6px; border-radius: 5px; font-family: "JetBrains Mono", monospace; font-size: 0.86em; }
+    .lesson-nav { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 20px; }
+    .lesson-nav-btn { padding: 11px 20px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-weight: 700; cursor: pointer; }
+    .lesson-nav-btn.primary { background: var(--mars); border: none; color: #fff; }
+    .lesson-nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .lesson-dots { display: flex; gap: 6px; } .lesson-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--surface2); } .lesson-dots span.active { background: var(--mars); }
+    /* Quiz viewer */
+    .quiz-title { font-size: 1.4rem; font-weight: 800; margin: 12px 0 20px; }
+    .quiz-q { padding: 20px 22px; margin-bottom: 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); }
+    .quiz-q .q-text { font-weight: 700; margin-bottom: 12px; }
+    .quiz-opt { display: block; width: 100%; text-align: left; padding: 11px 14px; margin-bottom: 8px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg0); color: var(--text); font-family: inherit; font-size: 0.9rem; cursor: pointer; transition: all 0.12s; }
+    .quiz-opt:hover { border-color: var(--mars); } .quiz-opt.selected { border-color: var(--mars); background: rgba(232,93,4,0.08); }
+    .quiz-opt.correct { border-color: var(--green); background: rgba(34,197,94,0.1); } .quiz-opt.wrong { border-color: #FCA5A5; background: rgba(248,113,113,0.08); }
+    .quiz-explain { font-size: 0.84rem; color: var(--muted); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .quiz-result { padding: 22px; border-radius: 14px; text-align: center; font-size: 1.1rem; font-weight: 800; }
     .course-add-module { display: flex; gap: 10px; margin-top: 14px; }
     .course-add-input { flex: 1; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-size: 0.9rem; }
     .course-add-input:focus { outline: none; border-color: var(--mars); }
@@ -1163,11 +1196,14 @@
     <input type="text" class="upload-focus" id="uploadFocus" placeholder="Optional: what should the lab focus on? (e.g. chapter 3, the key formula)" />
     <div class="upload-actions">
       <button class="upload-cancel" id="uploadCancel">Cancel</button>
-      <button class="upload-build" id="uploadBuild" disabled>Build lab from this →</button>
+      <button class="upload-build secondary" id="uploadBuildLab" disabled>One lab →</button>
+      <button class="upload-build" id="uploadBuildCourse" disabled>Build a course →</button>
     </div>
   </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<!-- Tesseract.js — OCR fallback for scanned/image PDFs (loaded lazily, only used when a page has no extractable text) -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 
 <div id="learnDashboard" class="learn-dashboard" style="display:none">
   <div class="dash-grid" id="dashCards"></div>
@@ -1255,12 +1291,41 @@
     </div>
     <button class="btn-publish-course" id="publishCourseBtn">🌐 Publish</button>
   </div>
-  <button class="btn-build-course-lab" id="buildCourseLabBtn">🚀 Build the lab for this course →</button>
-  <div class="course-modules-label">What this lab covers</div>
+  <div class="course-flow">
+    <button class="course-step" id="courseStepLessons"><span class="course-step-n">1</span><span class="course-step-t">📖 Lessons</span><span class="course-step-s">Learn the concepts</span></button>
+    <button class="course-step" id="courseStepLab"><span class="course-step-n">2</span><span class="course-step-t">🚀 Lab</span><span class="course-step-s">Practice hands-on</span></button>
+    <button class="course-step" id="courseStepQuiz"><span class="course-step-n">3</span><span class="course-step-t">📝 Quiz</span><span class="course-step-s">Test yourself</span></button>
+  </div>
+  <div class="course-modules-label">Modules in this course</div>
   <div class="course-modules" id="courseModules"></div>
   <div class="course-add-module">
     <input type="text" id="addModuleInput" class="course-add-input" placeholder="Add a module topic (e.g. 'Compound interest over 30 years')" />
     <button class="course-add-btn" id="addModuleBtn">+ Add module</button>
+  </div>
+</div>
+
+<!-- LESSON VIEWER (teach) -->
+<div id="lessonView" style="display:none">
+  <div class="lesson-wrap">
+    <button class="course-back-btn" id="lessonBackBtn">← Back to course</button>
+    <div class="lesson-modtitle" id="lessonModTitle"></div>
+    <div class="lesson-slide glass-panel" id="lessonSlide"></div>
+    <div class="lesson-nav">
+      <button class="lesson-nav-btn" id="lessonPrev">← Prev</button>
+      <div class="lesson-dots" id="lessonDots"></div>
+      <button class="lesson-nav-btn primary" id="lessonNext">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- QUIZ VIEWER (assess) -->
+<div id="quizView" style="display:none">
+  <div class="quiz-wrap">
+    <button class="course-back-btn" id="quizBackBtn">← Back to course</button>
+    <div class="quiz-title">Quiz — <span id="quizCourseTitle"></span></div>
+    <div id="quizQuestions"></div>
+    <button class="upload-build" id="quizSubmit" style="margin-top:20px">Submit answers</button>
+    <div class="quiz-result" id="quizResult" style="display:none"></div>
   </div>
 </div>
 
@@ -1566,9 +1631,17 @@
         </div>`;
       list.appendChild(card);
     });
-    // The single CTA: build one lab covering the whole course.
-    const buildBtn = document.getElementById("buildCourseLabBtn");
-    if (buildBtn) { buildBtn.textContent = "🚀 Build the lab for this course →"; buildBtn.disabled = false; buildBtn.onclick = () => startCourseLab(course); }
+    // 3-step flow: Lessons (teach) → Lab (practice) → Quiz (assess).
+    const stepLessons = document.getElementById("courseStepLessons");
+    const stepLab = document.getElementById("courseStepLab");
+    const stepQuiz = document.getElementById("courseStepQuiz");
+    const prog = course.progress || {};
+    stepLessons.classList.toggle("done", !!prog.lessonsDone);
+    stepLab.classList.toggle("done", !!prog.labDone);
+    stepQuiz.classList.toggle("done", !!prog.quizDone);
+    stepLessons.onclick = () => openLessons(course);
+    stepLab.onclick = () => startCourseLab(course);
+    stepQuiz.onclick = () => openQuiz(course);
     // Add-module control: lets the learner extend the course; it persists and is
     // covered by the lab on the next build.
     const addInput = document.getElementById("addModuleInput");
@@ -1595,33 +1668,197 @@
     renderYourCourses();
   });
 
+  // ── COURSE PROGRESS persistence helper ───────────────────────────────
+  function setCourseProgress(courseTitle, patch) {
+    const courses = loadCourses();
+    const c = courses.find(x => x.title === courseTitle);
+    if (!c) return;
+    c.progress = Object.assign({}, c.progress, patch);
+    saveCourses(courses);
+    if (activeCourse && activeCourse.title === courseTitle) activeCourse.progress = c.progress;
+  }
+
+  // ── TINY MARKDOWN → HTML (lesson bodies) ─────────────────────────────
+  function mdToHtml(md) {
+    const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    let h = esc(md || "");
+    h = h.replace(/`([^`]+)`/g, "<code>$1</code>");
+    h = h.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    h = h.replace(/^###?\s+(.+)$/gm, "<h2>$1</h2>");
+    // lists
+    h = h.replace(/(?:^[-*]\s+.+(?:\n|$))+/gm, block => {
+      const items = block.trim().split(/\n/).map(l => l.replace(/^[-*]\s+/, "")).map(t => `<li>${t}</li>`).join("");
+      return `<ul>${items}</ul>`;
+    });
+    // paragraphs (lines not already wrapped in a tag)
+    h = h.split(/\n{2,}/).map(blk => /^\s*<(h2|ul|ol|li)/.test(blk.trim()) ? blk : `<p>${blk.trim().replace(/\n/g, "<br>")}</p>`).join("");
+    return h;
+  }
+
+  // ── LESSONS (teach) ──────────────────────────────────────────────────
+  let _lessonSlides = [], _lessonIdx = 0, _lessonCourse = null;
+  async function openLessons(course) {
+    _lessonCourse = course;
+    document.getElementById("courseView").style.display = "none";
+    document.getElementById("lessonView").style.display = "block";
+    const slideEl = document.getElementById("lessonSlide");
+    document.getElementById("lessonModTitle").textContent = course.title;
+    // Use cached lessons if we already generated them; else fetch per module.
+    if (course._lessons && course._lessons.length) {
+      _lessonSlides = course._lessons;
+    } else {
+      slideEl.innerHTML = '<p>Writing your lessons… this takes a moment.</p>';
+      _lessonSlides = [];
+      for (const mod of course.modules) {
+        try {
+          const res = await fetch("/generate-lesson", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ module: mod, courseTitle: course.title, category: course.category,
+              sourceMaterial: course.sourceMaterial || null, sourceFocus: course.sourceFocus || null }),
+          });
+          if (!res.ok) continue;
+          const lesson = await res.json();
+          (lesson.slides || []).forEach(s => _lessonSlides.push({ ...s, module: mod.title }));
+        } catch (_) { /* skip a failed module, keep going */ }
+      }
+      if (!_lessonSlides.length) { slideEl.innerHTML = '<p>Couldn\'t generate lessons — please try again.</p>'; return; }
+      course._lessons = _lessonSlides; // cache in-memory for this session
+    }
+    _lessonIdx = 0;
+    renderLessonSlide();
+  }
+  function renderLessonSlide() {
+    const s = _lessonSlides[_lessonIdx];
+    const slideEl = document.getElementById("lessonSlide");
+    slideEl.innerHTML = `<span class="slide-type">${(s.type || "concept").replace(/_/g, " ")}</span>` +
+      (s.title ? `<h2>${s.title}</h2>` : "") + mdToHtml(s.body);
+    document.getElementById("lessonDots").innerHTML = _lessonSlides.map((_, i) => `<span class="${i === _lessonIdx ? "active" : ""}"></span>`).join("");
+    document.getElementById("lessonPrev").disabled = _lessonIdx === 0;
+    document.getElementById("lessonNext").textContent = _lessonIdx === _lessonSlides.length - 1 ? "Finish ✓" : "Next →";
+  }
+  document.getElementById("lessonPrev").onclick = () => { if (_lessonIdx > 0) { _lessonIdx--; renderLessonSlide(); } };
+  document.getElementById("lessonNext").onclick = () => {
+    if (_lessonIdx < _lessonSlides.length - 1) { _lessonIdx++; renderLessonSlide(); }
+    else { // finished
+      if (_lessonCourse) { setCourseProgress(_lessonCourse.title, { lessonsDone: true }); }
+      backToCourse();
+    }
+  };
+  document.getElementById("lessonBackBtn").onclick = backToCourse;
+  function backToCourse() {
+    document.getElementById("lessonView").style.display = "none";
+    document.getElementById("quizView").style.display = "none";
+    if (activeCourse) renderCourseView(activeCourse);
+  }
+
+  // ── QUIZ (assess) ────────────────────────────────────────────────────
+  let _quizData = null, _quizCourse = null, _quizPicks = {};
+  async function openQuiz(course) {
+    _quizCourse = course; _quizPicks = {};
+    document.getElementById("courseView").style.display = "none";
+    document.getElementById("quizView").style.display = "block";
+    document.getElementById("quizCourseTitle").textContent = course.title;
+    document.getElementById("quizResult").style.display = "none";
+    const qEl = document.getElementById("quizQuestions");
+    qEl.innerHTML = '<p>Writing your quiz…</p>';
+    // One quiz for the whole course: combine every module's key_concepts.
+    const combined = {
+      title: course.title,
+      topic: course.title,
+      key_concepts: [].concat(...course.modules.map(m => m.key_concepts || [])),
+    };
+    const lessonMd = (course._lessons || []).map(s => `${s.title}\n${s.body}`).join("\n\n").slice(0, 6000);
+    try {
+      const res = await fetch("/generate-quiz", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ module: combined, lessonMarkdown: lessonMd, category: course.category }),
+      });
+      if (!res.ok) throw new Error("server");
+      _quizData = await res.json();
+    } catch (_) { qEl.innerHTML = '<p>Couldn\'t generate the quiz — please try again.</p>'; return; }
+    renderQuiz();
+  }
+  function renderQuiz() {
+    const qEl = document.getElementById("quizQuestions");
+    qEl.innerHTML = (_quizData.questions || []).map((q, qi) => `
+      <div class="quiz-q" data-qi="${qi}">
+        <div class="q-text">${qi + 1}. ${q.question}</div>
+        ${q.options.map((opt, oi) => `<button class="quiz-opt" data-qi="${qi}" data-oi="${oi}">${opt}</button>`).join("")}
+        <div class="quiz-explain" style="display:none"></div>
+      </div>`).join("");
+    qEl.querySelectorAll(".quiz-opt").forEach(btn => {
+      btn.onclick = () => {
+        const qi = +btn.dataset.qi;
+        if (_quizPicks._graded) return;
+        _quizPicks[qi] = +btn.dataset.oi;
+        qEl.querySelectorAll(`.quiz-opt[data-qi="${qi}"]`).forEach(b => b.classList.remove("selected"));
+        btn.classList.add("selected");
+      };
+    });
+    document.getElementById("quizSubmit").style.display = "block";
+    document.getElementById("quizSubmit").textContent = "Submit answers";
+  }
+  document.getElementById("quizSubmit").onclick = () => {
+    if (!_quizData) return;
+    const qs = _quizData.questions || [];
+    let correct = 0;
+    qs.forEach((q, qi) => {
+      const pick = _quizPicks[qi];
+      const wrap = document.querySelector(`.quiz-q[data-qi="${qi}"]`);
+      wrap.querySelectorAll(".quiz-opt").forEach(b => {
+        const oi = +b.dataset.oi;
+        if (oi === q.correct_index) b.classList.add("correct");
+        else if (oi === pick) b.classList.add("wrong");
+      });
+      if (pick === q.correct_index) correct++;
+      const ex = wrap.querySelector(".quiz-explain");
+      ex.textContent = q.explanation || ""; ex.style.display = q.explanation ? "block" : "none";
+    });
+    _quizPicks._graded = true;
+    const pct = Math.round(correct / qs.length * 100);
+    const pass = pct >= Math.round((_quizData.pass_threshold || 0.7) * 100);
+    const r = document.getElementById("quizResult");
+    r.style.display = "block";
+    r.style.color = pass ? "var(--green)" : "#FCA5A5";
+    r.textContent = `${correct} / ${qs.length} correct (${pct}%) — ${pass ? "Passed! 🎉" : "Review the lessons and retry"}`;
+    document.getElementById("quizSubmit").style.display = "none";
+    if (pass && _quizCourse) setCourseProgress(_quizCourse.title, { quizDone: true });
+  };
+  document.getElementById("quizBackBtn").onclick = backToCourse;
+
   document.getElementById("buildCourseBtn").addEventListener("click", async () => {
-    const subject = topicInput.value.trim();
+    // Subject comes from the typed topic OR, if a PDF/notes was uploaded, its focus/name.
+    const subject = topicInput.value.trim() || (uploadedMaterial && (uploadedMaterial.focus || uploadedMaterial.name.replace(/\.[^.]+$/, ""))) || "";
     if (!subject) { topicInput.focus(); return; }
     const btn = document.getElementById("buildCourseBtn");
-    btn.textContent = "⏳ Building course…";
+    btn.textContent = uploadedMaterial ? "⏳ Building course from your file…" : "⏳ Building course…";
     btn.disabled = true;
     try {
       const cat = typeof RependGame !== "undefined" ? RependGame.inferCategory(subject) : "General";
+      // When a file was uploaded, the whole course is derived FROM it (grounded).
+      const src = uploadedMaterial ? uploadedMaterial.text.slice(0, 12000) : null;
+      const srcFocus = uploadedMaterial ? (uploadedMaterial.focus || "") : null;
       const res = await fetch("/plan-course", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject, category: cat }),
+        body: JSON.stringify({ subject, category: cat, sourceMaterial: src, sourceFocus: srcFocus }),
       });
       if (!res.ok) throw new Error("Server error");
       const outline = await res.json();
       if (!outline.modules || !outline.modules.length) throw new Error("No modules returned");
-      // Persist course
+      // Persist course. Store the source material on the course so lessons + quiz
+      // (and the capstone lab) stay grounded in the learner's own content.
       const courses = loadCourses();
       const existing = courses.findIndex(c => c.title === outline.title);
-      const course = { ...outline, modules: outline.modules.map(m => ({ ...m, done: false })) };
+      const course = { ...outline, modules: outline.modules.map(m => ({ ...m, done: false })),
+        sourceMaterial: src, sourceFocus: srcFocus };
       if (existing >= 0) courses[existing] = course; else courses.unshift(course);
       saveCourses(courses);
       renderCourseView(course);
     } catch (e) {
       alert("Couldn't build course: " + e.message);
     } finally {
-      btn.textContent = "🎓 Build a Course →";
+      btn.textContent = "+ Create Course";
       btn.disabled = false;
     }
   });
@@ -2098,9 +2335,10 @@
           markModuleDone(window._activeCourseTitle, window._activeCourseModuleOrder);
         } else {
           course.modules.forEach(m => { m.done = true; });
+          course.progress = Object.assign({}, course.progress, { labDone: true });
           saveCourses(courses);
         }
-        if (typeof RependGame !== "undefined") RependGame.showToast("🎓 Course complete!");
+        if (typeof RependGame !== "undefined") RependGame.showToast("🚀 Lab done! Next: take the quiz");
       }
       window._activeCourseTitle = null;
       window._activeCourseModuleOrder = null;
@@ -2419,7 +2657,8 @@
     const dropzone = document.getElementById("dropzone");
     const fileInput = document.getElementById("fileInput");
     const statusEl = document.getElementById("uploadStatus");
-    const buildBtn = document.getElementById("uploadBuild");
+    const buildBtn = document.getElementById("uploadBuildLab");
+    const buildCourseBtn2 = document.getElementById("uploadBuildCourse");
     const cancelBtn = document.getElementById("uploadCancel");
     const focusInput = document.getElementById("uploadFocus");
     const chip = document.getElementById("uploadChip");
@@ -2431,7 +2670,8 @@
       pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
     }
 
-    function openModal() { modal.classList.add("open"); statusEl.textContent = ""; statusEl.className = "upload-status"; pending = null; buildBtn.disabled = true; focusInput.value = ""; }
+    function setBuildEnabled(on) { buildBtn.disabled = !on; buildCourseBtn2.disabled = !on; }
+    function openModal() { modal.classList.add("open"); statusEl.textContent = ""; statusEl.className = "upload-status"; pending = null; setBuildEnabled(false); focusInput.value = ""; }
     function closeModal() { modal.classList.remove("open"); }
     trigger.onclick = openModal;
     cancelBtn.onclick = closeModal;
@@ -2446,7 +2686,7 @@
     async function handleFile(file) {
       statusEl.textContent = "Reading " + file.name + "…";
       statusEl.className = "upload-status";
-      buildBtn.disabled = true;
+      setBuildEnabled(false);
       try {
         let text = "";
         if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
@@ -2457,16 +2697,16 @@
           throw new Error("Unsupported file type. Use PDF, TXT, or Markdown.");
         }
         text = text.replace(/\s+/g, " ").trim();
-        if (text.length < 40) throw new Error("Couldn't extract enough text from that file.");
+        if (text.length < 40) throw new Error("Couldn't read enough text — even with OCR. The file may be encrypted, blank, or very low-resolution.");
         pending = { name: file.name, text };
         statusEl.textContent = `✓ ${file.name} · ${text.length.toLocaleString()} characters ready`;
         statusEl.className = "upload-status ok";
-        buildBtn.disabled = false;
+        setBuildEnabled(true);
       } catch (err) {
         statusEl.textContent = err.message || "Failed to read file.";
         statusEl.className = "upload-status err";
         pending = null;
-        buildBtn.disabled = true;
+        setBuildEnabled(false);
       }
     }
 
@@ -2476,25 +2716,59 @@
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
       const maxPages = Math.min(pdf.numPages, 20);
       let out = "";
+      let ocrPages = 0;
       for (let p = 1; p <= maxPages; p++) {
         const page = await pdf.getPage(p);
         const content = await page.getTextContent();
-        out += content.items.map(i => i.str).join(" ") + "\n";
+        let pageText = content.items.map(i => i.str).join(" ").trim();
+        // Scanned/image page: pdf.js finds almost no text → OCR the rendered page.
+        if (pageText.replace(/\s/g, "").length < 20 && window.Tesseract) {
+          ocrPages++;
+          statusEl.textContent = `Scanned PDF — reading page ${p}/${maxPages} with OCR…`;
+          try { pageText = await ocrPdfPage(page); } catch (_) { /* keep whatever text we have */ }
+        }
+        out += pageText + "\n";
       }
+      if (ocrPages) statusEl.textContent = `Read ${maxPages} pages (${ocrPages} via OCR)…`;
       return out;
     }
 
-    buildBtn.onclick = () => {
-      if (!pending) return;
+    // Render one PDF page to a canvas and run Tesseract OCR on it.
+    async function ocrPdfPage(page) {
+      const viewport = page.getViewport({ scale: 2 }); // 2x for legible OCR
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width; canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      const { data } = await Tesseract.recognize(canvas, "eng");
+      return (data && data.text || "").trim();
+    }
+
+    // Commit the uploaded file as source material and show the chip. Returns the focus string.
+    function commitMaterial() {
       const focus = focusInput.value.trim();
       uploadedMaterial = { name: pending.name, text: pending.text, focus };
       chipName.textContent = "📄 " + pending.name;
       chip.style.display = "inline-flex";
       closeModal();
-      // Prefill topic input with focus or filename, then run the normal flow (incl. level check)
+      return focus;
+    }
+
+    // "One lab →" — single lab grounded in the file (existing flow).
+    buildBtn.onclick = () => {
+      if (!pending) return;
+      const focus = commitMaterial();
       const topicGuess = focus || pending.name.replace(/\.[^.]+$/, "");
       topicInput.value = topicGuess;
       generate();
+    };
+
+    // "Build a course →" — whole lesson→lab→quiz course derived from the file.
+    buildCourseBtn2.onclick = () => {
+      if (!pending) return;
+      const focus = commitMaterial();
+      const topicGuess = focus || pending.name.replace(/\.[^.]+$/, "");
+      topicInput.value = topicGuess;
+      document.getElementById("buildCourseBtn").click();
     };
 
     chipClear.onclick = () => { uploadedMaterial = null; chip.style.display = "none"; };

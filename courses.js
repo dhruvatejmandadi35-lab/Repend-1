@@ -65,21 +65,30 @@ async function aiJSON(prompt, maxTokens = 2500, label = "course") {
 // AI picks 3–10 modules by topic complexity; the user may force a count.
 // Each module carries the constraint lists (key_concepts / key_variables) that
 // downstream lesson, lab, and quiz generation must stay inside.
-async function generateOutline(subject, category = "General", moduleCount = null) {
+async function generateOutline(subject, category = "General", moduleCount = null, sourceMaterial = null, sourceFocus = null) {
   const forced = moduleCount != null
     ? Math.max(MODULE_MIN, Math.min(MODULE_MAX, parseInt(moduleCount, 10) || 0))
     : null;
-  const key = ckey("outline", subject, category, forced || "auto");
+  const key = ckey("outline", subject, category, forced || "auto", sourceMaterial ? "src" + sourceMaterial.length : "nosrc");
   if (cache.has(key)) return cache.get(key);
 
   const countRule = forced
     ? `Produce EXACTLY ${forced} modules (the user requested this count).`
     : `Choose the RIGHT number of modules between ${MODULE_MIN} and ${MODULE_MAX} based on the topic's complexity — a simple topic gets ${MODULE_MIN}, a deep one gets up to ${MODULE_MAX}. Do not pad.`;
 
+  const sourceCtx = sourceMaterial ? `
+THE LEARNER UPLOADED THEIR OWN MATERIAL (e.g. a PDF/notes)${sourceFocus ? ` and wants the course to focus on "${sourceFocus}"` : ""}. Build the ENTIRE course FROM this material: derive the modules from its actual structure/sections, use its real examples, terminology, figures, and numbers. Each module should map to a real part of their material. Do NOT introduce topics the material doesn't cover.
+THEIR MATERIAL (excerpt):
+"""
+${sourceMaterial.slice(0, 9000)}
+"""
+` : "";
+
   const outline = await aiJSON(`You are a curriculum designer building an interactive course where each module is a teach → practice → assess loop (a lesson, a hands-on 3D lab, then a quiz).
 
 SUBJECT: "${subject}"
 SUGGESTED CATEGORY: ${category}
+${sourceCtx}
 
 First confirm the BEST-FITTING category from exactly this list (do not invent new ones):
 "Physics", "Biology", "Sports & Skills", "Money & Econ", "Math & Data", "Everyday Science", "Language & Humanities", "General".
@@ -131,12 +140,20 @@ Rules:
 // Markdown split into one-idea slides by \n---\n, each tagged with a type via
 // a leading HTML comment (markdown-invisible, and crucially NOT '---' so it
 // never collides with the slide separator).
-async function generateLesson(module, courseTitle = "", category = "General") {
-  const key = ckey("lesson", courseTitle, module.title, (module.key_concepts || []).join(","));
+async function generateLesson(module, courseTitle = "", category = "General", sourceMaterial = null, sourceFocus = null) {
+  const key = ckey("lesson", courseTitle, module.title, (module.key_concepts || []).join(","), sourceMaterial ? "src" + sourceMaterial.length : "nosrc");
   if (cache.has(key)) return cache.get(key);
 
   const concepts = (module.key_concepts || []).join(", ") || module.topic;
   const objectives = (module.learning_objectives || []).map(o => `- ${o}`).join("\n") || "- Understand the core idea";
+
+  const sourceCtx = sourceMaterial ? `
+TEACH FROM THE LEARNER'S OWN UPLOADED MATERIAL${sourceFocus ? ` (focus: "${sourceFocus}")` : ""}. Ground every slide in THIS content — use its real examples, terminology, figures, and numbers for THIS module. Do not contradict it or invent facts outside it.
+THEIR MATERIAL (excerpt):
+"""
+${sourceMaterial.slice(0, 7000)}
+"""
+` : "";
 
   const lesson = await aiJSON(`You are an expert teacher writing ONE lesson for an interactive course. The lesson is the SOURCE OF TRUTH: the lab and quiz that follow may use NOTHING you don't teach here.
 
@@ -146,6 +163,7 @@ CATEGORY: ${category}
 LEARNING OBJECTIVES:
 ${objectives}
 KEY CONCEPTS YOU MUST TEACH (and must NOT exceed): ${concepts}
+${sourceCtx}
 
 GOAL OF EVERY LESSON: build a mental model, not test recall. Every slide answers "why does this matter?" Repend does not help users pass tests — it helps them understand through explanation, experimentation, and application.
 
