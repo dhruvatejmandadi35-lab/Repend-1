@@ -992,6 +992,11 @@
     .btn-build-course-lab:hover { transform: translateY(-1px); }
     .btn-build-course-lab:disabled { opacity: 0.5; cursor: default; transform: none; }
     .course-modules-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 10px; }
+    .course-add-module { display: flex; gap: 10px; margin-top: 14px; }
+    .course-add-input { flex: 1; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-size: 0.9rem; }
+    .course-add-input:focus { outline: none; border-color: var(--mars); }
+    .course-add-btn { padding: 12px 18px; border-radius: 12px; border: 1px dashed var(--border); background: none; color: var(--muted); font-family: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.15s; }
+    .course-add-btn:hover { color: var(--text); border-color: var(--mars); }
     .course-modules { display: flex; flex-direction: column; gap: 12px; }
     .course-module.outline { cursor: default; opacity: 0.92; }
     .course-module.outline:hover { transform: none; }
@@ -1253,6 +1258,10 @@
   <button class="btn-build-course-lab" id="buildCourseLabBtn">🚀 Build the lab for this course →</button>
   <div class="course-modules-label">What this lab covers</div>
   <div class="course-modules" id="courseModules"></div>
+  <div class="course-add-module">
+    <input type="text" id="addModuleInput" class="course-add-input" placeholder="Add a module topic (e.g. 'Compound interest over 30 years')" />
+    <button class="course-add-btn" id="addModuleBtn">+ Add module</button>
+  </div>
 </div>
 
 <div id="loading">
@@ -1510,6 +1519,31 @@
     }
   }
 
+  // Append a learner-added module to a course, persist it, and re-render so the
+  // next "Build the lab" run covers it (it flows into courseContext.modules).
+  function addModuleToCourse(course, topic) {
+    const t = (topic || "").trim();
+    if (!t) { document.getElementById("addModuleInput").focus(); return; }
+    const courses = loadCourses();
+    const c = courses.find(x => x.title === course.title) || course;
+    c.modules = c.modules || [];
+    c.modules.push({
+      order: c.modules.length + 1,
+      title: t,
+      topic: t,
+      why: "Added by you",
+      learning_objectives: [],
+      key_concepts: [],
+      key_variables: [],
+      done: false,
+    });
+    // Persist (insert if this course isn't stored yet, e.g. a public-course clone).
+    if (!courses.includes(c)) courses.unshift(c);
+    saveCourses(courses);
+    if (typeof RependGame !== "undefined") RependGame.showToast("Module added");
+    renderCourseView(c);
+  }
+
   function renderCourseView(course) {
     activeCourse = course;
     const done = course.modules.filter(m => m.done).length;
@@ -1535,6 +1569,16 @@
     // The single CTA: build one lab covering the whole course.
     const buildBtn = document.getElementById("buildCourseLabBtn");
     if (buildBtn) { buildBtn.textContent = "🚀 Build the lab for this course →"; buildBtn.disabled = false; buildBtn.onclick = () => startCourseLab(course); }
+    // Add-module control: lets the learner extend the course; it persists and is
+    // covered by the lab on the next build.
+    const addInput = document.getElementById("addModuleInput");
+    const addBtn = document.getElementById("addModuleBtn");
+    if (addInput && addBtn) {
+      addInput.value = "";
+      const add = () => addModuleToCourse(course, addInput.value);
+      addBtn.onclick = add;
+      addInput.onkeydown = (e) => { if (e.key === "Enter") add(); };
+    }
     heroSection.style.display = "none";
     document.getElementById("learnDashboard").style.display = "none";
     document.getElementById("courseView").style.display = "block";
