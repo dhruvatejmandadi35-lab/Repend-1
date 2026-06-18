@@ -38,6 +38,19 @@ const CODEGEN_MODEL = process.env.CODEGEN_MODEL || "nvidia";
 // The id must match exactly what the NVIDIA Build model card's code snippet shows.
 const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "moonshotai/kimi-k2.6";
 
+// OpenAI model selectors — centralized so you can swap models from env (Railway
+// variable, no code change). Two tiers:
+//   OPENAI_MODEL      → heavy/quality stages: spec, visual critic, codegen fallback
+//   OPENAI_MINI_MODEL → cheap stages: topic expand, reasoning, pedagogy, courses
+// Defaults are gpt-4o / gpt-4o-mini (safe, still resolve). To upgrade to the
+// GPT-5 line for better quality-per-dollar at Tier 1, set e.g.
+//   OPENAI_MODEL=gpt-5.4-mini  OPENAI_MINI_MODEL=gpt-5.4-nano
+// AFTER confirming the exact model id in your OpenAI dashboard. NOTE: streaming
+// GPT-5 models requires OpenAI Organization Verification — the codegen fallback
+// streams, so verify your org first or it will error on that path only.
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
+const OPENAI_MINI_MODEL = process.env.OPENAI_MINI_MODEL || "gpt-4o-mini";
+
 const { createClient } = require("@supabase/supabase-js");
 let supabase = null;
 function getSupabase() {
@@ -68,7 +81,7 @@ async function openaiCreate(params, label = "openai") {
 }
 
 // Helper: OpenAI plain-text response
-async function openaiText(prompt, maxTokens = 1000, model = "gpt-4o-mini") {
+async function openaiText(prompt, maxTokens = 1000, model = OPENAI_MINI_MODEL) {
   const res = await openaiCreate({
     model, max_tokens: maxTokens,
     messages: [{ role: "user", content: prompt }],
@@ -77,7 +90,7 @@ async function openaiText(prompt, maxTokens = 1000, model = "gpt-4o-mini") {
 }
 
 // Helper: OpenAI JSON response (json_object mode)
-async function openaiJSON(prompt, maxTokens = 2500, model = "gpt-4o") {
+async function openaiJSON(prompt, maxTokens = 2500, model = OPENAI_MODEL) {
   const res = await openaiCreate({
     model, max_tokens: maxTokens,
     response_format: { type: "json_object" },
@@ -340,7 +353,7 @@ const ENGINE_TEMPLATE = fs.readFileSync(path.join(__dirname, "engine.html"), "ut
 
 async function plan(topic) {
   const res = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: OPENAI_MODEL,
     max_tokens: 4096,
     response_format: { type: "json_object" },
     messages: [
@@ -361,7 +374,7 @@ function injectRecipe(recipe) {
 
 async function verify(topic, question, recipeSummary, userAnswer, labResult) {
   const res = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: OPENAI_MINI_MODEL,
     max_tokens: 512,
     response_format: { type: "json_object" },
     messages: [
@@ -376,7 +389,7 @@ async function verify(topic, question, recipeSummary, userAnswer, labResult) {
 
 async function analyzeImage(base64Image, question) {
   const res = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: OPENAI_MODEL,
     max_tokens: 512,
     messages: [{
       role: "user",
@@ -469,7 +482,7 @@ ${sourceMaterial.slice(0, 4000)}
 """` : "";
 
   const res = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: OPENAI_MINI_MODEL,
     max_tokens: 200,
     response_format: { type: "json_object" },
     messages: [
@@ -555,12 +568,12 @@ State: "INTERACTION TYPE: [chosen type] because [one sentence reason]."
 4. THE AHA MOMENT — the precise moment when the learner says "oh!". What did they just see or experience?
 5. THE REAL-WORLD COST — one concrete situation where not understanding this costs something real (money, health, justice, a relationship, a historical outcome).
 
-Write in plain direct prose. Be specific to ${topic}.`, 1000, "gpt-4o-mini");
+Write in plain direct prose. Be specific to ${topic}.`, 1000, OPENAI_MINI_MODEL);
 }
 
 async function specFromThinking(topic, thinking, category = "General", grounding = null) {
   const res = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: OPENAI_MODEL,
     max_tokens: 2200,
     response_format: { type: "json_object" },
     messages: [
@@ -805,7 +818,7 @@ RULES:
 - For experiment-bench: describe each beaker, reagent, pour gesture, and reaction threshold visuals`;
 
   const res = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: OPENAI_MODEL,
     max_tokens: 2500,
     messages: [{ role: "user", content: prompt }],
   });
@@ -879,7 +892,7 @@ Answer these five questions concisely (2-4 sentences each):
 
 Be specific to "${topic}". Do not give generic answers. Do not repeat the archetype patterns verbatim.`;
 
-  return openaiText(prompt, 800, "gpt-4o-mini");
+  return openaiText(prompt, 800, OPENAI_MINI_MODEL);
 }
 
 async function codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category = "General", onProgress = null, critiqueNotes = null) {
@@ -1790,11 +1803,11 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
 
   // ── OPENAI CODEGEN FALLBACK ───────────────────────────────────────────────
   // Reached when NVIDIA Build is unavailable or CODEGEN_MODEL is not "nvidia".
-  // Uses gpt-4o with streaming so the connection stays alive.
-  console.log("[codegen] routing to OpenAI gpt-4o");
+  // Uses OPENAI_MODEL with streaming so the connection stays alive.
+  console.log(`[codegen] routing to OpenAI ${OPENAI_MODEL}`);
   const messages = [{ role: "user", content: briefText }];
   if (imageDataUrl) {
-    // gpt-4o supports vision — pass the mockup image when present.
+    // OPENAI_MODEL (gpt-4o / gpt-5.x) supports vision — pass the mockup when present.
     messages[0].content = [
       { type: "text", text: briefText },
       { type: "image_url", image_url: { url: imageDataUrl } },
@@ -1805,7 +1818,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
       const stream = await openaiCreate({
-        model: "gpt-4o",
+        model: OPENAI_MODEL,
         max_tokens: 16384,
         temperature: 0.7,
         stream: true,
@@ -1932,7 +1945,7 @@ Be concrete in "fix" — name the exact element and the exact correction, so a c
 async function critiqueLab(imageBase64, design) {
   try {
     const resp = await openaiCreate({
-      model: "gpt-4o",
+      model: OPENAI_MODEL,
       max_tokens: 1000,
       messages: [
         {
