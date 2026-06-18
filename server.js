@@ -54,9 +54,9 @@ const OPENAI_MINI_MODEL = process.env.OPENAI_MINI_MODEL || "gpt-4o-mini";
 // Optional mockup-image model — runs on NVIDIA Build (free) via the OpenAI-
 // compatible images endpoint, reusing the `nvidia` client. The mockup step is
 // gated behind USE_MOCKUP=1; it is OFF by default because the text brief drives
-// codegen. Swap models from env: black-forest-labs/flux.1-dev (cinematic) or
-// qwen/qwen-image (legible labels).
-const IMAGE_MODEL_ID = process.env.IMAGE_MODEL_ID || "black-forest-labs/flux.1-dev";
+// codegen. Swap models from env: black-forest-labs/flux.1-schnell (fast, default),
+// black-forest-labs/flux.1-dev (more detail), or qwen/qwen-image (legible labels).
+const IMAGE_MODEL_ID = process.env.IMAGE_MODEL_ID || "black-forest-labs/flux.1-schnell";
 
 const { createClient } = require("@supabase/supabase-js");
 let supabase = null;
@@ -470,7 +470,7 @@ function categoryArchetypeHints(category) {
 //   1. thinkAboutTopic    — gpt-4o-mini prose: insight, metaphor, variables + why
 //   2. specFromThinking   — gpt-4o JSON: typed spec
 //   3. thinkAboutLab      — gpt-4o prose brief: behavior + visuals, no UI words
-//   4. mockupImage        — GPT writes a purpose-aware prompt → FLUX on NVIDIA (OPTIONAL, USE_MOCKUP=1)
+//   4. mockupImage        — GPT writes a purpose-aware prompt → FLUX.1-schnell on NVIDIA (OPTIONAL, USE_MOCKUP=1)
 //   5. codeFromImageBrief — gpt-4o vision: image + brief → final HTML
 // ─────────────────────────────────────────────────────────────────
 
