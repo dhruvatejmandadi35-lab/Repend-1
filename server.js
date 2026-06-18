@@ -531,7 +531,7 @@ function courseContextBlock(courseContext) {
   }).join("\n");
   return `
 ━━━ THIS IS THE SINGLE LAB FOR A WHOLE COURSE — it must cover ALL of these modules ━━━
-COURSE: "${courseContext.title || topic}"${courseContext.tagline ? ` — ${courseContext.tagline}` : ""}
+COURSE: "${courseContext.title || ""}"${courseContext.tagline ? ` — ${courseContext.tagline}` : ""}
 This one lab is the capstone for the entire course. It must let the learner experience EVERY module's core idea in a single connected interactive experience — do NOT narrow to just one module. Find the through-line that ties these modules together and build the lab around it, surfacing each module's key concepts as the learner progresses:
 ${mods}
 Design the lab so each module's concept becomes a stage, mode, or layer the learner unlocks/explores — the whole course's mental model assembled in one place.
