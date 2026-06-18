@@ -1084,6 +1084,40 @@
     .btn-publish-course.published { border-color: rgba(34,197,94,0.4); color: #6EE7B7; cursor: default; }
     .toast-msg { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 10px 22px; border-radius: 99px; font-size: 0.88rem; font-weight: 600; z-index: 9999; box-shadow: 0 8px 32px rgba(0,0,0,0.4); animation: toastIn 0.25s ease; }
     @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+    /* ── COURSE WIZARD ── */
+    .wizard-wrap { max-width: 700px; margin: 0 auto; padding: 40px 24px 80px; }
+    .wizard-back { background: none; border: none; color: var(--muted); font-size: 0.88rem; font-family: inherit; cursor: pointer; padding: 0; margin-bottom: 28px; display: inline-flex; align-items: center; gap: 6px; transition: color 0.15s; }
+    .wizard-back:hover { color: var(--text); }
+    .wizard-heading { font-size: 1.5rem; font-weight: 900; letter-spacing: -0.03em; margin-bottom: 4px; }
+    .wizard-topic-display { font-size: 1rem; color: var(--muted); margin-bottom: 32px; }
+    .wizard-topic-display strong { color: var(--mars); }
+    .wizard-section-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 10px; }
+    .wizard-module-list { display: flex; flex-direction: column; gap: 8px; min-height: 48px; margin-bottom: 12px; }
+    .wizard-module-item { display: flex; align-items: center; gap: 12px; padding: 13px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; transition: border-color 0.15s; }
+    .wizard-module-item:hover { border-color: rgba(232,93,4,0.35); }
+    .wizard-module-num { width: 26px; height: 26px; border-radius: 50%; background: var(--surface2); border: 1.5px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 800; color: var(--muted); flex-shrink: 0; font-family: 'JetBrains Mono', monospace; }
+    .wizard-module-text { flex: 1; font-size: 0.92rem; font-weight: 600; color: var(--text); line-height: 1.35; }
+    .wizard-module-sub { font-size: 0.78rem; color: var(--muted); font-weight: 400; margin-top: 2px; }
+    .wizard-module-del { background: none; border: none; color: var(--muted); font-size: 1rem; cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: color 0.15s; flex-shrink: 0; line-height: 1; }
+    .wizard-module-del:hover { color: #f87171; }
+    .wizard-add-row { display: flex; gap: 8px; margin-bottom: 20px; }
+    .wizard-add-input { flex: 1; padding: 11px 14px; border-radius: 10px; border: 1px dashed var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-size: 0.88rem; transition: border-color 0.15s; }
+    .wizard-add-input:focus { outline: none; border-color: var(--mars); border-style: solid; }
+    .wizard-add-input::placeholder { color: var(--muted); }
+    .wizard-add-btn { padding: 11px 16px; border-radius: 10px; border: 1px solid var(--border); background: none; color: var(--muted); font-family: inherit; font-size: 0.88rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.15s; }
+    .wizard-add-btn:hover { color: var(--text); border-color: var(--mars); }
+    .wizard-suggest-btn { width: 100%; padding: 12px; border-radius: 12px; border: 1px dashed rgba(76,201,240,0.35); background: rgba(76,201,240,0.04); color: var(--ice); font-family: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.15s; margin-bottom: 28px; }
+    .wizard-suggest-btn:hover { background: rgba(76,201,240,0.1); border-color: var(--ice); }
+    .wizard-suggest-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .wizard-divider { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; color: var(--muted); font-size: 0.75rem; }
+    .wizard-divider::before, .wizard-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .wizard-build-btn { width: 100%; padding: 16px; border-radius: 14px; border: none; background: var(--mars); color: #fff; font-family: inherit; font-size: 1rem; font-weight: 800; cursor: pointer; transition: opacity 0.15s; letter-spacing: -0.02em; }
+    .wizard-build-btn:hover { opacity: 0.88; }
+    .wizard-build-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .wizard-empty-hint { text-align: center; padding: 28px 16px; color: var(--muted); font-size: 0.85rem; border: 1px dashed var(--border); border-radius: 12px; margin-bottom: 12px; }
+    .wizard-file-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--ice); background: rgba(76,201,240,0.08); border: 1px solid rgba(76,201,240,0.2); border-radius: 99px; padding: 4px 10px; margin-bottom: 28px; }
+    .wizard-ai-badge { display: inline-block; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--mars); background: rgba(232,93,4,0.12); border-radius: 4px; padding: 1px 5px; margin-left: 6px; }
   </style>
 </head>
 <body>
@@ -1326,6 +1360,32 @@
     <div id="quizQuestions"></div>
     <button class="upload-build" id="quizSubmit" style="margin-top:20px">Submit answers</button>
     <div class="quiz-result" id="quizResult" style="display:none"></div>
+  </div>
+</div>
+
+<!-- COURSE WIZARD — pre-generation module editor -->
+<div id="courseWizard" style="display:none">
+  <div class="wizard-wrap">
+    <button class="wizard-back" id="wizardBackBtn">← Back</button>
+    <div class="wizard-heading">Design your course</div>
+    <div class="wizard-topic-display">Topic: <strong id="wizardTopicLabel"></strong></div>
+    <div id="wizardFileChip" class="wizard-file-chip" style="display:none">📎 <span id="wizardFileName"></span></div>
+
+    <div class="wizard-section-label">Modules <span id="wizardModuleCount" style="color:var(--mars)"></span></div>
+    <div class="wizard-module-list" id="wizardModuleList">
+      <div class="wizard-empty-hint" id="wizardEmptyHint">No modules yet — suggest some or add your own below.</div>
+    </div>
+
+    <div class="wizard-add-row">
+      <input type="text" class="wizard-add-input" id="wizardAddInput" placeholder="Add your own module (e.g. 'Compound interest')" maxlength="120" />
+      <button class="wizard-add-btn" id="wizardAddBtn">+ Add</button>
+    </div>
+
+    <button class="wizard-suggest-btn" id="wizardSuggestBtn">✨ Suggest modules for me<span class="wizard-ai-badge">AI</span></button>
+
+    <div class="wizard-divider">then</div>
+
+    <button class="wizard-build-btn" id="wizardBuildBtn">Build course →</button>
   </div>
 </div>
 
@@ -1826,16 +1886,104 @@
   };
   document.getElementById("quizBackBtn").onclick = backToCourse;
 
-  document.getElementById("buildCourseBtn").addEventListener("click", async () => {
-    // Subject comes from the typed topic OR, if a PDF/notes was uploaded, its focus/name.
-    const subject = topicInput.value.trim() || (uploadedMaterial && (uploadedMaterial.focus || uploadedMaterial.name.replace(/\.[^.]+$/, ""))) || "";
+  // ── COURSE WIZARD ────────────────────────────────────────────────────────
+  let wizardModules = []; // { topic, why, key_concepts, key_variables } — editable list
+
+  function showView(id) {
+    const views = ["courseWizard","courseView","lessonView","quizView"];
+    views.forEach(v => {
+      const el = document.getElementById(v);
+      if (el) el.style.display = "none";
+    });
+    const hero = document.getElementById("heroSection");
+    if (id === "homeView") {
+      if (hero) hero.style.display = "block";
+      renderDashboard();
+      renderMyLabs();
+      renderYourCourses();
+    } else {
+      if (hero) hero.style.display = "none";
+      const target = document.getElementById(id);
+      if (target) target.style.display = "";
+    }
+  }
+
+  function openCourseWizard() {
+    const subject = topicInput.value.trim() ||
+      (uploadedMaterial && (uploadedMaterial.focus || uploadedMaterial.name.replace(/\.[^.]+$/, ""))) || "";
     if (!subject) { topicInput.focus(); return; }
-    const btn = document.getElementById("buildCourseBtn");
-    btn.textContent = uploadedMaterial ? "⏳ Building course from your file…" : "⏳ Building course…";
+
+    wizardModules = [];
+    document.getElementById("wizardTopicLabel").textContent = subject;
+
+    const fileChip = document.getElementById("wizardFileChip");
+    if (uploadedMaterial) {
+      fileChip.style.display = "";
+      document.getElementById("wizardFileName").textContent = uploadedMaterial.name || "Uploaded file";
+    } else {
+      fileChip.style.display = "none";
+    }
+
+    renderWizardModules();
+    showView("courseWizard");
+  }
+
+  function renderWizardModules() {
+    const list = document.getElementById("wizardModuleList");
+    const hint = document.getElementById("wizardEmptyHint");
+    const count = document.getElementById("wizardModuleCount");
+    count.textContent = wizardModules.length ? `(${wizardModules.length})` : "";
+
+    if (!wizardModules.length) {
+      list.innerHTML = "";
+      list.appendChild(hint || (() => {
+        const d = document.createElement("div");
+        d.className = "wizard-empty-hint";
+        d.id = "wizardEmptyHint";
+        d.textContent = "No modules yet — suggest some or add your own below.";
+        return d;
+      })());
+      return;
+    }
+    list.innerHTML = "";
+    wizardModules.forEach((m, i) => {
+      const row = document.createElement("div");
+      row.className = "wizard-module-item";
+      row.innerHTML = `
+        <div class="wizard-module-num">${i + 1}</div>
+        <div class="wizard-module-body" style="flex:1">
+          <div class="wizard-module-text">${m.topic}</div>
+          ${m.why ? `<div class="wizard-module-sub">${m.why}</div>` : ""}
+        </div>
+        <button class="wizard-module-del" title="Remove" data-idx="${i}">×</button>`;
+      row.querySelector(".wizard-module-del").addEventListener("click", () => {
+        wizardModules.splice(i, 1);
+        renderWizardModules();
+      });
+      list.appendChild(row);
+    });
+  }
+
+  document.getElementById("wizardAddBtn").addEventListener("click", () => {
+    const inp = document.getElementById("wizardAddInput");
+    const val = inp.value.trim();
+    if (!val) { inp.focus(); return; }
+    wizardModules.push({ topic: val, why: "", key_concepts: [], key_variables: [] });
+    inp.value = "";
+    inp.focus();
+    renderWizardModules();
+  });
+  document.getElementById("wizardAddInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") document.getElementById("wizardAddBtn").click();
+  });
+
+  document.getElementById("wizardSuggestBtn").addEventListener("click", async () => {
+    const subject = document.getElementById("wizardTopicLabel").textContent;
+    const btn = document.getElementById("wizardSuggestBtn");
     btn.disabled = true;
+    btn.textContent = "⏳ Generating suggestions…";
     try {
       const cat = typeof RependGame !== "undefined" ? RependGame.inferCategory(subject) : "General";
-      // When a file was uploaded, the whole course is derived FROM it (grounded).
       const src = uploadedMaterial ? uploadedMaterial.text.slice(0, 12000) : null;
       const srcFocus = uploadedMaterial ? (uploadedMaterial.focus || "") : null;
       const res = await fetch("/plan-course", {
@@ -1846,22 +1994,73 @@
       if (!res.ok) throw new Error("Server error");
       const outline = await res.json();
       if (!outline.modules || !outline.modules.length) throw new Error("No modules returned");
-      // Persist course. Store the source material on the course so lessons + quiz
-      // (and the capstone lab) stay grounded in the learner's own content.
+      // Merge: keep existing custom modules at top, append AI suggestions that aren't duplicates
+      const existing = new Set(wizardModules.map(m => m.topic.toLowerCase()));
+      outline.modules.forEach(m => {
+        if (!existing.has(m.topic.toLowerCase())) wizardModules.push(m);
+      });
+      // Store the suggested course title/tagline for later
+      window._wizardOutline = outline;
+      renderWizardModules();
+    } catch (e) {
+      alert("Couldn't suggest modules: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = "✨ Suggest more modules<span class=\"wizard-ai-badge\">AI</span>";
+    }
+  });
+
+  async function buildCourseFromWizard() {
+    const subject = document.getElementById("wizardTopicLabel").textContent;
+    const btn = document.getElementById("wizardBuildBtn");
+    btn.disabled = true;
+    btn.textContent = "⏳ Building course…";
+    try {
+      const cat = typeof RependGame !== "undefined" ? RependGame.inferCategory(subject) : "General";
+      const src = uploadedMaterial ? uploadedMaterial.text.slice(0, 12000) : null;
+      const srcFocus = uploadedMaterial ? (uploadedMaterial.focus || "") : null;
+
+      let outline;
+      if (wizardModules.length) {
+        // User has chosen modules — use them directly (skip full AI outline)
+        const base = window._wizardOutline || {};
+        outline = {
+          title: base.title || subject,
+          tagline: base.tagline || `A course on ${subject}`,
+          modules: wizardModules,
+        };
+      } else {
+        // No modules specified — let AI generate them
+        const res = await fetch("/plan-course", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subject, category: cat, sourceMaterial: src, sourceFocus: srcFocus }),
+        });
+        if (!res.ok) throw new Error("Server error");
+        outline = await res.json();
+        if (!outline.modules || !outline.modules.length) throw new Error("No modules returned");
+      }
+
       const courses = loadCourses();
       const existing = courses.findIndex(c => c.title === outline.title);
       const course = { ...outline, modules: outline.modules.map(m => ({ ...m, done: false })),
         sourceMaterial: src, sourceFocus: srcFocus };
       if (existing >= 0) courses[existing] = course; else courses.unshift(course);
       saveCourses(courses);
+      window._wizardOutline = null;
       renderCourseView(course);
     } catch (e) {
       alert("Couldn't build course: " + e.message);
     } finally {
-      btn.textContent = "+ Create Course";
       btn.disabled = false;
+      btn.textContent = "Build course →";
     }
-  });
+  }
+
+  document.getElementById("wizardBuildBtn").addEventListener("click", buildCourseFromWizard);
+  document.getElementById("wizardBackBtn").addEventListener("click", () => showView("homeView"));
+
+  document.getElementById("buildCourseBtn").addEventListener("click", () => openCourseWizard());
 
   // ── RENDER YOUR COURSES GRID ─────────────────────────────────────────
   function renderYourCourses() {
