@@ -2,7 +2,6 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const OpenAI = require("openai");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { groundTopic } = require("./grounding");
 const courses = require("./courses");
 
@@ -18,22 +17,19 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 // (it rejects empty strings too). A real request will still fail with an auth
 // error if the key is genuinely missing — but the server boots.
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
-const gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 // NVIDIA Build client — uses the OpenAI SDK against NVIDIA's hosted endpoint.
-// Set NVIDIA_API_KEY in env to enable; codegen falls back to Gemini when missing.
+// Set NVIDIA_API_KEY in env to enable; codegen falls back to OpenAI gpt-4o when missing.
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY || "missing-nvidia-key",
   baseURL: "https://integrate.api.nvidia.com/v1",
-  timeout: 180000,  // 3min — generous because we stream; a hang still aborts and falls back to Gemini
+  timeout: 180000,  // 3min — generous because we stream; a hang aborts and falls back to OpenAI
   maxRetries: 0,    // we handle retries ourselves; don't let the SDK silently double the wait
 });
 
 // Codegen model selector.
 // "nvidia"  → an NVIDIA Build model (id from CODEGEN_MODEL_ID) via the OpenAI-compatible endpoint
-// "gemini"  → gemini-2.5-pro via Google SDK
-// "nemotron" is accepted as a legacy alias for "nvidia".
-// Set CODEGEN_MODEL=gemini in env to revert to Gemini.
+// "nemotron" is accepted as a legacy alias for "nvidia". Fallback is OpenAI gpt-4o.
 const CODEGEN_MODEL = process.env.CODEGEN_MODEL || "nvidia";
 // The exact NVIDIA Build model id to call. Swap this (env var, no code change)
 // to switch NVIDIA Build models:
@@ -90,8 +86,7 @@ async function openaiJSON(prompt, maxTokens = 2500, model = "gpt-4o") {
   return JSON.parse(res.choices[0].message.content.trim());
 }
 
-// The HTML codegen + repair steps call gemini.getGenerativeModel directly (see
-// codeFromImageBrief and repairLab) — that is the only place Gemini is used.
+// HTML codegen uses NVIDIA Build (Kimi K2.6) with OpenAI gpt-4o as fallback.
 
 function topicKey(topic) {
   return topic.toLowerCase().trim().replace(/\s+/g, ' ');
@@ -201,7 +196,7 @@ async function rateLab(key, stars) {
 }
 
 // Top cached labs by quality, then popularity — recommending these is FREE (cache hits,
-// no Gemini call). This is the core cost-saving lever: steer learners to proven labs.
+// no AI call). This is the core cost-saving lever: steer learners to proven labs.
 async function getRecommendedLabs(limit = 12) {
   const sb = getSupabase();
   if (!sb) return [];
@@ -852,11 +847,6 @@ Aspect ratio: landscape, edge to edge.`;
 // Step 5 — writes the final HTML lab.
 // Takes the prose brief (source of truth for behavior) + optional mockup image (look/layout).
 //
-// NOTE: This step originally ran on Claude (claude-opus-4-7), then Gemini, then Vertex, then Ollama. Now uses OpenAI.
-// Change LAB_MODEL here to swap models.
-const LAB_MODEL = "gemini-2.5-pro";
-// Fallback model tried if LAB_MODEL is overloaded (503) after retries.
-const LAB_MODEL_FALLBACK = "gemini-2.5-flash";
 
 function isOverloadError(err) {
   const msg = String(err && err.message || err);
@@ -869,48 +859,6 @@ function isOverloadError(err) {
 function isQuotaError(err) {
   const msg = String(err && err.message || err);
   return /insufficient_quota|exceeded your current quota|billing/i.test(msg);
-}
-
-// Gemini's free tier 503s under load. Retry with exponential backoff across
-// both Gemini models, then — if an openaiFallback is provided — fall back to
-// OpenAI (a different provider, unlikely to be down at the same time).
-// `openaiFallback` is `async (request) => string`; its return is wrapped to
-// match the Gemini response shape so callers stay unchanged.
-async function geminiGenerate(request, { label = "gemini", openaiFallback = null } = {}) {
-  const models = [LAB_MODEL, LAB_MODEL_FALLBACK];
-  let lastErr;
-  for (const modelName of models) {
-    const model = gemini.getGenerativeModel({ model: modelName });
-    // Backoff schedule: ~1s, 2s, 4s, 8s
-    for (let attempt = 0; attempt < 4; attempt++) {
-      try {
-        return await model.generateContent(request);
-      } catch (err) {
-        lastErr = err;
-        // Only retry/fallback on transient overload errors; rethrow real bugs.
-        if (!isOverloadError(err)) throw err;
-        if (attempt < 3) {
-          const wait = 1000 * Math.pow(2, attempt);
-          console.warn(`[${label}] ${modelName} overloaded (attempt ${attempt + 1}), retrying in ${wait}ms`);
-          await new Promise(r => setTimeout(r, wait));
-        } else {
-          console.warn(`[${label}] ${modelName} still overloaded after retries; trying next model`);
-        }
-      }
-    }
-  }
-  // All Gemini models exhausted. Try OpenAI as a cross-provider fallback.
-  if (openaiFallback) {
-    try {
-      console.warn(`[${label}] all Gemini models overloaded; falling back to OpenAI`);
-      const text = await openaiFallback(request);
-      return { response: { text: () => text } };
-    } catch (err) {
-      console.warn(`[${label}] OpenAI fallback also failed: ${err.message}`);
-      lastErr = err;
-    }
-  }
-  throw lastErr;
 }
 
 // Step 3b — per-topic visual pedagogy: how THIS specific concept is best taught in a WebGL 3D scene.
@@ -1784,27 +1732,9 @@ ${critiqueNotes}
 ` : ""}
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
-  // --- GEMINI FALLBACK (commented out) ---
-  // const model = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
-  // const parts = [{ text: briefText }];
-  // if (imageDataUrl) {
-  //   const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
-  //   if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
-  // }
-  // const res = await model.generateContent({
-  //   contents: [{ role: "user", parts }],
-  //   generationConfig: { maxOutputTokens: 12000, temperature: 0.7 },
-  // });
-  // let html = res.response.text().trim();
-  // html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
-  // return html;
-  // --- END GEMINI FALLBACK ---
-
   // ── CODEGEN DISPATCH ──────────────────────────────────────────────────────
-  // CODEGEN_MODEL=nvidia → CODEGEN_MODEL_ID on NVIDIA Build (Nemotron, Kimi, …)
-  // CODEGEN_MODEL=gemini → gemini-2.5-pro on Google SDK (also the fallback)
-  // NVIDIA Build models here are text-only, so when a mockup imageDataUrl is
-  // present we fall back to Gemini automatically (it can see the image).
+  // CODEGEN_MODEL=nvidia → CODEGEN_MODEL_ID on NVIDIA Build (Kimi K2.6, etc.)
+  // Fallback → OpenAI gpt-4o (also handles mockup imageDataUrl via vision).
   const useNvidia = (CODEGEN_MODEL === "nvidia" || CODEGEN_MODEL === "nemotron")
     && !!process.env.NVIDIA_API_KEY
     && !imageDataUrl;   // NVIDIA Build text-only
@@ -1854,47 +1784,62 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
         }
       }
     }
-    // NVIDIA Build model failed — fall through to Gemini
-    console.warn(`[codegen/nvidia] ${CODEGEN_MODEL_ID} failed, falling back to Gemini:`, lastErr && lastErr.message);
+    // NVIDIA Build model failed — fall through to OpenAI fallback
+    console.warn(`[codegen/nvidia] ${CODEGEN_MODEL_ID} failed, falling back to OpenAI:`, lastErr && lastErr.message);
   }
 
-  // ── GEMINI CODEGEN (primary when CODEGEN_MODEL=gemini, or NVIDIA fallback) ─
-  console.log("[codegen] routing to Gemini:", LAB_MODEL);
-  const model = gemini.getGenerativeModel({ model: LAB_MODEL });
-  const parts = [{ text: briefText }];
+  // ── OPENAI CODEGEN FALLBACK ───────────────────────────────────────────────
+  // Reached when NVIDIA Build is unavailable or CODEGEN_MODEL is not "nvidia".
+  // Uses gpt-4o with streaming so the connection stays alive.
+  console.log("[codegen] routing to OpenAI gpt-4o");
+  const messages = [{ role: "user", content: briefText }];
   if (imageDataUrl) {
-    const m = imageDataUrl.match(/^data:(.+?);base64,(.*)$/);
-    if (m) parts.push({ inlineData: { mimeType: m[1], data: m[2] } });
+    // gpt-4o supports vision — pass the mockup image when present.
+    messages[0].content = [
+      { type: "text", text: briefText },
+      { type: "image_url", image_url: { url: imageDataUrl } },
+    ];
   }
 
-  let res;
-  const MAX_ATTEMPTS = 4;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  let oaLastErr;
+  for (let attempt = 1; attempt <= 4; attempt++) {
     try {
-      res = await model.generateContent({
-        contents: [{ role: "user", parts }],
-        generationConfig: { maxOutputTokens: 32000, temperature: 0.7 },
-      });
-      break;
-    } catch (err) {
-      const status = err && (err.status || err.statusCode);
-      const retryable = status === 503 || status === 429 || status === 500;
-      if (retryable && attempt < MAX_ATTEMPTS) {
-        const wait = Math.pow(2, attempt) * 1000;
-        console.warn(`GEMINI ${status} on attempt ${attempt}/${MAX_ATTEMPTS} — retrying in ${wait}ms`);
-        await new Promise(r => setTimeout(r, wait));
-        continue;
+      const stream = await openaiCreate({
+        model: "gpt-4o",
+        max_tokens: 16384,
+        temperature: 0.7,
+        stream: true,
+        messages,
+      }, "codegen/openai");
+      let raw = "";
+      let lastReport = 0;
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta?.content || "";
+        if (!delta) continue;
+        raw += delta;
+        if (onProgress && raw.length - lastReport >= 2000) {
+          lastReport = raw.length;
+          try { onProgress(raw.length); } catch (_) {}
+        }
       }
-      console.error("GEMINI LAB GENERATION ERROR — model:", LAB_MODEL);
-      console.error("  message:", err && err.message);
-      console.error("  status:", status);
-      throw err;
+      let html = raw.trim();
+      html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+      return html;
+    } catch (err) {
+      oaLastErr = err;
+      const status = err && (err.status || err.statusCode);
+      const retryable = status === 429 || status === 503 || status === 500;
+      if (retryable && attempt < 4) {
+        const wait = Math.pow(2, attempt) * 1000;
+        console.warn(`[codegen/openai] attempt ${attempt}/4 status ${status} — retrying in ${wait}ms`);
+        await new Promise(r => setTimeout(r, wait));
+      } else {
+        break;
+      }
     }
   }
-
-  let html = res.response.text().trim();
-  html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
-  return html;
+  console.error("[codegen/openai] lab generation failed:", oaLastErr && oaLastErr.message);
+  throw oaLastErr;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -2282,7 +2227,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // GET /api/recommended-labs — top-rated cached labs (free to replay, no Gemini cost)
+  // GET /api/recommended-labs — top-rated cached labs (free to replay, no AI cost)
   if (req.method === "GET" && url === "/api/recommended-labs") {
     try {
       const labs = await getRecommendedLabs(12);
@@ -2571,7 +2516,7 @@ const server = http.createServer(async (req, res) => {
         console.error(err);
         // Turn cryptic provider 503s into a clear, actionable message.
         const friendly = isQuotaError(err)
-          ? "An AI provider API quota or billing limit was reached. Check the OpenAI/Gemini account billing — the keys are valid but out of quota."
+          ? "An AI provider API quota or billing limit was reached. Check the OpenAI account billing — the key is valid but out of quota."
           : isOverloadError(err)
           ? "Our lab-building models are overloaded right now (high demand). This is temporary — please try again in a minute."
           : (err.message || "Something went wrong");
