@@ -716,11 +716,23 @@ COURSE CATEGORY: ${cat}
 CATEGORY AESTHETIC: ${categoryGuidance(cat)}
 COLOR PALETTE (must match Repend platform exactly): void ${REPEND_THEME.void}, fog ${REPEND_THEME.fog}, Mars rust ${REPEND_THEME.mars}, copper ${REPEND_THEME.copper}, ice HUD ${REPEND_THEME.ice}, muted ${REPEND_THEME.muted}
 
+━━━ THE PURPOSE OF THIS LAB — design every element to serve these five things ━━━
 TOPIC: ${design.topic}
 LEARNING GOAL: ${design.spec.learning_goal}
+ENTRY MISCONCEPTION (the wrong belief this lab must CORRECT):
+  "${design.spec.entry_misconception || ""}"
+  → The DEFAULT SCENE must INVITE this misconception — on first glance, a learner who doesn't interact yet should find this belief plausible. Describe what makes the starting scene feel like the misconception is true.
+FIRST MOVE (what they do first, that surprises them and cracks the misconception):
+  "${design.spec.first_move || ""}"
+  → Design the scene so this action is OBVIOUS without reading instructions. Describe what visual affordance (glow, arrow, label) points the learner to it.
+AHA TRIGGER (the exact visual event that delivers the insight — NOT just a number changing):
+  "${design.spec.aha_trigger || ""}"
+  → This must be an UNMISSABLE visual event: a sudden shape change, collision, phase flip, curve bending, threshold crossed with a burst of color. Describe it in cinematic terms.
+REAL-WORLD PAYOFF (shown on win — must appear verbatim):
+  "${design.spec.real_world_payoff || ""}"
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
-ENTRY MISCONCEPTION: "${design.spec.entry_misconception || ""}"
 DIRECT MANIPULATION: "${design.spec.direct_manipulation || ""}"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 VARIABLES:
 ${vars}
@@ -1756,6 +1768,47 @@ Before returning, verify ALL of these — fix any that fail before responding:
 30. (data-sampling only) Can the learner run many trials and watch a histogram build? Does sample size visibly affect the distribution shape (CLT)?
 31. (experiment-bench only) Is there a 3D lab bench with pourable beakers, live readouts (pH/temp/color), and a threshold reaction the learner must trigger?
 
+━━━ PURPOSE MANDATE — the lab must teach THIS specific insight, not just look nice ━━━
+These five fields are the soul of the lab. Every structural element must serve them. Check each before returning:
+
+  ENTRY MISCONCEPTION: "${design.spec.entry_misconception || ""}"
+  → The lab's DEFAULT STATE must INVITE this misconception (so fixing it is meaningful).
+    The starting visual should make the wrong belief feel plausible — a learner who just glances and doesn't interact should be tempted to think the misconception is true.
+    Within 10 seconds of their first move, the misconception should start to crack.
+
+  FIRST MOVE: "${design.spec.first_move || ""}"
+  → This is the FIRST THING the learner does. It must be instantly obvious from the UI
+    (a highlighted draggable, a blinking prompt, or an on-screen arrow pointing to it).
+    Doing it must produce a SURPRISING result that challenges the entry misconception.
+    A lab where the first move isn't obvious, or doesn't surprise, fails this mandate.
+
+  AHA TRIGGER: "${design.spec.aha_trigger || ""}"
+  → This is a SPECIFIC VISUAL EVENT — not a number changing, not text appearing.
+    It must be unmissable: a curve suddenly bending, a phase changing, a collision,
+    a threshold crossed with a visual jump (particle burst, color shift, sudden motion).
+    The learner must SEE it happen without being told to look — it should be impossible to miss.
+    If the only "aha" is a number in a readout changing, this mandate fails.
+
+  LEARNING GOAL: "${design.spec.learning_goal || ""}"
+  → This exact insight must be STATED EXPLICITLY in the lab (not just implied):
+    as a goal line in the controls panel ("GOAL: discover why X causes Y"),
+    and as the reveal text when the aha trigger fires or the win condition is met.
+    The learner should be able to read the learning goal back from the screen.
+
+  REAL-WORLD PAYOFF: "${design.spec.real_world_payoff || ""}"
+  → This MUST appear as visible text on the win screen / reveal card.
+    Format: "[What you just saw] is why [real-world consequence]."
+    It must name something in the learner's world (their savings account, the ISS, a bridge).
+    A vague "now you understand X" does not count — it must be THIS specific sentence.
+
+PURPOSE SELF-TEST (answer YES to all before returning):
+□ Default state invites the entry misconception?
+□ First move is instantly obvious AND produces a surprising result?
+□ Aha trigger fires as an unmissable VISUAL EVENT (not just a number change)?
+□ Learning goal stated as text on screen (goal line + reveal)?
+□ Real-world payoff appears verbatim on the win screen?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 ━━━ FINAL PILLAR GATE — if any answer is NO, fix it before returning ━━━
 P1. INTERACTIVITY: Is the learner's PRIMARY action a direct grab/aim/steer in the play area (not just sliders), with every control producing an immediate visible change?
 P2. GAMIFICATION: Is there a win goal drawn on the canvas, live progress toward it, near-miss feedback, a score/streak/match HUD, and an auto-detected win → celebration + grade + labCheck?
@@ -1964,19 +2017,29 @@ Rubric dimensions:
 - purpose: does every visible element appear to serve the learning goal, or is there obvious decorative clutter with no purpose?
 - clarity: would a first-time learner know, within 3 seconds and with no outside instructions, (a) what they're looking at, (b) what to touch first, and (c) what success looks like? Missing goal line, missing "how this works" / first-move hint, or an unexplained stage is a blocker.
 - affordance: is every control labeled with its ROLE — the action verb + the thing it acts on + the effect (e.g. "Drag the ball → launch angle", "Slide Rate → faster growth")? Is there a visible "Controls"/"How to play" legend panel that lists EVERY interactive element (one line each: name — verb → effect) plus the goal? A missing legend panel, an unlabeled slider/button/draggable, or a control with no visible live readout of its consequence, is a blocker. Also flag controls that look unbounded or able to reach nonsensical values for the topic.
+- purpose_execution: does the lab visually encode its PURPOSE — the specific entry_misconception it must correct, the aha_trigger visual event, and the real_world_payoff? Judge: (a) Is the entry_misconception something a learner COULD hold after looking at this lab's default state (i.e. the default state should INVITE the misconception so overcoming it is meaningful)? (b) Is there a visible, unmissable visual event that matches the aha_trigger description — NOT just a slider that changes a number? (c) Is the real_world_payoff shown explicitly (as text or a labeled scene element) when the learner wins, NOT just implied? A lab that looks nice but fails to stage the misconception, deliver the aha, or land the payoff is a blocker on this dimension.
 
 Be concrete in "fix" — name the exact element and the exact correction, so a code generator with no other context can apply it.`;
 
 async function critiqueLab(imageBase64, design) {
+  const s = design.spec || {};
+  const purposeCtx = [
+    `Topic: "${design.topic}"`,
+    `Learning goal: "${s.learning_goal || ""}"`,
+    `Entry misconception to CORRECT: "${s.entry_misconception || ""}"`,
+    `First move (what surprises them within 10s): "${s.first_move || ""}"`,
+    `Aha trigger (the exact visual event): "${s.aha_trigger || ""}"`,
+    `Real-world payoff (shown on win): "${s.real_world_payoff || ""}"`,
+  ].join("\n");
   try {
     const resp = await openaiCreate({
       model: OPENAI_MODEL,
-      max_tokens: 1000,
+      max_tokens: 1200,
       messages: [
         {
           role: "user",
           content: [
-            { type: "text", text: `${CRITIC_RUBRIC}\n\nTopic: "${design.topic}". Learning goal: "${design.spec.learning_goal}".` },
+            { type: "text", text: `${CRITIC_RUBRIC}\n\n${purposeCtx}` },
             { type: "image_url", image_url: { url: `data:image/png;base64,${imageBase64}` } },
           ],
         },
