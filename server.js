@@ -69,6 +69,21 @@ const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "moonshotai/kimi-k2.6";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 const OPENAI_MINI_MODEL = process.env.OPENAI_MINI_MODEL || "gpt-4o-mini";
 
+// Reasoning provider — routes the text/JSON stages (plan, spec, verify, pedagogy,
+// classifiers, courses) to a cheaper backend while testing. Defaults to NVIDIA
+// Build (openai/gpt-oss-20b, effectively free) when an NVIDIA key is present, so
+// you are not paying OpenAI per token during development. Set REASONING_PROVIDER=openai
+// to flip everything back to gpt-4o/gpt-4o-mini.
+//   REASON_MODEL      → heavy text/JSON stages (spec, codegen fallback, critic)
+//   REASON_MINI_MODEL → cheap stages (topic expand, verify, classifiers, courses)
+// NOTE: vision (analyzeImage) always stays on OpenAI — gpt-oss-20b is text-only.
+const REASONING_PROVIDER = (process.env.REASONING_PROVIDER || (NVIDIA_API_KEY ? "nvidia" : "openai")).toLowerCase();
+const useNvidiaReasoning = REASONING_PROVIDER === "nvidia" && !!NVIDIA_API_KEY;
+const reason = useNvidiaReasoning ? nvidia : openai;
+const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-20b" : OPENAI_MODEL);
+const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-20b" : OPENAI_MINI_MODEL);
+console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL})` : `OpenAI (${REASON_MODEL})`}`);
+
 // Optional mockup-image model — runs on NVIDIA Build (free) via the OpenAI-
 // compatible images endpoint, reusing the `nvidia` client. The mockup step is
 // gated behind USE_MOCKUP=1; it is OFF by default because the text brief drives
@@ -85,19 +100,20 @@ function getSupabase() {
   return supabase;
 }
 
-// OpenAI also returns transient 429/503s under load. Retry with exponential
-// backoff (~1s/2s/4s/8s) on overload errors only; rethrow real bugs.
-async function openaiCreate(params, label = "openai") {
+// Reasoning calls route through the configured provider (NVIDIA Build by default
+// for cheap testing; OpenAI when REASONING_PROVIDER=openai). Both expose the same
+// OpenAI-compatible chat.completions API. Retries on transient 429/503 only.
+async function openaiCreate(params, label = "reason") {
   let lastErr;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      return await openai.chat.completions.create(params);
+      return await reason.chat.completions.create(params);
     } catch (err) {
       lastErr = err;
       if (!isOverloadError(err)) throw err;
       if (attempt < 3) {
         const wait = 1000 * Math.pow(2, attempt);
-        console.warn(`[${label}] OpenAI overloaded (attempt ${attempt + 1}), retrying in ${wait}ms`);
+        console.warn(`[${label}] provider overloaded (attempt ${attempt + 1}), retrying in ${wait}ms`);
         await new Promise(r => setTimeout(r, wait));
       }
     }
@@ -120,7 +136,7 @@ function extractHtml(raw) {
 }
 
 // Helper: OpenAI plain-text response
-async function openaiText(prompt, maxTokens = 1000, model = OPENAI_MINI_MODEL) {
+async function openaiText(prompt, maxTokens = 1000, model = REASON_MINI_MODEL) {
   const res = await openaiCreate({
     model, max_tokens: maxTokens,
     messages: [{ role: "user", content: prompt }],
@@ -129,7 +145,7 @@ async function openaiText(prompt, maxTokens = 1000, model = OPENAI_MINI_MODEL) {
 }
 
 // Helper: OpenAI JSON response (json_object mode)
-async function openaiJSON(prompt, maxTokens = 2500, model = OPENAI_MODEL) {
+async function openaiJSON(prompt, maxTokens = 2500, model = REASON_MODEL) {
   const res = await openaiCreate({
     model, max_tokens: maxTokens,
     response_format: { type: "json_object" },
@@ -391,8 +407,8 @@ const VERIFY_SYSTEM = `You are a learning coach. Return ONLY JSON:
 const ENGINE_TEMPLATE = fs.readFileSync(path.join(__dirname, "engine.html"), "utf8");
 
 async function plan(topic) {
-  const res = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
+  const res = await reason.chat.completions.create({
+    model: REASON_MODEL,
     max_tokens: 4096,
     response_format: { type: "json_object" },
     messages: [
@@ -412,8 +428,8 @@ function injectRecipe(recipe) {
 }
 
 async function verify(topic, question, recipeSummary, userAnswer, labResult) {
-  const res = await openai.chat.completions.create({
-    model: OPENAI_MINI_MODEL,
+  const res = await reason.chat.completions.create({
+    model: REASON_MINI_MODEL,
     max_tokens: 512,
     response_format: { type: "json_object" },
     messages: [
@@ -520,8 +536,8 @@ THEIR MATERIAL (excerpt):
 ${sourceMaterial.slice(0, 4000)}
 """` : "";
 
-  const res = await openai.chat.completions.create({
-    model: OPENAI_MINI_MODEL,
+  const res = await reason.chat.completions.create({
+    model: REASON_MINI_MODEL,
     max_tokens: 200,
     response_format: { type: "json_object" },
     messages: [
@@ -628,12 +644,12 @@ State: "INTERACTION TYPE: [chosen type] because [one sentence reason]."
 4. THE AHA MOMENT — the precise moment when the learner says "oh!". What did they just see or experience?
 5. THE REAL-WORLD COST — one concrete situation where not understanding this costs something real (money, health, justice, a relationship, a historical outcome).
 
-Write in plain direct prose. Be specific to ${topic}.`, 1000, OPENAI_MINI_MODEL);
+Write in plain direct prose. Be specific to ${topic}.`, 1000, REASON_MINI_MODEL);
 }
 
 async function specFromThinking(topic, thinking, category = "General", grounding = null) {
-  const res = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
+  const res = await reason.chat.completions.create({
+    model: REASON_MODEL,
     max_tokens: 2200,
     response_format: { type: "json_object" },
     messages: [
@@ -890,8 +906,8 @@ RULES:
 - For data-sampling: describe trial mechanics, bin layout, and what changes when sample size increases
 - For experiment-bench: describe each beaker, reagent, pour gesture, and reaction threshold visuals`;
 
-  const res = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
+  const res = await reason.chat.completions.create({
+    model: REASON_MODEL,
     max_tokens: 2500,
     messages: [{ role: "user", content: prompt }],
   });
@@ -925,7 +941,7 @@ Write ONE vivid image prompt (max 100 words). Requirements:
 - Include the labeled controls the learner uses and a live readout.
 - Cinematic dark theme: near-black #050508 background, teal #4CC9F0 accents, glassmorphic HUD, volumetric rim light, 16:9 landscape.
 - No paragraphs of body text, no browser chrome, no watermark.
-Return ONLY the prompt text.`, 300, OPENAI_MINI_MODEL);
+Return ONLY the prompt text.`, 300, REASON_MINI_MODEL);
 }
 
 // Renders the mockup on NVIDIA Build (free) via the OpenAI-compatible images
@@ -983,7 +999,7 @@ Answer these five questions concisely (2-4 sentences each):
 
 Be specific to "${topic}". Do not give generic answers. Do not repeat the archetype patterns verbatim.`;
 
-  return openaiText(prompt, 800, OPENAI_MINI_MODEL);
+  return openaiText(prompt, 800, REASON_MINI_MODEL);
 }
 
 async function codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category = "General", onProgress = null, critiqueNotes = null) {
@@ -1940,13 +1956,14 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
     console.warn(`[codegen/nvidia] ${CODEGEN_MODEL_ID} failed, falling back to OpenAI:`, lastErr && lastErr.message);
   }
 
-  // ── OPENAI CODEGEN FALLBACK ───────────────────────────────────────────────
-  // Reached when NVIDIA Build is unavailable or CODEGEN_MODEL is not "nvidia".
-  // Uses OPENAI_MODEL with streaming so the connection stays alive.
-  console.log(`[codegen] routing to OpenAI ${OPENAI_MODEL}`);
+  // ── CODEGEN FALLBACK ──────────────────────────────────────────────────────
+  // Reached when NVIDIA Build (Kimi) is unavailable or CODEGEN_MODEL is not "nvidia".
+  // Routes through the reasoning provider (NVIDIA gpt-oss-20b by default, OpenAI
+  // when REASONING_PROVIDER=openai) with streaming so the connection stays alive.
+  console.log(`[codegen] routing to reasoning fallback ${REASON_MODEL}`);
   const messages = [{ role: "user", content: briefText }];
-  if (imageDataUrl) {
-    // OPENAI_MODEL (gpt-4o / gpt-5.x) supports vision — pass the mockup when present.
+  if (imageDataUrl && !useNvidiaReasoning) {
+    // Vision is only available on the OpenAI path — gpt-oss-20b is text-only.
     messages[0].content = [
       { type: "text", text: briefText },
       { type: "image_url", image_url: { url: imageDataUrl } },
@@ -1957,12 +1974,12 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
       const stream = await openaiCreate({
-        model: OPENAI_MODEL,
+        model: REASON_MODEL,
         max_tokens: 16384,
         temperature: 0.7,
         stream: true,
         messages,
-      }, "codegen/openai");
+      }, "codegen/fallback");
       let raw = "";
       let lastReport = 0;
       for await (const chunk of stream) {
@@ -1976,7 +1993,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
       }
       const html = extractHtml(raw);
       if (!html) {
-        throw new Error(`OpenAI ${OPENAI_MODEL} returned non-HTML content (${raw.length} chars)`);
+        throw new Error(`${REASON_MODEL} returned non-HTML content (${raw.length} chars)`);
       }
       return html;
     } catch (err) {
@@ -2095,7 +2112,9 @@ async function critiqueLab(imageBase64, design) {
     `Real-world payoff (shown on win): "${s.real_world_payoff || ""}"`,
   ].join("\n");
   try {
-    const resp = await openaiCreate({
+    // Vision call — stays on OpenAI regardless of REASONING_PROVIDER (gpt-oss-20b
+    // is text-only and cannot see the screenshot).
+    const resp = await openai.chat.completions.create({
       model: OPENAI_MODEL,
       max_tokens: 1200,
       messages: [
@@ -2107,7 +2126,7 @@ async function critiqueLab(imageBase64, design) {
           ],
         },
       ],
-    }, "critic");
+    });
     let raw = resp.choices[0].message.content.trim();
     raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
     return JSON.parse(raw);
