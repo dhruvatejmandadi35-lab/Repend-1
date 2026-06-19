@@ -980,10 +980,15 @@
     /* ── COURSE STRUCTURE ── */
     .btn-course-build { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 10px; padding: 7px 16px; font-size: 0.83rem; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.15s; }
     .btn-course-build:hover { border-color: var(--mars); color: var(--mars); }
-    #courseView { padding: 24px 32px 60px; max-width: 760px; margin: 0 auto; }
+    #courseView { padding: 28px 32px 64px; max-width: 760px; margin: 0 auto; }
     .course-header { padding: 24px 28px; margin-bottom: 24px; }
-    .course-back-btn { background: none; border: none; color: var(--muted); font-size: 0.85rem; cursor: pointer; font-family: inherit; padding: 0 0 12px; transition: color 0.15s; }
-    .course-back-btn:hover { color: var(--text); }
+    /* Unified back button across every course screen (course/lesson/quiz/wizard) */
+    .course-back-btn, .wizard-back { background: none; border: none; color: var(--muted); font-size: 0.85rem; cursor: pointer; font-family: inherit; padding: 0; margin-bottom: 20px; display: inline-flex; align-items: center; gap: 6px; transition: color 0.15s; }
+    .course-back-btn:hover, .wizard-back:hover { color: var(--text); }
+    /* Shared course breadcrumb — ties lesson & quiz back to the course flow */
+    .course-crumb { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+    .course-crumb .crumb-step { color: var(--mars); }
+    .course-crumb .crumb-step.quiz { color: var(--ice); }
     .course-title { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 4px; }
     .course-tagline { font-size: 0.9rem; color: var(--muted); margin-bottom: 16px; }
     .course-progress-wrap { display: flex; align-items: center; gap: 12px; }
@@ -1004,11 +1009,12 @@
     .course-step-t { font-size: 1rem; font-weight: 800; }
     .course-step-s { font-size: 0.74rem; color: var(--muted); }
     /* Lesson viewer */
-    .lesson-wrap, .quiz-wrap { max-width: 720px; margin: 0 auto; padding: 24px 32px 60px; }
-    .lesson-modtitle { font-size: 1.3rem; font-weight: 800; margin: 12px 0 18px; }
+    .lesson-wrap, .quiz-wrap { max-width: 760px; margin: 0 auto; padding: 28px 32px 64px; }
+    .lesson-modtitle { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 20px; }
     .lesson-slide { padding: 30px 32px; min-height: 280px; border-radius: 16px; line-height: 1.6; font-size: 0.98rem; }
     .lesson-slide h2 { font-size: 1.25rem; font-weight: 800; margin-bottom: 14px; }
     .lesson-slide .slide-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .lesson-slide .slide-counter { margin-left: auto; font-size: 0.7rem; color: var(--muted); font-family: "JetBrains Mono", monospace; }
     .lesson-slide .slide-module { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
     .lesson-slide .slide-type { display: inline-flex; align-items: center; gap: 5px; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; border-radius: 99px; padding: 3px 10px; }
     .lesson-slide .slide-type::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
@@ -1119,9 +1125,7 @@
     @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 
     /* ── COURSE WIZARD ── */
-    .wizard-wrap { max-width: 700px; margin: 0 auto; padding: 40px 24px 80px; }
-    .wizard-back { background: none; border: none; color: var(--muted); font-size: 0.88rem; font-family: inherit; cursor: pointer; padding: 0; margin-bottom: 28px; display: inline-flex; align-items: center; gap: 6px; transition: color 0.15s; }
-    .wizard-back:hover { color: var(--text); }
+    .wizard-wrap { max-width: 760px; margin: 0 auto; padding: 28px 32px 64px; }
     .wizard-heading { font-size: 1.5rem; font-weight: 900; letter-spacing: -0.03em; margin-bottom: 4px; }
     .wizard-topic-display { font-size: 1rem; color: var(--muted); margin-bottom: 32px; }
     .wizard-topic-display strong { color: var(--mars); }
@@ -1375,6 +1379,7 @@
 <div id="lessonView" style="display:none">
   <div class="lesson-wrap">
     <button class="course-back-btn" id="lessonBackBtn">← Back to course</button>
+    <div class="course-crumb"><span id="lessonCrumbCourse"></span><span>·</span><span class="crumb-step">📖 Lesson</span></div>
     <div class="lesson-modtitle" id="lessonModTitle"></div>
     <div class="lesson-slide glass-panel" id="lessonSlide"></div>
     <div class="lesson-nav">
@@ -1389,7 +1394,8 @@
 <div id="quizView" style="display:none">
   <div class="quiz-wrap">
     <button class="course-back-btn" id="quizBackBtn">← Back to course</button>
-    <div class="quiz-title">Quiz — <span id="quizCourseTitle"></span></div>
+    <div class="course-crumb"><span id="quizCourseTitle"></span><span>·</span><span class="crumb-step quiz">📝 Quiz</span></div>
+    <div class="quiz-title">Check your understanding</div>
     <div class="quiz-counter" id="quizCounter"></div>
     <div id="quizQuestion"></div>
     <div class="quiz-nav">
@@ -1806,7 +1812,8 @@
     document.getElementById("courseView").style.display = "none";
     document.getElementById("lessonView").style.display = "block";
     const slideEl = document.getElementById("lessonSlide");
-    document.getElementById("lessonModTitle").textContent = course.title;
+    const crumb = document.getElementById("lessonCrumbCourse");
+    if (crumb) crumb.textContent = course.title;
     if (course._lessons && course._lessons.length) {
       _lessonSlides = course._lessons;
     } else {
@@ -1839,10 +1846,12 @@
     _lessonVisited.add(_lessonIdx);
     // Persist position without marking the section "done" yet (that requires reaching the last slide).
     if (_lessonCourse) setCourseProgress(_lessonCourse.title, { lastSlideIdx: _lessonIdx });
+    // Big title shows the current module so the learner always knows where they are.
+    const modTitle = document.getElementById("lessonModTitle");
+    if (modTitle) modTitle.textContent = s.module || "";
     const type = s.type || "concept";
-    const moduleLabel = s.module ? `<span class="slide-module">${s.module}</span>` : "";
     document.getElementById("lessonSlide").innerHTML =
-      `<div class="slide-meta">${moduleLabel}<span class="slide-type t-${type}">${type.replace(/_/g, " ")}</span></div>` +
+      `<div class="slide-meta"><span class="slide-type t-${type}">${type.replace(/_/g, " ")}</span><span class="slide-counter">${_lessonIdx + 1} / ${_lessonSlides.length}</span></div>` +
       (s.title ? `<h2>${s.title}</h2>` : "") + mdToHtml(s.body);
     // Dots: visited (dim-lit), active (bright), unvisited (dark)
     document.getElementById("lessonDots").innerHTML = _lessonSlides.map((_, i) =>
