@@ -1799,6 +1799,10 @@ PLATFORM CONSTRAINTS (the lab runs inside a sandboxed iframe — these are non-n
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script>if(typeof THREE==='undefined'){document.body.innerHTML='<p style="color:#E85D04;padding:2rem">Three.js failed to load</p>';}</script>
+  • WEBGL FALLBACK (REQUIRED when using Three.js): the user's device may not support WebGL (old phones, disabled hardware acceleration, locked-down machines). NEVER let the lab show a silent black screen. Detect support BEFORE creating the renderer and wrap renderer creation in try/catch. On failure, render a centered, friendly message on a dark panel — not a blank canvas — e.g.:
+    function webglOK(){try{const c=document.createElement('canvas');return !!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')));}catch(e){return false;}}
+    if(!webglOK()){document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#120800;color:#E85D04;font:16px system-ui;text-align:center;padding:2rem">This 3D lab needs WebGL. Try enabling hardware acceleration in your browser settings, or open it on a different device/browser.</div>';}
+    else{ try{ /* create WebGLRenderer + run the lab here */ }catch(e){ document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#120800;color:#E85D04;font:16px system-ui;text-align:center;padding:2rem">Couldn\\'t start the 3D view on this device. Try another browser or enable hardware acceleration.</div>'; } }
   - GSAP — ALWAYS REQUIRED for cinematic transitions:
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
   - p5.js for animated many-entity sims ONLY if layering 2D overlay on Three.js scene:
@@ -2072,7 +2076,16 @@ async function getBrowser() {
   const puppeteer = require("puppeteer");
   _puppeteerBrowser = await puppeteer.launch({
     headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    args: [
+      "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
+      // WebGL via SwiftShader (software renderer) — Railway has no GPU, so without
+      // these every Three.js lab screenshots as a BLACK canvas, which makes the
+      // vision critic flag a false "blank canvas" blocker and triggers needless
+      // Kimi regenerations. SwiftShader renders WebGL in software, headless.
+      "--use-gl=angle", "--use-angle=swiftshader",
+      "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist",
+      "--enable-webgl", "--enable-accelerated-2d-canvas",
+    ],
   });
   return _puppeteerBrowser;
 }
