@@ -1031,15 +1031,33 @@
     .lesson-nav-btn.primary { background: var(--mars); border: none; color: #fff; }
     .lesson-nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .lesson-dots { display: flex; gap: 6px; flex-wrap: wrap; } .lesson-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--surface2); transition: background 0.2s; } .lesson-dots span.active { background: var(--mars); } .lesson-dots span.visited { background: rgba(232,93,4,0.35); }
-    /* Quiz viewer */
-    .quiz-title { font-size: 1.4rem; font-weight: 800; margin: 12px 0 20px; }
-    .quiz-q { padding: 20px 22px; margin-bottom: 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); }
-    .quiz-q .q-text { font-weight: 700; margin-bottom: 12px; }
-    .quiz-opt { display: block; width: 100%; text-align: left; padding: 11px 14px; margin-bottom: 8px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg0); color: var(--text); font-family: inherit; font-size: 0.9rem; cursor: pointer; transition: all 0.12s; }
-    .quiz-opt:hover { border-color: var(--mars); } .quiz-opt.selected { border-color: var(--mars); background: rgba(232,93,4,0.08); }
-    .quiz-opt.correct { border-color: var(--green); background: rgba(34,197,94,0.1); } .quiz-opt.wrong { border-color: #FCA5A5; background: rgba(248,113,113,0.08); }
-    .quiz-explain { font-size: 0.84rem; color: var(--muted); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
-    .quiz-result { padding: 22px; border-radius: 14px; text-align: center; font-size: 1.1rem; font-weight: 800; }
+    /* Quiz viewer — one question at a time, delayed feedback */
+    .quiz-title { font-size: 1.4rem; font-weight: 800; margin: 12px 0 6px; }
+    .quiz-counter { font-size: 0.78rem; color: var(--muted); margin-bottom: 20px; font-family: "JetBrains Mono", monospace; }
+    .quiz-q { padding: 24px 26px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface); }
+    .quiz-q .q-text { font-size: 1.05rem; font-weight: 700; margin-bottom: 16px; line-height: 1.5; }
+    .quiz-opt { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 13px 16px; margin-bottom: 10px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--bg0); color: var(--text); font-family: inherit; font-size: 0.92rem; cursor: pointer; transition: border-color 0.12s, background 0.12s; }
+    .quiz-opt:hover:not(:disabled) { border-color: var(--mars); }
+    /* Ring highlight only — no fill until submit */
+    .quiz-opt.selected { border-color: var(--mars); box-shadow: 0 0 0 1px var(--mars); }
+    /* Reveal states (post-submit in review mode) */
+    .quiz-opt.reveal-correct { border-color: var(--green) !important; background: rgba(34,197,94,0.1) !important; }
+    .quiz-opt.reveal-wrong   { border-color: #FCA5A5 !important; background: rgba(248,113,113,0.08) !important; }
+    .quiz-opt-letter { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 800; flex-shrink: 0; font-family: "JetBrains Mono", monospace; color: var(--muted); transition: inherit; }
+    .quiz-opt.selected .quiz-opt-letter { border-color: var(--mars); color: var(--mars); }
+    .quiz-opt.reveal-correct .quiz-opt-letter { border-color: var(--green); color: var(--green); }
+    .quiz-opt.reveal-wrong   .quiz-opt-letter { border-color: #FCA5A5; color: #FCA5A5; }
+    .quiz-explain { font-size: 0.84rem; color: var(--muted); margin-top: 14px; padding: 12px 14px; border-top: 1px solid var(--border); background: var(--surface2); border-radius: 8px; display: none; }
+    .quiz-nav { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; gap: 12px; }
+    .quiz-dots { display: flex; gap: 6px; flex-wrap: wrap; }
+    .quiz-dots span { width: 9px; height: 9px; border-radius: 50%; background: var(--surface2); cursor: pointer; transition: background 0.15s; }
+    .quiz-dots span.active { background: var(--mars); }
+    .quiz-dots span.answered { background: rgba(232,93,4,0.35); }
+    .quiz-dots span.review-pass { background: var(--green); } .quiz-dots span.review-fail { background: #FCA5A5; }
+    .quiz-result { padding: 22px; border-radius: 14px; text-align: center; font-size: 1.1rem; font-weight: 800; margin-top: 20px; }
+    .quiz-result-sub { font-size: 0.85rem; font-weight: 400; margin-top: 6px; color: var(--muted); }
+    .quiz-retry-btn { margin-top: 14px; padding: 10px 22px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-family: inherit; font-size: 0.9rem; font-weight: 700; cursor: pointer; transition: border-color 0.15s; }
+    .quiz-retry-btn:hover { border-color: var(--mars); }
     .course-add-module { display: flex; gap: 10px; margin-top: 14px; }
     .course-add-input { flex: 1; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-size: 0.9rem; }
     .course-add-input:focus { outline: none; border-color: var(--mars); }
@@ -1372,8 +1390,14 @@
   <div class="quiz-wrap">
     <button class="course-back-btn" id="quizBackBtn">← Back to course</button>
     <div class="quiz-title">Quiz — <span id="quizCourseTitle"></span></div>
-    <div id="quizQuestions"></div>
-    <button class="upload-build" id="quizSubmit" style="margin-top:20px">Submit answers</button>
+    <div class="quiz-counter" id="quizCounter"></div>
+    <div id="quizQuestion"></div>
+    <div class="quiz-nav">
+      <button class="lesson-nav-btn" id="quizPrev">← Prev</button>
+      <div class="quiz-dots" id="quizDots"></div>
+      <button class="lesson-nav-btn primary" id="quizNext">Next →</button>
+    </div>
+    <button class="upload-build" id="quizSubmit" style="margin-top:24px;display:none">Submit all answers</button>
     <div class="quiz-result" id="quizResult" style="display:none"></div>
   </div>
 </div>
@@ -1842,17 +1866,19 @@
     if (activeCourse) renderCourseView(activeCourse);
   }
 
-  // ── QUIZ (assess) ────────────────────────────────────────────────────
-  let _quizData = null, _quizCourse = null, _quizPicks = {};
+  // ── QUIZ (assess) — one question at a time, delayed feedback ─────────
+  // Spec: ring highlight only when picking; color reveal only after submit.
+  // Review mode after submit: dot nav, explanations visible on each question.
+  let _quizData = null, _quizCourse = null, _quizPicks = {}, _quizIdx = 0, _quizGraded = false;
+
   async function openQuiz(course) {
-    _quizCourse = course; _quizPicks = {};
+    _quizCourse = course; _quizPicks = {}; _quizIdx = 0; _quizGraded = false;
     document.getElementById("courseView").style.display = "none";
     document.getElementById("quizView").style.display = "block";
     document.getElementById("quizCourseTitle").textContent = course.title;
     document.getElementById("quizResult").style.display = "none";
-    const qEl = document.getElementById("quizQuestions");
-    qEl.innerHTML = '<p>Writing your quiz…</p>';
-    // One quiz for the whole course: combine every module's key_concepts.
+    document.getElementById("quizSubmit").style.display = "none";
+    document.getElementById("quizQuestion").innerHTML = '<p style="color:var(--muted);padding:20px">Writing your quiz…</p>';
     const combined = {
       title: course.title,
       topic: course.title,
@@ -1866,54 +1892,113 @@
       });
       if (!res.ok) throw new Error("server");
       _quizData = await res.json();
-    } catch (_) { qEl.innerHTML = '<p>Couldn\'t generate the quiz — please try again.</p>'; return; }
-    renderQuiz();
+    } catch (_) {
+      document.getElementById("quizQuestion").innerHTML = '<p>Couldn\'t generate the quiz — please try again.</p>';
+      return;
+    }
+    _quizIdx = 0;
+    renderQuizQuestion();
   }
-  function renderQuiz() {
-    const qEl = document.getElementById("quizQuestions");
-    qEl.innerHTML = (_quizData.questions || []).map((q, qi) => `
-      <div class="quiz-q" data-qi="${qi}">
-        <div class="q-text">${qi + 1}. ${q.question}</div>
-        ${q.options.map((opt, oi) => `<button class="quiz-opt" data-qi="${qi}" data-oi="${oi}">${opt}</button>`).join("")}
-        <div class="quiz-explain" style="display:none"></div>
-      </div>`).join("");
-    qEl.querySelectorAll(".quiz-opt").forEach(btn => {
-      btn.onclick = () => {
-        const qi = +btn.dataset.qi;
-        if (_quizPicks._graded) return;
-        _quizPicks[qi] = +btn.dataset.oi;
-        qEl.querySelectorAll(`.quiz-opt[data-qi="${qi}"]`).forEach(b => b.classList.remove("selected"));
-        btn.classList.add("selected");
-      };
-    });
-    document.getElementById("quizSubmit").style.display = "block";
-    document.getElementById("quizSubmit").textContent = "Submit answers";
-  }
-  document.getElementById("quizSubmit").onclick = () => {
-    if (!_quizData) return;
+
+  function renderQuizQuestion() {
     const qs = _quizData.questions || [];
-    let correct = 0;
-    qs.forEach((q, qi) => {
-      const pick = _quizPicks[qi];
-      const wrap = document.querySelector(`.quiz-q[data-qi="${qi}"]`);
-      wrap.querySelectorAll(".quiz-opt").forEach(b => {
-        const oi = +b.dataset.oi;
-        if (oi === q.correct_index) b.classList.add("correct");
-        else if (oi === pick) b.classList.add("wrong");
+    const q = qs[_quizIdx];
+    if (!q) return;
+    const letters = ["A","B","C","D"];
+    const pick = _quizPicks[_quizIdx];
+
+    document.getElementById("quizCounter").textContent = `Question ${_quizIdx + 1} of ${qs.length}`;
+
+    const opts = q.options.map((opt, oi) => {
+      let cls = "quiz-opt";
+      if (_quizGraded) {
+        if (oi === q.correct_index) cls += " reveal-correct";
+        else if (oi === pick && oi !== q.correct_index) cls += " reveal-wrong";
+      } else {
+        if (oi === pick) cls += " selected";
+      }
+      const disabled = _quizGraded ? "disabled" : "";
+      return `<button class="${cls}" data-oi="${oi}" ${disabled}>
+        <span class="quiz-opt-letter">${letters[oi] || oi}</span> ${opt}
+      </button>`;
+    }).join("");
+
+    const explain = _quizGraded && q.explanation
+      ? `<div class="quiz-explain" style="display:block">${q.explanation}</div>` : "";
+
+    document.getElementById("quizQuestion").innerHTML =
+      `<div class="quiz-q"><div class="q-text">${q.question}</div>${opts}${explain}</div>`;
+
+    // Wire option clicks (only before grading)
+    if (!_quizGraded) {
+      document.getElementById("quizQuestion").querySelectorAll(".quiz-opt").forEach(btn => {
+        btn.onclick = () => {
+          _quizPicks[_quizIdx] = +btn.dataset.oi;
+          renderQuizQuestion();
+          updateQuizNav();
+        };
       });
-      if (pick === q.correct_index) correct++;
-      const ex = wrap.querySelector(".quiz-explain");
-      ex.textContent = q.explanation || ""; ex.style.display = q.explanation ? "block" : "none";
+    }
+
+    updateQuizNav();
+  }
+
+  function updateQuizNav() {
+    const qs = _quizData ? _quizData.questions || [] : [];
+    const isFirst = _quizIdx === 0;
+    const isLast = _quizIdx === qs.length - 1;
+    document.getElementById("quizPrev").disabled = isFirst;
+    document.getElementById("quizNext").textContent = isLast ? (_quizGraded ? "Back to course" : "Review →") : "Next →";
+
+    // Dots: answered/unanswered before submit; pass/fail per question after submit
+    const letters = ["A","B","C","D"];
+    document.getElementById("quizDots").innerHTML = qs.map((q, i) => {
+      let cls = i === _quizIdx ? "active" : "";
+      if (_quizGraded) cls += _quizPicks[i] === q.correct_index ? " review-pass" : " review-fail";
+      else if (_quizPicks[i] !== undefined) cls += " answered";
+      return `<span class="${cls.trim()}" data-qi="${i}"></span>`;
+    }).join("");
+    document.getElementById("quizDots").querySelectorAll("span").forEach(dot => {
+      dot.onclick = () => { _quizIdx = +dot.dataset.qi; renderQuizQuestion(); };
     });
-    _quizPicks._graded = true;
+
+    // Show Submit only when all questions answered and not yet graded
+    const allAnswered = qs.every((_, i) => _quizPicks[i] !== undefined);
+    document.getElementById("quizSubmit").style.display = (!_quizGraded && allAnswered) ? "block" : "none";
+  }
+
+  document.getElementById("quizPrev").onclick = () => {
+    if (_quizIdx > 0) { _quizIdx--; renderQuizQuestion(); }
+  };
+  document.getElementById("quizNext").onclick = () => {
+    const qs = _quizData ? _quizData.questions || [] : [];
+    if (_quizIdx < qs.length - 1) {
+      _quizIdx++;
+      renderQuizQuestion();
+    } else if (_quizGraded) {
+      backToCourse();
+    } else {
+      // Wrap back to first unanswered question for review before submitting
+      const firstUnanswered = qs.findIndex((_, i) => _quizPicks[i] === undefined);
+      if (firstUnanswered >= 0) { _quizIdx = firstUnanswered; renderQuizQuestion(); }
+    }
+  };
+
+  document.getElementById("quizSubmit").onclick = () => {
+    if (!_quizData || _quizGraded) return;
+    _quizGraded = true;
+    const qs = _quizData.questions || [];
+    let correct = qs.filter((q, i) => _quizPicks[i] === q.correct_index).length;
     const pct = Math.round(correct / qs.length * 100);
-    const pass = pct >= Math.round((_quizData.pass_threshold || 0.7) * 100);
+    const threshold = Math.round((_quizData.pass_threshold || 0.7) * 100);
+    const pass = pct >= threshold;
     const r = document.getElementById("quizResult");
     r.style.display = "block";
     r.style.color = pass ? "var(--green)" : "#FCA5A5";
-    r.textContent = `${correct} / ${qs.length} correct (${pct}%) — ${pass ? "Passed! 🎉" : "Review the lessons and retry"}`;
-    document.getElementById("quizSubmit").style.display = "none";
+    r.innerHTML = `${correct} / ${qs.length} correct (${pct}%)&nbsp;— ${pass ? "Passed! 🎉" : "Not quite"}<div class="quiz-result-sub">${pass ? "Review your answers below, then continue." : `Need ${threshold}% to pass. Review below, then go back and re-read the lessons.`}</div>`;
     if (pass && _quizCourse) setCourseProgress(_quizCourse.title, { quizDone: true });
+    // Re-render current question with reveals, update dots with pass/fail colours
+    renderQuizQuestion();
   };
   document.getElementById("quizBackBtn").onclick = backToCourse;
 
