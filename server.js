@@ -76,13 +76,20 @@ const OPENAI_MINI_MODEL = process.env.OPENAI_MINI_MODEL || "gpt-4o-mini";
 // to flip everything back to gpt-4o/gpt-4o-mini.
 //   REASON_MODEL      → heavy text/JSON stages (spec, codegen fallback, critic)
 //   REASON_MINI_MODEL → cheap stages (topic expand, verify, classifiers, courses)
-// NOTE: vision (analyzeImage) always stays on OpenAI — gpt-oss-20b is text-only.
+// Vision calls (analyzeImage, visual critic) use a separate vision-capable model.
+// On NVIDIA Build, qwen/qwen2.5-vl-7b-instruct supports image_url natively and
+// is free-tier. Override with VISION_MODEL_ID. Falls back to OPENAI_MODEL on OpenAI.
 const REASONING_PROVIDER = (process.env.REASONING_PROVIDER || (NVIDIA_API_KEY ? "nvidia" : "openai")).toLowerCase();
 const useNvidiaReasoning = REASONING_PROVIDER === "nvidia" && !!NVIDIA_API_KEY;
 const reason = useNvidiaReasoning ? nvidia : openai;
 const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-20b" : OPENAI_MODEL);
 const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-20b" : OPENAI_MINI_MODEL);
+// Vision client: always NVIDIA when a key is present (qwen2.5-vl supports image_url);
+// falls back to OpenAI only when no NVIDIA key.
+const visionClient = NVIDIA_API_KEY ? nvidia : openai;
+const VISION_MODEL = process.env.VISION_MODEL_ID || (NVIDIA_API_KEY ? "qwen/qwen2.5-vl-7b-instruct" : OPENAI_MODEL);
 console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL})` : `OpenAI (${REASON_MODEL})`}`);
+console.log(`[boot] vision provider: ${NVIDIA_API_KEY ? `NVIDIA Build (${VISION_MODEL})` : `OpenAI (${OPENAI_MODEL})`}`);
 
 // Optional mockup-image model — runs on NVIDIA Build (free) via the OpenAI-
 // compatible images endpoint, reusing the `nvidia` client. The mockup step is
@@ -480,8 +487,8 @@ async function verify(topic, question, recipeSummary, userAnswer, labResult) {
 }
 
 async function analyzeImage(base64Image, question) {
-  const res = await openai.chat.completions.create({
-    model: OPENAI_MODEL,
+  const res = await visionClient.chat.completions.create({
+    model: VISION_MODEL,
     max_tokens: 512,
     messages: [{
       role: "user",
@@ -2149,10 +2156,10 @@ async function critiqueLab(imageBase64, design) {
     `Real-world payoff (shown on win): "${s.real_world_payoff || ""}"`,
   ].join("\n");
   try {
-    // Vision call — stays on OpenAI regardless of REASONING_PROVIDER (gpt-oss-20b
-    // is text-only and cannot see the screenshot).
-    const resp = await openai.chat.completions.create({
-      model: OPENAI_MODEL,
+    // Vision call — uses visionClient (NVIDIA qwen2.5-vl when NVIDIA_API_KEY is set,
+    // otherwise OpenAI). Both support image_url in the OpenAI-compatible format.
+    const resp = await visionClient.chat.completions.create({
+      model: VISION_MODEL,
       max_tokens: 1200,
       messages: [
         {
