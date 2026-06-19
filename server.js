@@ -105,6 +105,20 @@ async function openaiCreate(params, label = "openai") {
   throw lastErr;
 }
 
+// Extract an HTML document from a raw model response.
+// Models sometimes wrap the output in markdown fences or add a preamble sentence.
+// We find the first occurrence of <!doctype or <html (case-insensitive) and return
+// everything from there, stripping any trailing markdown fence.
+function extractHtml(raw) {
+  const s = String(raw || "");
+  const idx = s.search(/<!doctype\s+html|<html[\s>]/i);
+  if (idx === -1) return null;
+  let html = s.slice(idx).trim();
+  // Strip trailing ``` fence if present
+  html = html.replace(/```\s*$/, "").trim();
+  return html.length > 200 ? html : null;
+}
+
 // Helper: OpenAI plain-text response
 async function openaiText(prompt, maxTokens = 1000, model = OPENAI_MINI_MODEL) {
   const res = await openaiCreate({
@@ -1896,10 +1910,11 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
             try { onProgress(raw.length); } catch (_) {}
           }
         }
-        let html = raw.trim();
-        html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
-        if (!html.startsWith("<!doctype") && !html.startsWith("<html")) {
-          throw new Error(`${CODEGEN_MODEL_ID} returned non-HTML content`);
+        let html = extractHtml(raw);
+        if (!html) {
+          // Non-HTML is not a transient error — retrying won't help unless it's
+          // a rate limit. Throw immediately so we don't waste attempts.
+          throw new Error(`${CODEGEN_MODEL_ID} returned non-HTML content (${raw.length} chars)`);
         }
         return html;
       } catch (err) {
@@ -1910,12 +1925,18 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
           const wait = Math.pow(2, attempt) * 1000;
           console.warn(`[codegen/nvidia] attempt ${attempt}/4 status ${status} — retrying in ${wait}ms`);
           await new Promise(r => setTimeout(r, wait));
-        } else if (attempt === 4 || !retryable) {
+        } else {
           break;
         }
       }
     }
-    // NVIDIA Build model failed — fall through to OpenAI fallback
+    // Kimi failed — fall through to OpenAI fallback only for network/rate errors.
+    // If it was a content/format refusal, the fallback will also refuse, so we
+    // skip it and surface the error immediately (saves ~2 min of pointless retries).
+    const isNetworkError = lastErr && (lastErr.status === 429 || lastErr.status === 503 || lastErr.status === 500 || !lastErr.status);
+    if (!isNetworkError) {
+      throw new Error("Lab generation failed: the AI returned an unexpected response. Please retry — a different phrasing usually works.");
+    }
     console.warn(`[codegen/nvidia] ${CODEGEN_MODEL_ID} failed, falling back to OpenAI:`, lastErr && lastErr.message);
   }
 
@@ -1953,21 +1974,15 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
           try { onProgress(raw.length); } catch (_) {}
         }
       }
-      let html = raw.trim();
-      html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
-      // Validate it's actually an HTML document. Without this, an empty string,
-      // a refusal, or a prose response would ship straight to the iframe as a
-      // BLANK LAB (money spent, no output). Treat non-HTML as a retryable failure.
-      const lower = html.toLowerCase();
-      if (!lower.startsWith("<!doctype") && !lower.startsWith("<html")) {
-        throw new Error(`OpenAI ${OPENAI_MODEL} returned non-HTML content (${html.length} chars)`);
+      const html = extractHtml(raw);
+      if (!html) {
+        throw new Error(`OpenAI ${OPENAI_MODEL} returned non-HTML content (${raw.length} chars)`);
       }
       return html;
     } catch (err) {
       oaLastErr = err;
       const status = err && (err.status || err.statusCode);
-      const retryable = status === 429 || status === 503 || status === 500
-        || /non-HTML content/.test(err.message || "");
+      const retryable = status === 429 || status === 503 || status === 500;
       if (retryable && attempt < 4) {
         const wait = Math.pow(2, attempt) * 1000;
         console.warn(`[codegen/openai] attempt ${attempt}/4 (${err.message}) — retrying in ${wait}ms`);
