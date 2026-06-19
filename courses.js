@@ -18,9 +18,26 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || "missing-openai-key",
 });
 
-// Phase-1 reasoning wants a strong model; overridable so you can try Gemini-
-// backed proxies or a cheaper model without code changes.
-const COURSE_MODEL_ID = process.env.COURSE_MODEL_ID || "gpt-4o";
+// Course generation is pure text/JSON reasoning, so it follows the same
+// REASONING_PROVIDER switch as server.js: route to NVIDIA Build (openai/gpt-oss-20b,
+// effectively free) by default for cheap testing, OpenAI when REASONING_PROVIDER=openai.
+// Sanitize the NVIDIA key the same way server.js does (a pasted code snippet makes
+// an invalid header and would otherwise throw on every call).
+const NVIDIA_API_KEY = (() => {
+  const raw = process.env.NVIDIA_API_KEY;
+  if (!raw) return null;
+  const key = String(raw).trim().split(/\s/)[0];
+  return key.startsWith("nvapi-") ? key : null;
+})();
+const COURSE_PROVIDER = (process.env.REASONING_PROVIDER || (NVIDIA_API_KEY ? "nvidia" : "openai")).toLowerCase();
+const useNvidiaCourses = COURSE_PROVIDER === "nvidia" && !!NVIDIA_API_KEY;
+const courseClient = useNvidiaCourses
+  ? new OpenAI({ apiKey: NVIDIA_API_KEY, baseURL: "https://integrate.api.nvidia.com/v1", maxRetries: 0 })
+  : openai;
+// Phase-1 reasoning model. Defaults to gpt-oss-20b on NVIDIA, gpt-4o on OpenAI.
+// Override with REASON_MODEL (shared with server.js) or COURSE_MODEL_ID (course-only).
+const COURSE_MODEL_ID = process.env.COURSE_MODEL_ID || process.env.REASON_MODEL
+  || (useNvidiaCourses ? "openai/gpt-oss-20b" : "gpt-4o");
 
 // The slide-type taxonomy is the guardrail that forces the model to TEACH
 // instead of summarize. Keep in sync with the UI badge colors.
@@ -44,7 +61,7 @@ async function aiJSON(prompt, maxTokens = 2500, label = "course") {
   let lastErr;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const res = await openai.chat.completions.create({
+      const res = await courseClient.chat.completions.create({
         model: COURSE_MODEL_ID,
         max_tokens: maxTokens,
         response_format: { type: "json_object" },
