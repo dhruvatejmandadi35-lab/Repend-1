@@ -381,12 +381,24 @@
       height: 2px;
       background: linear-gradient(90deg, var(--mars), var(--ice), var(--copper));
     }
-    #scenarioText {
-      font-size: 1rem;
-      line-height: 1.85;
+    /* Scenario presented as a slide deck of bullets (like the lessons) so the
+       "why this matters" intro is skimmable and engaging, not a wall of prose. */
+    #scenarioSlide { min-height: 132px; }
+    .scenario-bullets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 15px; }
+    .scenario-bullets li {
+      position: relative;
+      padding-left: 28px;
+      font-size: 1.05rem;
+      line-height: 1.6;
       color: #D4DCE8;
-      white-space: pre-line;
     }
+    .scenario-bullets li::before {
+      content: '▹';
+      position: absolute; left: 0; top: 0;
+      color: var(--ice);
+      font-weight: 700;
+    }
+    .scenario-nav { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 22px; }
 
     .goal-pill {
       display: none;
@@ -1480,8 +1492,13 @@
       <div><div class="step-label">Step 1 of 3</div><div class="step-title">Why this matters</div></div>
     </div>
     <div class="scenario-card glass-panel">
-      <div id="scenarioText"></div>
+      <div id="scenarioSlide"></div>
       <div class="goal-pill" id="goalPill"></div>
+      <div class="scenario-nav" id="scenarioNav" style="display:none">
+        <button type="button" class="lesson-nav-btn" id="scenarioPrev">← Prev</button>
+        <div class="lesson-dots" id="scenarioDots"></div>
+        <button type="button" class="lesson-nav-btn primary" id="scenarioNext">Next →</button>
+      </div>
     </div>
   </div>
 
@@ -2604,7 +2621,6 @@
   const topicBadge = document.getElementById("topicBadge");
   const topicBadgeText = document.getElementById("topicBadgeText");
   const cachedBadge = document.getElementById("cachedBadge");
-  const scenarioText = document.getElementById("scenarioText");
   const goalPill = document.getElementById("goalPill");
   const simFrame = document.getElementById("simFrame");
   const questionText = document.getElementById("questionText");
@@ -2857,18 +2873,63 @@
     return result;
   }
 
+  // ── SCENARIO DECK ("Why this matters") ───────────────────────────────
+  // The scenario is 2-3 paragraphs of prose. Rather than dump it as a wall of
+  // text, present it as a small slide deck of bullets (like the lessons) so the
+  // intro is skimmable and the learning goal lands as a reveal on the last slide.
+  let _scenSlides = [], _scenIdx = 0, _scenGoal = "";
+  const scenarioSlide = document.getElementById("scenarioSlide");
+  const scenarioNav = document.getElementById("scenarioNav");
+  function _escHtml(s) { return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function _splitSentences(p) {
+    // Split at whitespace following sentence-ending punctuation, but only when the
+    // next char starts a new sentence (capital/quote) — keeps "4.5%" and "Inc." intact.
+    return p.split(/(?<=[.!?])\s+(?=[A-Z"'(])/).map(s => s.trim()).filter(Boolean);
+  }
+  function _buildScenarioSlides(scenario) {
+    const text = (scenario || "").trim();
+    if (!text) return [];
+    let paras = text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+    // Single blob (e.g. cached labs): group ~2 sentences per slide.
+    if (paras.length === 1) {
+      const sents = _splitSentences(paras[0]);
+      paras = [];
+      for (let i = 0; i < sents.length; i += 2) paras.push(sents.slice(i, i + 2).join(" "));
+    }
+    return paras.map(_splitSentences);
+  }
+  function renderScenarioDeck(scenario, goal) {
+    _scenSlides = _buildScenarioSlides(scenario);
+    _scenGoal = goal || "";
+    _scenIdx = 0;
+    if (!_scenSlides.length) _scenSlides = [[scenario || ""]];
+    renderScenarioSlide();
+  }
+  function renderScenarioSlide() {
+    const bullets = _scenSlides[_scenIdx] || [];
+    scenarioSlide.innerHTML = `<ul class="scenario-bullets">${bullets.map(b => `<li>${_escHtml(b)}</li>`).join("")}</ul>`;
+    const multi = _scenSlides.length > 1;
+    scenarioNav.style.display = multi ? "flex" : "none";
+    const onLast = _scenIdx === _scenSlides.length - 1;
+    if (multi) {
+      document.getElementById("scenarioDots").innerHTML = _scenSlides.map((_, i) =>
+        `<span class="${i === _scenIdx ? "active" : i < _scenIdx ? "visited" : ""}"></span>`).join("");
+      document.getElementById("scenarioPrev").disabled = _scenIdx === 0;
+      document.getElementById("scenarioNext").disabled = onLast;
+    }
+    // Reveal the goal once the learner reaches the final beat.
+    if (_scenGoal && onLast) { goalPill.textContent = _scenGoal; goalPill.classList.add("visible"); }
+    else goalPill.classList.remove("visible");
+  }
+  document.getElementById("scenarioPrev").onclick = () => { if (_scenIdx > 0) { _scenIdx--; renderScenarioSlide(); } };
+  document.getElementById("scenarioNext").onclick = () => { if (_scenIdx < _scenSlides.length - 1) { _scenIdx++; renderScenarioSlide(); } };
+
   function showResult(result) {
     currentPlan = result;
     topicBadgeText.textContent = result.topic;
     cachedBadge.style.display = result.source === "cached" ? "inline" : "none";
     updateBookmarkBtn();
-    scenarioText.textContent = result.scenario;
-    if (result.learningGoal) {
-      goalPill.textContent = result.learningGoal;
-      goalPill.classList.add("visible");
-    } else {
-      goalPill.classList.remove("visible");
-    }
+    renderScenarioDeck(result.scenario, result.learningGoal);
     feedbackEl.style.display = "none";
     feedbackEl.className = "feedback";
     payoffCard.style.display = "none";
