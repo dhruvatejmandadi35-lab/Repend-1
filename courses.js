@@ -89,13 +89,19 @@ async function aiJSON(prompt, maxTokens = 2500, label = "course") {
     try {
       const res = await courseClient.chat.completions.create({
         model: COURSE_MODEL_ID,
-        max_tokens: maxTokens,
-        // OpenAI honors json_object; NVIDIA gpt-oss-20b may reject it, so omit it
-        // on the NVIDIA path and rely on the prompt + parseLooseJSON.
-        ...(useNvidiaCourses ? {} : { response_format: { type: "json_object" } }),
+        // gpt-oss is a reasoning model: cap reasoning so it emits a real answer,
+        // and give headroom so the final JSON isn't truncated by the think phase.
+        ...(useNvidiaCourses
+          ? { reasoning_effort: "low", max_tokens: Math.max(maxTokens, 3000) }
+          : { max_tokens: maxTokens, response_format: { type: "json_object" } }),
         messages: [{ role: "user", content: prompt }],
       });
-      return parseLooseJSON(res.choices[0].message.content);
+      // Reasoning models can return content:null with output in reasoning_content.
+      const m = res?.choices?.[0]?.message || {};
+      const content = (typeof m.content === "string" && m.content.trim())
+        ? m.content
+        : (m.reasoning_content || "");
+      return parseLooseJSON(content);
     } catch (err) {
       lastErr = err;
       const overloaded = err?.status === 429 || err?.status === 503 || /overload|rate.?limit/i.test(err?.message || "");

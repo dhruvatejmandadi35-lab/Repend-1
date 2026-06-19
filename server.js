@@ -180,23 +180,55 @@ function parseLooseJSON(text) {
   throw new Error("Unbalanced JSON in model response");
 }
 
+// Safely read the assistant text from a chat completion. Reasoning models
+// (gpt-oss) can return message.content === null (budget spent on hidden
+// reasoning) and put partial output in reasoning_content. Never throw on null.
+function safeContent(res) {
+  const m = res && res.choices && res.choices[0] && res.choices[0].message;
+  if (!m) return "";
+  const c = m.content;
+  if (typeof c === "string" && c.trim()) return c;
+  // Some NVIDIA gpt-oss responses expose the answer under reasoning_content.
+  if (typeof m.reasoning_content === "string" && m.reasoning_content.trim()) return m.reasoning_content;
+  return "";
+}
+
+// True for reasoning models (gpt-oss) that accept reasoning_effort and need
+// extra token headroom so the final answer isn't truncated by the think phase.
+function isReasoningModel(model) {
+  return /gpt-oss|reasoning/i.test(model || "");
+}
+
+// Params to merge into a reason call: keep reasoning short (so the model emits a
+// real answer, not just thinking) and floor max_tokens so the answer fits.
+function reasonParams(model, maxTokens) {
+  const out = { max_tokens: maxTokens };
+  if (isReasoningModel(model)) {
+    out.reasoning_effort = "low";
+    out.max_tokens = Math.max(maxTokens, 3000); // headroom for think + answer
+  }
+  return out;
+}
+
 // Helper: OpenAI plain-text response
 async function openaiText(prompt, maxTokens = 1000, model = REASON_MINI_MODEL) {
   const res = await openaiCreate({
-    model, max_tokens: maxTokens,
+    model, ...reasonParams(model, maxTokens),
     messages: [{ role: "user", content: prompt }],
   }, "text");
-  return res.choices[0].message.content.trim();
+  const text = safeContent(res);
+  if (!text) throw new Error(`${model} returned empty content`);
+  return text.trim();
 }
 
 // Helper: OpenAI JSON response (json_object mode)
 async function openaiJSON(prompt, maxTokens = 2500, model = REASON_MODEL) {
   const res = await openaiCreate({
-    model, max_tokens: maxTokens,
+    model, ...reasonParams(model, maxTokens),
     ...jsonFormat(),
     messages: [{ role: "user", content: prompt }],
   }, "json");
-  return parseLooseJSON(res.choices[0].message.content);
+  return parseLooseJSON(safeContent(res));
 }
 
 // HTML codegen uses NVIDIA Build (Kimi K2.6) with OpenAI gpt-4o as fallback.
@@ -454,14 +486,14 @@ const ENGINE_TEMPLATE = fs.readFileSync(path.join(__dirname, "engine.html"), "ut
 async function plan(topic) {
   const res = await reason.chat.completions.create({
     model: REASON_MODEL,
-    max_tokens: 4096,
+    ...reasonParams(REASON_MODEL, 4096),
     ...jsonFormat(),
     messages: [
       { role: "system", content: PLAN_SYSTEM },
       { role: "user", content: `Topic: ${topic}\n\nProduce the complete recipe JSON.` },
     ],
   });
-  return parseLooseJSON(res.choices[0].message.content);
+  return parseLooseJSON(safeContent(res));
 }
 
 function injectRecipe(recipe) {
@@ -475,7 +507,7 @@ function injectRecipe(recipe) {
 async function verify(topic, question, recipeSummary, userAnswer, labResult) {
   const res = await reason.chat.completions.create({
     model: REASON_MINI_MODEL,
-    max_tokens: 512,
+    ...reasonParams(REASON_MINI_MODEL, 512),
     ...jsonFormat(),
     messages: [
       { role: "system", content: VERIFY_SYSTEM },
@@ -484,7 +516,7 @@ async function verify(topic, question, recipeSummary, userAnswer, labResult) {
         `Engine verdict: ${labResult ? JSON.stringify(labResult) : "n/a"}\nStudent answer: ${userAnswer}` },
     ],
   });
-  return parseLooseJSON(res.choices[0].message.content);
+  return parseLooseJSON(safeContent(res));
 }
 
 async function analyzeImage(base64Image, question) {
@@ -499,7 +531,7 @@ async function analyzeImage(base64Image, question) {
       ],
     }],
   });
-  return res.choices[0].message.content.trim();
+  return safeContent(res).trim();
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -583,7 +615,7 @@ ${sourceMaterial.slice(0, 4000)}
 
   const res = await reason.chat.completions.create({
     model: REASON_MINI_MODEL,
-    max_tokens: 200,
+    ...reasonParams(REASON_MINI_MODEL, 200),
     ...jsonFormat(),
     messages: [
       {
@@ -610,7 +642,7 @@ RULES:
       { role: "user", content: rawTopic },
     ],
   });
-  return parseLooseJSON(res.choices[0].message.content);
+  return parseLooseJSON(safeContent(res));
 }
 
 // Build a prompt block describing the full course this lab belongs to, so the
@@ -695,7 +727,7 @@ Write in plain direct prose. Be specific to ${topic}.`, 1000, REASON_MINI_MODEL)
 async function specFromThinking(topic, thinking, category = "General", grounding = null) {
   const res = await reason.chat.completions.create({
     model: REASON_MODEL,
-    max_tokens: 2200,
+    ...reasonParams(REASON_MODEL, 2200),
     ...jsonFormat(),
     messages: [
       {
@@ -785,7 +817,7 @@ Now produce the spec JSON.`
       { role: "user", content: `Topic: ${topic}\nCategory: ${category}\n\nReasoning:\n${thinking}\n${grounding ? `\nVERIFIED FACTS — formulas, constants, units, and real numbers MUST be consistent with these (use the real equation and real magnitudes, never fabricated ones):\n${grounding}\n` : ""}\nNow produce the spec JSON.` }
     ],
   });
-  const parsed = parseLooseJSON(res.choices[0].message.content);
+  const parsed = parseLooseJSON(safeContent(res));
   normalizeReflection(parsed);
   return parsed;
 }
@@ -953,11 +985,13 @@ RULES:
 
   const res = await reason.chat.completions.create({
     model: REASON_MODEL,
-    max_tokens: 2500,
+    ...reasonParams(REASON_MODEL, 2500),
     messages: [{ role: "user", content: prompt }],
   });
 
-  return res.choices[0].message.content.trim();
+  const text = safeContent(res);
+  if (!text) throw new Error(`${REASON_MODEL} returned empty content`);
+  return text.trim();
 }
 
 // Step 4 (optional) — gpt-image-1 generates a clean UI mockup.
@@ -2185,9 +2219,7 @@ async function critiqueLab(imageBase64, design) {
         },
       ],
     });
-    let raw = resp.choices[0].message.content.trim();
-    raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-    return JSON.parse(raw);
+    return parseLooseJSON(safeContent(resp));
   } catch (err) {
     console.warn("[critic] failed, skipping critique:", err.message);
     return { score: 100, accept: true, issues: [] }; // fail open — never block lab delivery on critic errors
