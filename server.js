@@ -2234,6 +2234,16 @@ function probeIssues(probe) {
 async function codeFromImageBriefWithCritique(design, labThinking, pedagogy, imageDataUrl, category, onProgress, maxRetries = 2) {
   let html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress);
 
+  // The render→critique loop launches headless Chromium (puppeteer). On a
+  // memory-limited Railway container, SwiftShader software-WebGL rendering can
+  // OOM-kill the whole process (→ 502). So it's OFF by default and only runs when
+  // ENABLE_VISUAL_CRITIC=1 (e.g. a box with enough RAM). Without it, Kimi's output
+  // ships directly — the deterministic extractHtml + final HTML guard still protect
+  // against blank labs; we just skip the screenshot-based visual QA.
+  if (process.env.ENABLE_VISUAL_CRITIC !== "1") {
+    return html;
+  }
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     let probe, critique;
     try {
@@ -2662,7 +2672,7 @@ const server = http.createServer(async (req, res) => {
               clearInterval(heartbeat);
               send("done", "Lab ready.", { ...cached, topicKey: cached.topicKey || key, source: "cached", category });
               res.end();
-              bumpLabPlays(key); // fire-and-forget: track reuse for recommendations
+              Promise.resolve(bumpLabPlays(key)).catch(() => {}); // fire-and-forget
               return;
             }
           }
@@ -2748,7 +2758,7 @@ const server = http.createServer(async (req, res) => {
           // Fire-and-forget save — don't block the response.
           // Skip caching personalised/source-based/course labs (they're learner- or course-specific).
           if (!levelBackground && !levelGoal && !sourceMaterial && !courseContext) {
-            saveLab(key, design.topic, labData);
+            Promise.resolve(saveLab(key, design.topic, labData)).catch(() => {});
           }
 
         } else if (req.url === "/plan") {
@@ -2805,6 +2815,16 @@ const server = http.createServer(async (req, res) => {
   }
 
   res.writeHead(404); res.end("Not found");
+});
+
+// Process-level safety net: a stray async error (e.g. a fire-and-forget save
+// rejecting) must NOT crash the whole server and 502 every in-flight request.
+// Log it and keep serving.
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason && (reason.stack || reason.message || reason));
+});
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err && (err.stack || err.message || err));
 });
 
 const PORT = process.env.PORT || 3000;
