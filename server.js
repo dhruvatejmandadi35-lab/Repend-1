@@ -77,17 +77,18 @@ const OPENAI_MINI_MODEL = process.env.OPENAI_MINI_MODEL || "gpt-4o-mini";
 //   REASON_MODEL      → heavy text/JSON stages (spec, codegen fallback, critic)
 //   REASON_MINI_MODEL → cheap stages (topic expand, verify, classifiers, courses)
 // Vision calls (analyzeImage, visual critic) use a separate vision-capable model.
-// On NVIDIA Build, qwen/qwen2.5-vl-7b-instruct supports image_url natively and
-// is free-tier. Override with VISION_MODEL_ID. Falls back to OPENAI_MODEL on OpenAI.
+// On NVIDIA Build we use nvidia/nemotron-nano-12b-v2-vl: free-tier, OpenAI-compatible
+// image_url support, and it tops the OCRBench v2 leaderboard (DocVQA 94.3, ChartQA 89.7,
+// AI2D 87.3). OCR + document-layout reasoning is exactly what the critic needs to flag
+// unreadable labels, blank canvases, and broken layouts. Override with VISION_MODEL_ID
+// (e.g. a Qwen3-VL id). Falls back to OPENAI_MODEL when no NVIDIA key is present.
 const REASONING_PROVIDER = (process.env.REASONING_PROVIDER || (NVIDIA_API_KEY ? "nvidia" : "openai")).toLowerCase();
 const useNvidiaReasoning = REASONING_PROVIDER === "nvidia" && !!NVIDIA_API_KEY;
 const reason = useNvidiaReasoning ? nvidia : openai;
 const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-20b" : OPENAI_MODEL);
 const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-20b" : OPENAI_MINI_MODEL);
-// Vision client: always NVIDIA when a key is present (qwen2.5-vl supports image_url);
-// falls back to OpenAI only when no NVIDIA key.
 const visionClient = NVIDIA_API_KEY ? nvidia : openai;
-const VISION_MODEL = process.env.VISION_MODEL_ID || (NVIDIA_API_KEY ? "qwen/qwen2.5-vl-7b-instruct" : OPENAI_MODEL);
+const VISION_MODEL = process.env.VISION_MODEL_ID || (NVIDIA_API_KEY ? "nvidia/nemotron-nano-12b-v2-vl" : OPENAI_MODEL);
 console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL})` : `OpenAI (${REASON_MODEL})`}`);
 console.log(`[boot] vision provider: ${NVIDIA_API_KEY ? `NVIDIA Build (${VISION_MODEL})` : `OpenAI (${OPENAI_MODEL})`}`);
 
