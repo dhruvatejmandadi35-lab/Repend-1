@@ -86,10 +86,12 @@ const REASONING_PROVIDER = (process.env.REASONING_PROVIDER || (NVIDIA_API_KEY ? 
 const useNvidiaReasoning = REASONING_PROVIDER === "nvidia" && !!NVIDIA_API_KEY;
 const reason = useNvidiaReasoning ? nvidia : openai;
 const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-20b" : OPENAI_MODEL);
-const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-20b" : OPENAI_MINI_MODEL);
+// Mini calls (expand, think-topic, pedagogy) use a fast 8B instruct model on NVIDIA path —
+// no null-content risk and much lower latency than the reasoning model.
+const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ? "meta/llama-3.1-8b-instruct" : OPENAI_MINI_MODEL);
 const visionClient = NVIDIA_API_KEY ? nvidia : openai;
 const VISION_MODEL = process.env.VISION_MODEL_ID || (NVIDIA_API_KEY ? "nvidia/nemotron-nano-12b-v2-vl" : OPENAI_MODEL);
-console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL})` : `OpenAI (${REASON_MODEL})`}`);
+console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL}), mini: ${REASON_MINI_MODEL}` : `OpenAI (${REASON_MODEL})`}`);
 console.log(`[boot] vision provider: ${NVIDIA_API_KEY ? `NVIDIA Build (${VISION_MODEL})` : `OpenAI (${OPENAI_MODEL})`}`);
 
 // Optional mockup-image model — runs on NVIDIA Build (free) via the OpenAI-
@@ -985,7 +987,7 @@ RULES:
 
   const res = await reason.chat.completions.create({
     model: REASON_MODEL,
-    ...reasonParams(REASON_MODEL, 2500),
+    ...reasonParams(REASON_MODEL, 1200),
     messages: [{ role: "user", content: prompt }],
   });
 
@@ -2735,17 +2737,18 @@ const server = http.createServer(async (req, res) => {
           }
 
           // ── Cache miss (or level-tuned/source-based): run full pipeline then save ──
-          // Ground the topic in verified facts (Wikipedia/Wikidata/Tavily) before
-          // reasoning, so formulas and numbers are real. Fail-open: never block.
+          // Ground the topic in verified facts (Wikipedia/Wikidata/Tavily) in parallel
+          // with topic reasoning — grounding is a network call (~1-3s) while thinking
+          // is an LLM call (~5-10s). groundingText feeds specFromThinking downstream.
           send("ground", "Checking the facts…");
-          let groundingText = null;
-          try {
-            const g = await groundTopic(topic, category);
-            if (g) groundingText = g.text;
-          } catch (e) { console.warn("[grounding] failed, continuing ungrounded:", e.message); }
-
           send("think", `Reasoning about "${topic}"…`);
-          const thinking = await thinkAboutTopic(topic, category, levelBackground, levelGoal, sourceMaterial, sourceFocus, groundingText, courseContext);
+          let groundingText = null;
+          const [thinking] = await Promise.all([
+            thinkAboutTopic(topic, category, levelBackground, levelGoal, sourceMaterial, sourceFocus, null, courseContext),
+            groundTopic(topic, category)
+              .then(g => { if (g) groundingText = g.text; })
+              .catch(e => console.warn("[grounding] failed, continuing ungrounded:", e.message)),
+          ]);
 
           send("design", "Translating insight into lab spec…");
           const design = await specFromThinking(topic, thinking, category, groundingText);
