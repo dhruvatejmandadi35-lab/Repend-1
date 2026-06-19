@@ -1030,7 +1030,7 @@
     .lesson-nav-btn { padding: 11px 20px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-weight: 700; cursor: pointer; }
     .lesson-nav-btn.primary { background: var(--mars); border: none; color: #fff; }
     .lesson-nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .lesson-dots { display: flex; gap: 6px; } .lesson-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--surface2); } .lesson-dots span.active { background: var(--mars); }
+    .lesson-dots { display: flex; gap: 6px; flex-wrap: wrap; } .lesson-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--surface2); transition: background 0.2s; } .lesson-dots span.active { background: var(--mars); } .lesson-dots span.visited { background: rgba(232,93,4,0.35); }
     /* Quiz viewer */
     .quiz-title { font-size: 1.4rem; font-weight: 800; margin: 12px 0 20px; }
     .quiz-q { padding: 20px 22px; margin-bottom: 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); }
@@ -1686,15 +1686,16 @@
 
   function renderCourseView(course) {
     activeCourse = course;
-    const done = course.modules.filter(m => m.done).length;
-    const total = course.modules.length;
+    const prog = course.progress || {};
+    // Progress counts SECTIONS done (Lessons/Lab/Quiz), not modules.
+    const SECTIONS = 3;
+    const sectionsDone = [prog.lessonsDone, prog.labDone, prog.quizDone].filter(Boolean).length;
     document.getElementById("courseTitle").textContent = course.title;
     document.getElementById("courseTagline").textContent = course.tagline;
-    document.getElementById("courseProgressFill").style.width = `${Math.round(done / total * 100)}%`;
-    document.getElementById("courseProgressLabel").textContent = `${done} / ${total} complete`;
+    document.getElementById("courseProgressFill").style.width = `${Math.round(sectionsDone / SECTIONS * 100)}%`;
+    document.getElementById("courseProgressLabel").textContent = `${sectionsDone} / ${SECTIONS} sections complete`;
     const list = document.getElementById("courseModules");
     list.innerHTML = "";
-    // Modules are now an OUTLINE of what the single course lab covers — display only.
     course.modules.forEach(mod => {
       const card = document.createElement("div");
       card.className = "course-module outline";
@@ -1706,19 +1707,23 @@
         </div>`;
       list.appendChild(card);
     });
-    // 3-step flow: Lessons (teach) → Lab (practice) → Quiz (assess).
     const stepLessons = document.getElementById("courseStepLessons");
     const stepLab = document.getElementById("courseStepLab");
     const stepQuiz = document.getElementById("courseStepQuiz");
-    const prog = course.progress || {};
     stepLessons.classList.toggle("done", !!prog.lessonsDone);
     stepLab.classList.toggle("done", !!prog.labDone);
     stepQuiz.classList.toggle("done", !!prog.quizDone);
+    // Show resume hint on the lesson step if they've started but not finished
+    const resumeSlide = prog.lastSlideIdx || 0;
+    const stepLessonsLabel = stepLessons.querySelector(".course-step-s");
+    if (stepLessonsLabel) {
+      stepLessonsLabel.textContent = prog.lessonsDone ? "Complete ✓"
+        : resumeSlide > 0 ? `Resume (slide ${resumeSlide + 1})`
+        : "Learn the concepts";
+    }
     stepLessons.onclick = () => openLessons(course);
     stepLab.onclick = () => startCourseLab(course);
     stepQuiz.onclick = () => openQuiz(course);
-    // Add-module control: lets the learner extend the course; it persists and is
-    // covered by the lab on the next build.
     const addInput = document.getElementById("addModuleInput");
     const addBtn = document.getElementById("addModuleBtn");
     if (addInput && addBtn) {
@@ -1771,18 +1776,17 @@
   }
 
   // ── LESSONS (teach) ──────────────────────────────────────────────────
-  let _lessonSlides = [], _lessonIdx = 0, _lessonCourse = null;
+  let _lessonSlides = [], _lessonIdx = 0, _lessonCourse = null, _lessonVisited = new Set();
   async function openLessons(course) {
     _lessonCourse = course;
     document.getElementById("courseView").style.display = "none";
     document.getElementById("lessonView").style.display = "block";
     const slideEl = document.getElementById("lessonSlide");
     document.getElementById("lessonModTitle").textContent = course.title;
-    // Use cached lessons if we already generated them; else fetch per module.
     if (course._lessons && course._lessons.length) {
       _lessonSlides = course._lessons;
     } else {
-      slideEl.innerHTML = '<p>Writing your lessons… this takes a moment.</p>';
+      slideEl.innerHTML = '<p style="color:var(--muted);padding:20px">Writing your lessons… this takes a moment.</p>';
       _lessonSlides = [];
       for (const mod of course.modules) {
         try {
@@ -1797,20 +1801,28 @@
         } catch (_) { /* skip a failed module, keep going */ }
       }
       if (!_lessonSlides.length) { slideEl.innerHTML = '<p>Couldn\'t generate lessons — please try again.</p>'; return; }
-      course._lessons = _lessonSlides; // cache in-memory for this session
+      course._lessons = _lessonSlides;
     }
-    _lessonIdx = 0;
+    // Resume from last position; rebuild visited set from persisted progress
+    const prog = course.progress || {};
+    _lessonIdx = Math.min(prog.lastSlideIdx || 0, _lessonSlides.length - 1);
+    _lessonVisited = new Set(Array.from({ length: _lessonIdx + 1 }, (_, i) => i)); // all up to resume point are "visited"
     renderLessonSlide();
   }
   function renderLessonSlide() {
     const s = _lessonSlides[_lessonIdx];
-    const slideEl = document.getElementById("lessonSlide");
+    if (!s) return;
+    _lessonVisited.add(_lessonIdx);
+    // Persist position without marking the section "done" yet (that requires reaching the last slide).
+    if (_lessonCourse) setCourseProgress(_lessonCourse.title, { lastSlideIdx: _lessonIdx });
     const type = s.type || "concept";
     const moduleLabel = s.module ? `<span class="slide-module">${s.module}</span>` : "";
-    slideEl.innerHTML =
+    document.getElementById("lessonSlide").innerHTML =
       `<div class="slide-meta">${moduleLabel}<span class="slide-type t-${type}">${type.replace(/_/g, " ")}</span></div>` +
       (s.title ? `<h2>${s.title}</h2>` : "") + mdToHtml(s.body);
-    document.getElementById("lessonDots").innerHTML = _lessonSlides.map((_, i) => `<span class="${i === _lessonIdx ? "active" : ""}"></span>`).join("");
+    // Dots: visited (dim-lit), active (bright), unvisited (dark)
+    document.getElementById("lessonDots").innerHTML = _lessonSlides.map((_, i) =>
+      `<span class="${i === _lessonIdx ? "active" : _lessonVisited.has(i) ? "visited" : ""}"></span>`).join("");
     document.getElementById("lessonPrev").disabled = _lessonIdx === 0;
     document.getElementById("lessonNext").textContent = _lessonIdx === _lessonSlides.length - 1 ? "Finish ✓" : "Next →";
     document.getElementById("lessonSlide").scrollTop = 0;
@@ -1818,8 +1830,8 @@
   document.getElementById("lessonPrev").onclick = () => { if (_lessonIdx > 0) { _lessonIdx--; renderLessonSlide(); } };
   document.getElementById("lessonNext").onclick = () => {
     if (_lessonIdx < _lessonSlides.length - 1) { _lessonIdx++; renderLessonSlide(); }
-    else { // finished
-      if (_lessonCourse) { setCourseProgress(_lessonCourse.title, { lessonsDone: true }); }
+    else {
+      if (_lessonCourse) setCourseProgress(_lessonCourse.title, { lessonsDone: true, lastSlideIdx: _lessonSlides.length - 1 });
       backToCourse();
     }
   };
