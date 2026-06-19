@@ -208,7 +208,9 @@ async function generateQuiz(module, lessonMarkdown = "", category = "General") {
   if (cache.has(key)) return cache.get(key);
 
   const concepts = (module.key_concepts || []).join(", ") || module.topic;
-  const quiz = await aiJSON(`You write the assessment quiz for one course module. It ASSESSES retention with delayed feedback — it must trade in pattern-matching, not definition recall.
+
+  // Prompt builder — `correction` is appended on the second (corrective) pass.
+  const buildPrompt = (correction = "") => `You write the assessment quiz for one course module. It ASSESSES retention with delayed feedback — it must trade in pattern-matching, not definition recall.
 
 MODULE: ${module.title}
 KEY CONCEPTS (the ONLY things you may ask about): ${concepts}
@@ -234,17 +236,49 @@ RULES:
 - Every question's "concept" MUST be one of the key concepts listed above. Do not test anything outside that list.
 - Prefer application/scenario questions over "what is the definition of X".
 - No fabricated statistics or companies in stems or options.
+${correction}
+Return ONLY the JSON.`;
 
-Return ONLY the JSON.`, 2500, "quiz");
+  const normalize = (quiz) => {
+    quiz.pass_threshold = quiz.pass_threshold || 0.7;
+    quiz.questions = (quiz.questions || []).map(q => ({
+      question: (q.question || "").trim(),
+      options: Array.isArray(q.options) ? q.options.slice(0, 4) : [],
+      correct_index: Number.isInteger(q.correct_index) ? q.correct_index : 0,
+      concept: (q.concept || "").trim(),
+      explanation: (q.explanation || "").trim(),
+    })).filter(q => q.question && q.options.length === 4);
+    return quiz;
+  };
 
-  quiz.pass_threshold = quiz.pass_threshold || 0.7;
-  quiz.questions = (quiz.questions || []).map(q => ({
-    question: (q.question || "").trim(),
-    options: Array.isArray(q.options) ? q.options.slice(0, 4) : [],
-    correct_index: Number.isInteger(q.correct_index) ? q.correct_index : 0,
-    concept: (q.concept || "").trim(),
-    explanation: (q.explanation || "").trim(),
-  })).filter(q => q.question && q.options.length === 4);
+  let quiz = normalize(await aiJSON(buildPrompt(), 2500, "quiz"));
+
+  // Consistency Rule enforcement (post-validation). If the model referenced
+  // domain terms the lesson never taught, do ONE corrective regeneration pass
+  // naming the offenders. If it STILL violates, drop the bad questions rather
+  // than shipping output that breaks the lesson-is-source-of-truth contract.
+  let consistency = validateConsistency({
+    lessonMarkdown,
+    keyConcepts: module.key_concepts,
+    keyVariables: module.key_variables,
+    quiz,
+  });
+  if (!consistency.ok) {
+    const offenders = [...new Set(consistency.quizViolations.flatMap(v => v.offendingTerms))];
+    const correction = `\nCONSISTENCY VIOLATION — your previous draft referenced terms NOT taught in the lesson: ${offenders.join(", ")}. Regenerate every question using ONLY concepts taught in the LESSON CONTENT above. Do not use any of those untaught terms.\n`;
+    quiz = normalize(await aiJSON(buildPrompt(correction), 2500, "quiz-fix"));
+    consistency = validateConsistency({
+      lessonMarkdown,
+      keyConcepts: module.key_concepts,
+      keyVariables: module.key_variables,
+      quiz,
+    });
+    if (!consistency.ok) {
+      // Still bad — drop only the offending questions, keep the valid ones.
+      const badStems = new Set(consistency.quizViolations.map(v => v.question));
+      quiz.questions = quiz.questions.filter(q => !badStems.has(q.question));
+    }
+  }
 
   cache.set(key, quiz);
   return quiz;
@@ -327,12 +361,128 @@ function validateCourse(course) {
   return { ok: errors.length === 0, errors, warnings };
 }
 
+// ── Consistency Rule enforcement ─────────────────────────────────────────
+// The single biggest source of bad AI output: the quiz/lab referencing a
+// concept the lesson never taught. We enforce it in the prompt (above) AND
+// here, in post-validation. This is a conservative lexical check: we only flag
+// CLEAR domain-term violations, never common English.
+
+// Words that are never "domain terms" — common English + generic lab/UI chrome.
+// Kept small and deliberately UI-flavored so we don't over-flag lab labels.
+const CONSISTENCY_STOPWORDS = new Set([
+  // generic UI / lab chrome
+  "button", "start", "stop", "reset", "score", "click", "drag", "slider",
+  "play", "pause", "next", "back", "submit", "answer", "question", "option",
+  "label", "legend", "panel", "value", "level", "speed", "time", "timer",
+  "point", "points", "win", "lose", "game", "round", "try", "again", "menu",
+  "settings", "help", "info", "title", "text", "color", "size", "left", "right",
+  "up", "down", "top", "bottom", "increase", "decrease", "high", "low",
+  // ultra-common English that survives the noun heuristic
+  "which", "what", "when", "where", "this", "that", "these", "those", "with",
+  "from", "into", "your", "their", "they", "them", "then", "than", "would",
+  "could", "should", "about", "above", "below", "after", "before", "between",
+  "because", "while", "during", "following", "scenario", "example", "best",
+  "most", "more", "less", "true", "false", "correct", "wrong", "first", "last",
+  "each", "every", "some", "many", "much", "will", "does", "doing", "have",
+  "having", "make", "made", "using", "used", "given", "shown", "happens",
+  "result", "results", "change", "changes", "affect", "affects", "cause",
+  "causes", "effect", "effects", "increases", "decreases", "amount", "number",
+]);
+
+// Normalize text → list of candidate domain terms (lowercased, punctuation
+// stripped). We keep single words >=4 chars that aren't stopwords, plus
+// capitalized multi-word phrases (likely named concepts) from the raw text.
+function consistencyTerms(rawText) {
+  if (!rawText) return [];
+  const terms = new Set();
+
+  // Multi-word concept phrases: sequences of Capitalized words in the original
+  // casing (e.g. "Second Law", "Compound Interest"). These are strong signals
+  // of a named domain concept.
+  const phraseRe = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b/g;
+  let pm;
+  while ((pm = phraseRe.exec(rawText)) !== null) {
+    const phrase = pm[1].toLowerCase().trim();
+    if (phrase) terms.add(phrase);
+  }
+
+  // Single words.
+  for (const w of rawText.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (w.length >= 4 && !CONSISTENCY_STOPWORDS.has(w) && !/^\d+$/.test(w)) {
+      terms.add(w);
+    }
+  }
+  return [...terms];
+}
+
+// Build the taught-vocabulary blob (lowercased) from lesson + module constraints.
+function taughtVocabBlob(lessonMarkdown, lessonSlides, keyConcepts, keyVariables) {
+  const parts = [];
+  if (lessonMarkdown) parts.push(lessonMarkdown);
+  for (const s of lessonSlides || []) parts.push(`${s.title || ""} ${s.body || ""}`);
+  for (const c of keyConcepts || []) parts.push(String(c));
+  for (const v of keyVariables || []) parts.push(String(v));
+  return parts.join(" ").toLowerCase();
+}
+
+// A term is "taught" if the full term appears in the taught blob, or — for
+// multi-word phrases — every significant word of it appears. This is forgiving
+// on purpose: it should only fire on terms that are genuinely absent.
+function termTaught(term, vocabBlob) {
+  if (vocabBlob.includes(term)) return true;
+  const words = term.split(/\s+/).filter(w => w.length >= 4);
+  if (words.length > 1) return words.every(w => vocabBlob.includes(w));
+  return false;
+}
+
+// validateConsistency — enforce the Consistency Rule in post-validation.
+// Flags quiz/lab domain terms that the lesson never taught.
+//   { lessonMarkdown, lessonSlides, keyConcepts, quiz, labHtml }
+// → { ok, quizViolations: [{ question, offendingTerms }], labViolations: [...] }
+function validateConsistency({ lessonMarkdown = "", lessonSlides = null, keyConcepts = [], keyVariables = [], quiz = null, labHtml = "" } = {}) {
+  const slides = lessonSlides || parseSlides(lessonMarkdown);
+  const vocabBlob = taughtVocabBlob(lessonMarkdown, slides, keyConcepts, keyVariables);
+
+  const quizViolations = [];
+  const questions = (quiz && quiz.questions) || [];
+  for (const q of questions) {
+    // Only the stem + the CORRECT answer must be derivable from the lesson;
+    // distractors are allowed to reference plausible-but-untaught ideas.
+    const correct = Array.isArray(q.options) ? (q.options[q.correct_index] || "") : "";
+    const offending = consistencyTerms(`${q.question || ""} ${correct}`)
+      .filter(t => !termTaught(t, vocabBlob));
+    if (offending.length) quizViolations.push({ question: q.question || "", offendingTerms: offending });
+  }
+
+  // Lab is best-effort and optional: only scan visible on-screen text
+  // (labels/legend), not code/identifiers, so we don't over-flag.
+  const labViolations = [];
+  if (labHtml) {
+    const visible = [];
+    // Text inside common label-bearing tags + standalone quoted UI strings.
+    const tagRe = /<(?:span|div|p|label|legend|h[1-6]|td|th|li|text|option|button)[^>]*>([^<]{2,80})<\//gi;
+    let tm;
+    while ((tm = tagRe.exec(labHtml)) !== null) visible.push(tm[1]);
+    const seen = new Set();
+    for (const chunk of visible) {
+      for (const t of consistencyTerms(chunk)) {
+        if (seen.has(t)) continue;
+        seen.add(t);
+        if (!termTaught(t, vocabBlob)) labViolations.push(t);
+      }
+    }
+  }
+
+  return { ok: quizViolations.length === 0 && labViolations.length === 0, quizViolations, labViolations };
+}
+
 module.exports = {
   generateOutline,
   generateLesson,
   generateQuiz,
   parseSlides,
   validateCourse,
+  validateConsistency,
   SLIDE_TYPES,
   REQUIRED_SLIDE_TYPES,
   MODULE_MIN,
