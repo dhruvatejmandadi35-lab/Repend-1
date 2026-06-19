@@ -1430,7 +1430,7 @@
 
 <div id="loading">
   <div class="pulse-ring"></div>
-  <div class="loading-title">Building your course</div>
+  <div class="loading-title" id="loadingTitle">Building your lab</div>
   <div class="loading-hint">Usually takes 30–90 seconds</div>
   <div id="expandedTopic" class="glass-panel">
     <div class="et-label">Building lab for</div>
@@ -3118,6 +3118,13 @@
     experienceEl.style.display = "none";
     topicBadge.style.display = "none";
     loadingEl.style.display = "block";
+    // This screen is always the LAB-generation flow. Name what we're building.
+    const loadingTitleEl = document.getElementById("loadingTitle");
+    if (loadingTitleEl) {
+      loadingTitleEl.textContent = window._activeCourseTitle
+        ? `Building the lab for "${window._activeCourseTitle}"`
+        : "Building your lab";
+    }
     resetStages();
     expandedTopicEl.style.display = "none";
     etTopic.textContent = "";
