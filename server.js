@@ -20,8 +20,26 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-opena
 
 // NVIDIA Build client — uses the OpenAI SDK against NVIDIA's hosted endpoint.
 // Set NVIDIA_API_KEY in env to enable; codegen falls back to OpenAI gpt-4o when missing.
+//
+// Sanitize the key at boot. A common mistake is pasting the WHOLE code snippet
+// from the NVIDIA Build model card into the env var instead of just the key —
+// that produces an invalid HTTP header value, the Kimi call throws, and codegen
+// silently falls back to gpt-4o (which refuses → blank lab → wasted credits).
+// We take only the first whitespace-delimited token (the actual nvapi- key) and
+// warn loudly if it doesn't look like a key, so the failure is visible at boot.
+function sanitizeNvidiaKey(raw) {
+  if (!raw) return null;
+  const key = String(raw).trim().split(/\s/)[0];  // first token only
+  if (!key.startsWith("nvapi-")) {
+    console.warn(`[boot] NVIDIA_API_KEY does not start with "nvapi-" (got "${key.slice(0, 8)}…"). ` +
+      `Codegen will fall back to OpenAI. Make sure you pasted ONLY the key, not the code snippet.`);
+    return null;
+  }
+  return key;
+}
+const NVIDIA_API_KEY = sanitizeNvidiaKey(process.env.NVIDIA_API_KEY);
 const nvidia = new OpenAI({
-  apiKey: process.env.NVIDIA_API_KEY || "missing-nvidia-key",
+  apiKey: NVIDIA_API_KEY || "missing-nvidia-key",
   baseURL: "https://integrate.api.nvidia.com/v1",
   timeout: 180000,  // 3min — generous because we stream; a hang aborts and falls back to OpenAI
   maxRetries: 0,    // we handle retries ourselves; don't let the SDK silently double the wait
@@ -899,7 +917,7 @@ Return ONLY the prompt text.`, 300, OPENAI_MINI_MODEL);
 // Renders the mockup on NVIDIA Build (free) via the OpenAI-compatible images
 // endpoint, reusing the `nvidia` client. Fail-open: never blocks lab generation.
 async function mockupImage(design) {
-  if (!process.env.NVIDIA_API_KEY) return null;
+  if (!NVIDIA_API_KEY) return null;
   try {
     const prompt = await mockupPromptFromSpec(design);
     const res = await nvidia.images.generate({
@@ -1849,7 +1867,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
   // CODEGEN_MODEL=nvidia → CODEGEN_MODEL_ID on NVIDIA Build (Kimi K2.6, etc.)
   // Fallback → OpenAI gpt-4o (also handles mockup imageDataUrl via vision).
   const useNvidia = (CODEGEN_MODEL === "nvidia" || CODEGEN_MODEL === "nemotron")
-    && !!process.env.NVIDIA_API_KEY
+    && !!NVIDIA_API_KEY
     && !imageDataUrl;   // NVIDIA Build text-only
 
   if (useNvidia) {
