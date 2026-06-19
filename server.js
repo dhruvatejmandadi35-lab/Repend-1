@@ -1937,14 +1937,22 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
       }
       let html = raw.trim();
       html = html.replace(/^```(?:html)?\s*/i, "").replace(/```\s*$/i, "").trim();
+      // Validate it's actually an HTML document. Without this, an empty string,
+      // a refusal, or a prose response would ship straight to the iframe as a
+      // BLANK LAB (money spent, no output). Treat non-HTML as a retryable failure.
+      const lower = html.toLowerCase();
+      if (!lower.startsWith("<!doctype") && !lower.startsWith("<html")) {
+        throw new Error(`OpenAI ${OPENAI_MODEL} returned non-HTML content (${html.length} chars)`);
+      }
       return html;
     } catch (err) {
       oaLastErr = err;
       const status = err && (err.status || err.statusCode);
-      const retryable = status === 429 || status === 503 || status === 500;
+      const retryable = status === 429 || status === 503 || status === 500
+        || /non-HTML content/.test(err.message || "");
       if (retryable && attempt < 4) {
         const wait = Math.pow(2, attempt) * 1000;
-        console.warn(`[codegen/openai] attempt ${attempt}/4 status ${status} — retrying in ${wait}ms`);
+        console.warn(`[codegen/openai] attempt ${attempt}/4 (${err.message}) — retrying in ${wait}ms`);
         await new Promise(r => setTimeout(r, wait));
       } else {
         break;
@@ -2595,6 +2603,15 @@ const server = http.createServer(async (req, res) => {
           send("code", "Writing your lab…");
           const html = await codeFromImageBriefWithCritique(design, labThinking, pedagogy, imageDataUrl, category,
             (chars, msg) => send("code", msg || `Writing your lab… (${Math.round(chars / 1000)}k chars)`));
+
+          // Final guard: never ship a blank/broken iframe. If codegen produced
+          // empty or non-HTML output, surface a real error instead of a blank lab
+          // so the user isn't charged for an invisible result.
+          const htmlOk = typeof html === "string" &&
+            /^\s*<!doctype|^\s*<html/i.test(html) && html.length > 200;
+          if (!htmlOk) {
+            throw new Error("Lab generation returned empty or invalid HTML — not charging you for a blank lab. Please retry.");
+          }
 
           const labData = {
             topicKey: key,
