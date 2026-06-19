@@ -135,6 +135,43 @@ function extractHtml(raw) {
   return html.length > 200 ? html : null;
 }
 
+// Whether to send response_format:{type:"json_object"}. OpenAI honors it; many
+// NVIDIA Build models (incl. gpt-oss-20b) reject it with a 400. When using the
+// NVIDIA reasoning provider we omit it and rely on the prompt + parseLooseJSON.
+const REASON_JSON_MODE = !useNvidiaReasoning;
+function jsonFormat() {
+  return REASON_JSON_MODE ? { response_format: { type: "json_object" } } : {};
+}
+
+// Tolerant JSON parse for model output. Handles markdown fences, a leading
+// preamble sentence, and trailing prose by extracting the first balanced
+// {...} (or [...]) block. Without json_object mode, models add chatter we must strip.
+function parseLooseJSON(text) {
+  const s = String(text || "").trim();
+  // Fast path: already clean JSON.
+  try { return JSON.parse(s); } catch (_) {}
+  // Strip markdown fences.
+  let t = s.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  try { return JSON.parse(t); } catch (_) {}
+  // Extract the first balanced object/array block.
+  const start = t.search(/[{[]/);
+  if (start === -1) throw new Error("No JSON object found in model response");
+  const open = t[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+    } else if (c === '"') inStr = true;
+    else if (c === open) depth++;
+    else if (c === close) { depth--; if (depth === 0) return JSON.parse(t.slice(start, i + 1)); }
+  }
+  throw new Error("Unbalanced JSON in model response");
+}
+
 // Helper: OpenAI plain-text response
 async function openaiText(prompt, maxTokens = 1000, model = REASON_MINI_MODEL) {
   const res = await openaiCreate({
@@ -148,10 +185,10 @@ async function openaiText(prompt, maxTokens = 1000, model = REASON_MINI_MODEL) {
 async function openaiJSON(prompt, maxTokens = 2500, model = REASON_MODEL) {
   const res = await openaiCreate({
     model, max_tokens: maxTokens,
-    response_format: { type: "json_object" },
+    ...jsonFormat(),
     messages: [{ role: "user", content: prompt }],
   }, "json");
-  return JSON.parse(res.choices[0].message.content.trim());
+  return parseLooseJSON(res.choices[0].message.content);
 }
 
 // HTML codegen uses NVIDIA Build (Kimi K2.6) with OpenAI gpt-4o as fallback.
@@ -410,13 +447,13 @@ async function plan(topic) {
   const res = await reason.chat.completions.create({
     model: REASON_MODEL,
     max_tokens: 4096,
-    response_format: { type: "json_object" },
+    ...jsonFormat(),
     messages: [
       { role: "system", content: PLAN_SYSTEM },
       { role: "user", content: `Topic: ${topic}\n\nProduce the complete recipe JSON.` },
     ],
   });
-  return JSON.parse(res.choices[0].message.content.trim());
+  return parseLooseJSON(res.choices[0].message.content);
 }
 
 function injectRecipe(recipe) {
@@ -431,7 +468,7 @@ async function verify(topic, question, recipeSummary, userAnswer, labResult) {
   const res = await reason.chat.completions.create({
     model: REASON_MINI_MODEL,
     max_tokens: 512,
-    response_format: { type: "json_object" },
+    ...jsonFormat(),
     messages: [
       { role: "system", content: VERIFY_SYSTEM },
       { role: "user", content:
@@ -439,7 +476,7 @@ async function verify(topic, question, recipeSummary, userAnswer, labResult) {
         `Engine verdict: ${labResult ? JSON.stringify(labResult) : "n/a"}\nStudent answer: ${userAnswer}` },
     ],
   });
-  return JSON.parse(res.choices[0].message.content.trim());
+  return parseLooseJSON(res.choices[0].message.content);
 }
 
 async function analyzeImage(base64Image, question) {
@@ -539,7 +576,7 @@ ${sourceMaterial.slice(0, 4000)}
   const res = await reason.chat.completions.create({
     model: REASON_MINI_MODEL,
     max_tokens: 200,
-    response_format: { type: "json_object" },
+    ...jsonFormat(),
     messages: [
       {
         role: "system",
@@ -565,7 +602,7 @@ RULES:
       { role: "user", content: rawTopic },
     ],
   });
-  return JSON.parse(res.choices[0].message.content.trim());
+  return parseLooseJSON(res.choices[0].message.content);
 }
 
 // Build a prompt block describing the full course this lab belongs to, so the
@@ -651,7 +688,7 @@ async function specFromThinking(topic, thinking, category = "General", grounding
   const res = await reason.chat.completions.create({
     model: REASON_MODEL,
     max_tokens: 2200,
-    response_format: { type: "json_object" },
+    ...jsonFormat(),
     messages: [
       {
         role: "system",
@@ -740,7 +777,7 @@ Now produce the spec JSON.`
       { role: "user", content: `Topic: ${topic}\nCategory: ${category}\n\nReasoning:\n${thinking}\n${grounding ? `\nVERIFIED FACTS — formulas, constants, units, and real numbers MUST be consistent with these (use the real equation and real magnitudes, never fabricated ones):\n${grounding}\n` : ""}\nNow produce the spec JSON.` }
     ],
   });
-  const parsed = JSON.parse(res.choices[0].message.content.trim());
+  const parsed = parseLooseJSON(res.choices[0].message.content);
   normalizeReflection(parsed);
   return parsed;
 }

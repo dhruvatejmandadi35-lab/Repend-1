@@ -57,6 +57,32 @@ const MODULE_MAX = 10;
 const cache = new Map();
 const ckey = (...parts) => parts.join("::").toLowerCase().replace(/\s+/g, " ").trim();
 
+// Tolerant JSON parse — strips markdown fences and extracts the first balanced
+// {...}/[...] block. Needed because without json_object mode the model may wrap
+// its JSON in prose or fences.
+function parseLooseJSON(text) {
+  const s = String(text || "").trim();
+  try { return JSON.parse(s); } catch (_) {}
+  let t = s.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  try { return JSON.parse(t); } catch (_) {}
+  const start = t.search(/[{[]/);
+  if (start === -1) throw new Error("No JSON object found in model response");
+  const open = t[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < t.length; i++) {
+    const c = t[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+    } else if (c === '"') inStr = true;
+    else if (c === open) depth++;
+    else if (c === close) { depth--; if (depth === 0) return JSON.parse(t.slice(start, i + 1)); }
+  }
+  throw new Error("Unbalanced JSON in model response");
+}
+
 async function aiJSON(prompt, maxTokens = 2500, label = "course") {
   let lastErr;
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -64,10 +90,12 @@ async function aiJSON(prompt, maxTokens = 2500, label = "course") {
       const res = await courseClient.chat.completions.create({
         model: COURSE_MODEL_ID,
         max_tokens: maxTokens,
-        response_format: { type: "json_object" },
+        // OpenAI honors json_object; NVIDIA gpt-oss-20b may reject it, so omit it
+        // on the NVIDIA path and rely on the prompt + parseLooseJSON.
+        ...(useNvidiaCourses ? {} : { response_format: { type: "json_object" } }),
         messages: [{ role: "user", content: prompt }],
       });
-      return JSON.parse(res.choices[0].message.content.trim());
+      return parseLooseJSON(res.choices[0].message.content);
     } catch (err) {
       lastErr = err;
       const overloaded = err?.status === 429 || err?.status === 503 || /overload|rate.?limit/i.test(err?.message || "");
