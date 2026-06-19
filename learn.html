@@ -1008,7 +1008,22 @@
     .lesson-modtitle { font-size: 1.3rem; font-weight: 800; margin: 12px 0 18px; }
     .lesson-slide { padding: 30px 32px; min-height: 280px; border-radius: 16px; line-height: 1.6; font-size: 0.98rem; }
     .lesson-slide h2 { font-size: 1.25rem; font-weight: 800; margin-bottom: 14px; }
-    .lesson-slide .slide-type { display: inline-block; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ice); border: 1px solid var(--border); border-radius: 99px; padding: 3px 10px; margin-bottom: 14px; }
+    .lesson-slide .slide-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .lesson-slide .slide-module { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+    .lesson-slide .slide-type { display: inline-flex; align-items: center; gap: 5px; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; border-radius: 99px; padding: 3px 10px; }
+    .lesson-slide .slide-type::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    /* Slide-type taxonomy — color-coded badges (spec) */
+    .slide-type.t-concept           { color: #60a5fa; background: rgba(96,165,250,0.12); }   /* blue */
+    .slide-type.t-example           { color: #4ade80; background: rgba(74,222,128,0.12); }   /* green */
+    .slide-type.t-case_study        { color: #c084fc; background: rgba(192,132,252,0.12); }  /* purple */
+    .slide-type.t-comparison        { color: #fb923c; background: rgba(251,146,60,0.12); }   /* orange */
+    .slide-type.t-myth_vs_reality   { color: #f87171; background: rgba(248,113,113,0.12); }  /* red */
+    .slide-type.t-process           { color: #2dd4bf; background: rgba(45,212,191,0.12); }   /* teal */
+    .slide-type.t-interactive_predict { color: #818cf8; background: rgba(129,140,248,0.12); } /* indigo */
+    .slide-type.t-quick_think,
+    .slide-type.t-challenge         { color: #facc15; background: rgba(250,204,21,0.12); }   /* yellow */
+    .slide-type.t-real_world        { color: #34d399; background: rgba(52,211,153,0.12); }   /* green */
+    .slide-type.t-key_takeaways     { color: #10b981; background: rgba(16,185,129,0.14); }   /* emerald */
     .lesson-slide p { margin-bottom: 12px; } .lesson-slide ul, .lesson-slide ol { margin: 0 0 12px 20px; } .lesson-slide li { margin-bottom: 6px; }
     .lesson-slide strong { color: var(--copper); } .lesson-slide code { background: var(--surface2); padding: 1px 6px; border-radius: 5px; font-family: "JetBrains Mono", monospace; font-size: 0.86em; }
     .lesson-nav { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 20px; }
@@ -1790,11 +1805,15 @@
   function renderLessonSlide() {
     const s = _lessonSlides[_lessonIdx];
     const slideEl = document.getElementById("lessonSlide");
-    slideEl.innerHTML = `<span class="slide-type">${(s.type || "concept").replace(/_/g, " ")}</span>` +
+    const type = s.type || "concept";
+    const moduleLabel = s.module ? `<span class="slide-module">${s.module}</span>` : "";
+    slideEl.innerHTML =
+      `<div class="slide-meta">${moduleLabel}<span class="slide-type t-${type}">${type.replace(/_/g, " ")}</span></div>` +
       (s.title ? `<h2>${s.title}</h2>` : "") + mdToHtml(s.body);
     document.getElementById("lessonDots").innerHTML = _lessonSlides.map((_, i) => `<span class="${i === _lessonIdx ? "active" : ""}"></span>`).join("");
     document.getElementById("lessonPrev").disabled = _lessonIdx === 0;
     document.getElementById("lessonNext").textContent = _lessonIdx === _lessonSlides.length - 1 ? "Finish ✓" : "Next →";
+    document.getElementById("lessonSlide").scrollTop = 0;
   }
   document.getElementById("lessonPrev").onclick = () => { if (_lessonIdx > 0) { _lessonIdx--; renderLessonSlide(); } };
   document.getElementById("lessonNext").onclick = () => {
