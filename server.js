@@ -2614,13 +2614,16 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
-          // Stream progress via SSE
+          // Stream progress via SSE.
+          // IMPORTANT: do NOT set Connection or Transfer-Encoding here — they are
+          // hop-by-hop headers forbidden in HTTP/2. Railway terminates HTTP/2 at its
+          // edge, and a manual Transfer-Encoding conflicts with Node's automatic
+          // chunked encoding for streamed responses → the edge rejects the upstream
+          // framing and returns 502 Bad Gateway. Let Node handle chunking itself.
           res.writeHead(200, {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",   // tells Railway/Nginx not to buffer SSE
-            "Transfer-Encoding": "identity",
           });
           // Flush headers immediately so the browser opens the stream.
           if (typeof res.flushHeaders === "function") res.flushHeaders();
