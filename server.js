@@ -2607,20 +2607,27 @@ const server = http.createServer(async (req, res) => {
           // Stream progress via SSE
           res.writeHead(200, {
             "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",   // tells Railway/Nginx not to buffer SSE
+            "Transfer-Encoding": "identity",
           });
+          // Flush headers immediately so the browser opens the stream.
+          if (typeof res.flushHeaders === "function") res.flushHeaders();
 
           const send = (stage, msg, data) => {
             res.write(`data: ${JSON.stringify({ stage, msg, data })}\n\n`);
+            if (typeof res.flush === "function") res.flush();
           };
 
-          // Heartbeat: the codegen step can take 20-40s. Without traffic, proxies
-          // (Railway) drop idle connections and the browser shows "network error".
-          // An SSE comment every 12s keeps the stream alive; ignored by the client.
+          // Heartbeat: keeps Railway's HTTP/2 proxy from closing idle SSE connections.
+          // Railway drops streams after ~10s of silence, so we ping every 5s.
           const heartbeat = setInterval(() => {
-            try { res.write(`: ping\n\n`); } catch (_) { clearInterval(heartbeat); }
-          }, 12000);
+            try {
+              res.write(`: ping\n\n`);
+              if (typeof res.flush === "function") res.flush();
+            } catch (_) { clearInterval(heartbeat); }
+          }, 5000);
           res.on("close", () => clearInterval(heartbeat));
 
           const rawTopic = data.topic.trim();
