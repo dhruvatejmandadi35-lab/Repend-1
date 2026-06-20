@@ -34,10 +34,13 @@ const useNvidiaCourses = COURSE_PROVIDER === "nvidia" && !!NVIDIA_API_KEY;
 const courseClient = useNvidiaCourses
   ? new OpenAI({ apiKey: NVIDIA_API_KEY, baseURL: "https://integrate.api.nvidia.com/v1", maxRetries: 0 })
   : openai;
-// Phase-1 reasoning model. Defaults to gpt-oss-20b on NVIDIA, gpt-4o on OpenAI.
-// Override with REASON_MODEL (shared with server.js) or COURSE_MODEL_ID (course-only).
+// Phase-1 reasoning model (outline only). Defaults to gpt-oss-20b on NVIDIA, gpt-4o on OpenAI.
 const COURSE_MODEL_ID = process.env.COURSE_MODEL_ID || process.env.REASON_MODEL
   || (useNvidiaCourses ? "openai/gpt-oss-20b" : "gpt-4o");
+// Fast model for lesson + quiz generation — structured JSON, no deep reasoning needed.
+// llama-3.1-8b is ~5× faster than gpt-oss-20b and well within Railway's timeout.
+const COURSE_FAST_MODEL = process.env.COURSE_FAST_MODEL
+  || (useNvidiaCourses ? "meta/llama-3.1-8b-instruct" : "gpt-4o-mini");
 
 // The slide-type taxonomy is the guardrail that forces the model to TEACH
 // instead of summarize. Keep in sync with the UI badge colors.
@@ -83,17 +86,15 @@ function parseLooseJSON(text) {
   throw new Error("Unbalanced JSON in model response");
 }
 
-async function aiJSON(prompt, maxTokens = 2500, label = "course") {
+async function _aiJSONWith(model, isReasoning, prompt, maxTokens, label) {
   let lastErr;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const res = await courseClient.chat.completions.create({
-        model: COURSE_MODEL_ID,
-        // gpt-oss is a reasoning model: cap reasoning so it emits a real answer,
-        // and give headroom so the final JSON isn't truncated by the think phase.
-        ...(useNvidiaCourses
+        model,
+        ...(isReasoning
           ? { reasoning_effort: "low", max_tokens: Math.max(maxTokens, 3000) }
-          : { max_tokens: maxTokens, response_format: { type: "json_object" } }),
+          : { max_tokens: maxTokens, ...(useNvidiaCourses ? {} : { response_format: { type: "json_object" } }) }),
         messages: [{ role: "user", content: prompt }],
       });
       // Reasoning models can return content:null with output in reasoning_content.
@@ -110,6 +111,15 @@ async function aiJSON(prompt, maxTokens = 2500, label = "course") {
     }
   }
   throw lastErr;
+}
+
+// Reasoning model (for outline — needs structural thinking)
+async function aiJSON(prompt, maxTokens = 2500, label = "course") {
+  return _aiJSONWith(COURSE_MODEL_ID, useNvidiaCourses, prompt, maxTokens, label);
+}
+// Fast instruction model (for lesson + quiz — structured JSON, no deep reasoning)
+async function aiJSONFast(prompt, maxTokens = 2500, label = "course-fast") {
+  return _aiJSONWith(COURSE_FAST_MODEL, false, prompt, maxTokens, label);
 }
 
 // ── Phase 1a — Course outline ────────────────────────────────────────────
@@ -206,7 +216,7 @@ ${sourceMaterial.slice(0, 7000)}
 """
 ` : "";
 
-  const lesson = await aiJSON(`You are an expert teacher writing ONE lesson for an interactive course. The lesson is the SOURCE OF TRUTH: the lab and quiz that follow may use NOTHING you don't teach here.
+  const lesson = await aiJSONFast(`You are an expert teacher writing ONE lesson for an interactive course. The lesson is the SOURCE OF TRUTH: the lab and quiz that follow may use NOTHING you don't teach here.
 
 COURSE: ${courseTitle}
 MODULE: ${module.title}
@@ -259,7 +269,7 @@ async function generateQuiz(module, lessonMarkdown = "", category = "General") {
   if (cache.has(key)) return cache.get(key);
 
   const concepts = (module.key_concepts || []).join(", ") || module.topic;
-  const quiz = await aiJSON(`You write the assessment quiz for one course module. It ASSESSES retention with delayed feedback — it must trade in pattern-matching, not definition recall.
+  const quiz = await aiJSONFast(`You write the assessment quiz for one course module. It ASSESSES retention with delayed feedback — it must trade in pattern-matching, not definition recall.
 
 MODULE: ${module.title}
 KEY CONCEPTS (the ONLY things you may ask about): ${concepts}
