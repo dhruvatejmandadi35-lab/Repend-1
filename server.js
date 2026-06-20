@@ -41,7 +41,12 @@ const NVIDIA_API_KEY = sanitizeNvidiaKey(process.env.NVIDIA_API_KEY);
 const nvidia = new OpenAI({
   apiKey: NVIDIA_API_KEY || "missing-nvidia-key",
   baseURL: "https://integrate.api.nvidia.com/v1",
-  timeout: 180000,  // 3min — generous because we stream; a hang aborts and falls back to OpenAI
+  // Lowered from 180s: NVIDIA's free-tier gpt-oss-20b sometimes hangs indefinitely.
+  // A shorter timeout aborts a dead connection fast so our retry (openaiCreate) can
+  // try again — a fresh connection usually lands on a healthy worker. Streaming
+  // codegen sends its own keepalives, so this only bounds the blocking reason calls.
+  // Override with NVIDIA_TIMEOUT_MS if needed.
+  timeout: parseInt(process.env.NVIDIA_TIMEOUT_MS, 10) || 75000,
   maxRetries: 0,    // we handle retries ourselves; don't let the SDK silently double the wait
 });
 
