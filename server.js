@@ -1137,12 +1137,21 @@ async function mockupImage(design) {
   if (!NVIDIA_API_KEY) return null;
   try {
     const prompt = await mockupPromptFromSpec(design);
-    const res = await nvidia.images.generate({
-      model: IMAGE_MODEL_ID,
-      prompt,
-      response_format: "b64_json",
+    // NVIDIA's image-gen models live on ai.api.nvidia.com/v1/genai/<model>,
+    // not the chat endpoint (integrate.api.nvidia.com). Use fetch directly.
+    const resp = await fetch(`https://ai.api.nvidia.com/v1/genai/${IMAGE_MODEL_ID}`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${NVIDIA_API_KEY}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ prompt, width: 1024, height: 576, num_inference_steps: 4, guidance_scale: 0 }),
+      signal: AbortSignal.timeout(45000),
     });
-    const b64 = res.data?.[0]?.b64_json;
+    if (!resp.ok) { console.warn(`mockupImage HTTP ${resp.status}`); return null; }
+    const json = await resp.json();
+    const b64 = json?.artifacts?.[0]?.base64 || json?.data?.[0]?.b64_json;
     if (!b64) return null;
     return `data:image/png;base64,${b64}`;
   } catch (err) {
