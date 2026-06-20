@@ -486,7 +486,7 @@ const VERIFY_SYSTEM = `You are a learning coach. Return ONLY JSON:
 const ENGINE_TEMPLATE = fs.readFileSync(path.join(__dirname, "engine.html"), "utf8");
 
 async function plan(topic) {
-  const res = await reason.chat.completions.create({
+  const res = await openaiCreate({
     model: REASON_MODEL,
     ...reasonParams(REASON_MODEL, 4096),
     ...jsonFormat(),
@@ -507,7 +507,7 @@ function injectRecipe(recipe) {
 }
 
 async function verify(topic, question, recipeSummary, userAnswer, labResult) {
-  const res = await reason.chat.completions.create({
+  const res = await openaiCreate({
     model: REASON_MINI_MODEL,
     ...reasonParams(REASON_MINI_MODEL, 512),
     ...jsonFormat(),
@@ -616,7 +616,7 @@ THEIR MATERIAL (excerpt):
 ${sourceMaterial.slice(0, 4000)}
 """` : "";
 
-  const res = await reason.chat.completions.create({
+  const res = await openaiCreate({
     model: REASON_MINI_MODEL,
     ...reasonParams(REASON_MINI_MODEL, 200),
     ...jsonFormat(),
@@ -728,7 +728,7 @@ Write in plain direct prose. Be specific to ${topic}.`, 1000, REASON_MINI_MODEL)
 }
 
 async function specFromThinking(topic, thinking, category = "General", grounding = null) {
-  const res = await reason.chat.completions.create({
+  const res = await openaiCreate({
     model: REASON_MODEL,
     ...reasonParams(REASON_MODEL, 2200),
     ...jsonFormat(),
@@ -987,7 +987,7 @@ RULES:
 - For data-sampling: describe trial mechanics, bin layout, and what changes when sample size increases
 - For experiment-bench: describe each beaker, reagent, pour gesture, and reaction threshold visuals`;
 
-  const res = await reason.chat.completions.create({
+  const res = await openaiCreate({
     model: REASON_MODEL,
     ...reasonParams(REASON_MODEL, 1200),
     messages: [{ role: "user", content: prompt }],
@@ -1056,6 +1056,8 @@ function isOverloadError(err) {
   // Quota/billing exhaustion is a 429 too, but retrying won't help — treat
   // it as a hard error so we surface a clear billing message instead.
   if (/insufficient_quota|exceeded your current quota|billing/i.test(msg)) return false;
+  // Connection-level timeouts (TCP, DNS, keep-alive drop) are transient — retry.
+  if (err && (err.name === "APIConnectionTimeoutError" || err.name === "APIConnectionError" || err.code === "ECONNRESET" || err.code === "ETIMEDOUT")) return true;
   return /\b(503|429|overloaded|high demand|Service Unavailable|rate limit)\b/i.test(msg);
 }
 
