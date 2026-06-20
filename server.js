@@ -90,7 +90,13 @@ const OPENAI_MINI_MODEL = process.env.OPENAI_MINI_MODEL || "gpt-4o-mini";
 const REASONING_PROVIDER = (process.env.REASONING_PROVIDER || (NVIDIA_API_KEY ? "nvidia" : "openai")).toLowerCase();
 const useNvidiaReasoning = REASONING_PROVIDER === "nvidia" && !!NVIDIA_API_KEY;
 const reason = useNvidiaReasoning ? nvidia : openai;
-const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-20b" : OPENAI_MODEL);
+// Heavy text/JSON stages (spec, lab brief, codegen fallback). We use a 70B *instruct*
+// model rather than the gpt-oss-20b reasoning model: the reasoning model burned hidden
+// chain-of-thought tokens (slow, and prone to hanging past the timeout on NVIDIA's free
+// tier), while a 70B instruct model is faster, has no null-content/think-budget risk, and
+// is still large enough to emit the full nested spec JSON without dropping braces (which
+// the 8B model could not). Override with REASON_MODEL.
+const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "meta/llama-3.3-70b-instruct" : OPENAI_MODEL);
 // Mini calls (expand, think-topic, pedagogy) use a fast 8B instruct model on NVIDIA path —
 // no null-content risk and much lower latency than the reasoning model.
 const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ? "meta/llama-3.1-8b-instruct" : OPENAI_MINI_MODEL);
