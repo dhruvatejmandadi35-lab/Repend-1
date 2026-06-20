@@ -729,8 +729,8 @@ Write in plain direct prose. Be specific to ${topic}.`, 1000, REASON_MINI_MODEL)
 
 async function specFromThinking(topic, thinking, category = "General", grounding = null) {
   const res = await openaiCreate({
-    model: REASON_MODEL,
-    ...reasonParams(REASON_MODEL, 1500),
+    model: REASON_MINI_MODEL,
+    ...reasonParams(REASON_MINI_MODEL, 1500),
     ...jsonFormat(),
     messages: [
       {
