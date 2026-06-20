@@ -141,9 +141,15 @@
     /* 3D button */
     .btn-3d-wrap {
       display: inline-block;
+      position: relative;
+      z-index: 10;
       perspective: 600px;
       text-decoration: none;
-      transform: translateZ(24px);
+      /* Sit in FRONT of every decorative translateZ neighbor (headline lines 28px,
+         section-title 20px) so the 3D perspective hit-test always lands on the link,
+         not on overlapping text. Parallax is told to skip this element (see initDepth)
+         so this transform is never overwritten. */
+      transform: translateZ(48px);
     }
 
     .btn-3d {
@@ -704,6 +710,9 @@ const ScrollFX = { progress: 0, smooth: 0 };
 
     depthEls.forEach(el => {
       if (el === headline || el === visual) return;
+      // Never reposition the CTA links — their CSS translateZ(48px) keeps them the
+      // front-most element so clicks always land on them in the 3D perspective stack.
+      if (el.classList.contains('btn-3d-wrap')) return;
       const d = parseFloat(el.dataset.depth) || 0.03;
       const rect = el.getBoundingClientRect();
       const center = rect.top + rect.height * 0.5 - window.innerHeight * 0.5;
