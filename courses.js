@@ -15,7 +15,7 @@
 const OpenAI = require("openai");
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "missing-openai-key",
+  apiKey: process.env.OPENAI_API_KEY || process.env.OPEN_AI_KEY || "missing-openai-key",
 });
 
 // Course generation is pure text/JSON reasoning, so it follows the same

@@ -16,7 +16,7 @@ try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
 // Placeholder keys avoid the SDK throwing at construction when a key is unset
 // (it rejects empty strings too). A real request will still fail with an auth
 // error if the key is genuinely missing — but the server boots.
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "missing-openai-key" });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || process.env.OPEN_AI_KEY || "missing-openai-key" });
 
 // NVIDIA Build client — uses the OpenAI SDK against NVIDIA's hosted endpoint.
 // Set NVIDIA_API_KEY in env to enable; codegen falls back to OpenAI gpt-4o when missing.
