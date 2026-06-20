@@ -148,7 +148,34 @@ async function openaiCreate(params, label = "reason") {
   throw lastErr;
 }
 
-// Extract an HTML document from a raw model response.
+// Streaming variant — keeps the connection alive so NVIDIA's free endpoint can't
+// time-out a slow response. Collects the full text, then returns it. Used for
+// the two heavy blocking steps (specFromThinking, thinkAboutLab) which are the
+// only non-streaming calls left in the pipeline.
+async function openaiCreateStreamed(params, label = "reason-stream") {
+  let lastErr;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const stream = await reason.chat.completions.create({ ...params, stream: true });
+      let text = "";
+      for await (const chunk of stream) {
+        text += chunk.choices?.[0]?.delta?.content || "";
+      }
+      return text;
+    } catch (err) {
+      lastErr = err;
+      if (!isOverloadError(err)) throw err;
+      if (attempt < 3) {
+        const wait = 1000 * Math.pow(2, attempt);
+        console.warn(`[${label}] provider overloaded (attempt ${attempt + 1}), retrying in ${wait}ms`);
+        await new Promise(r => setTimeout(r, wait));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+
 // Models sometimes wrap the output in markdown fences or add a preamble sentence.
 // We find the first occurrence of <!doctype or <html (case-insensitive) and return
 // everything from there, stripping any trailing markdown fence.
@@ -806,10 +833,11 @@ async function specFromThinking(topic, thinking, category = "General", grounding
     ? `- lab_archetype is LOCKED to "${locked}" — output exactly that string and design every element to fit its mechanic.`
     : `- lab_archetype MUST be one of the listed archetypes — choose the one that best reveals the concept through interaction. Category hints: Physics → physics-sim/wave-interference; Biology → molecular-builder/agent-social-sim; Sports & Skills → sports-game (required); Money & Econ → accumulation/tradeoff; Math & Data → data-sampling/accumulation; Everyday Science → experiment-bench/physics-sim. History/ethics → branching-decision; psychology → bias-trap; nutrition/gov finance → budget-allocation; sociology/epidemiology → agent-social-sim
 - explorable-world: choose this ONLY when the concept is fundamentally SPATIAL/NAVIGABLE (a city's layout/traffic, an ecosystem/food web, anatomy, a watershed, the solar system, a trade route, a historical place). Do NOT use it for abstract/quantitative topics.`;
-  const res = await openaiCreate({
+  // Use the streaming variant — keeps the NVIDIA connection alive so a slow
+  // response doesn't trigger APIConnectionTimeoutError before text starts arriving.
+  const raw = await openaiCreateStreamed({
     model: REASON_MODEL,
-    ...reasonParams(REASON_MODEL, 3500),
-    ...jsonFormat(),
+    max_tokens: 3500,
     messages: [
       {
         role: "system",
@@ -897,8 +925,8 @@ Now produce the spec JSON.`
       },
       { role: "user", content: `Topic: ${topic}\nCategory: ${category}\n\nReasoning:\n${thinking}\n${grounding ? `\nVERIFIED FACTS — formulas, constants, units, and real numbers MUST be consistent with these (use the real equation and real magnitudes, never fabricated ones):\n${grounding}\n` : ""}\nNow produce the spec JSON.` }
     ],
-  });
-  const parsed = parseLooseJSON(safeContent(res));
+  }, "spec");
+  const parsed = parseLooseJSON(raw);
   normalizeReflection(parsed);
   return parsed;
 }
@@ -1064,13 +1092,12 @@ RULES:
 - For data-sampling: describe trial mechanics, bin layout, and what changes when sample size increases
 - For experiment-bench: describe each beaker, reagent, pour gesture, and reaction threshold visuals`;
 
-  const res = await openaiCreate({
+  // Stream so a slow NVIDIA response doesn't trigger connection timeout.
+  const text = await openaiCreateStreamed({
     model: LAB_BRIEF_MODEL,
-    ...reasonParams(LAB_BRIEF_MODEL, 1200),
+    max_tokens: 1200,
     messages: [{ role: "user", content: prompt }],
-  });
-
-  const text = safeContent(res);
+  }, "labthink");
   if (!text) throw new Error(`${LAB_BRIEF_MODEL} returned empty content`);
   return text.trim();
 }
