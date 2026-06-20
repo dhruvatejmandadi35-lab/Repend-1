@@ -730,7 +730,7 @@ Write in plain direct prose. Be specific to ${topic}.`, 1000, REASON_MINI_MODEL)
 async function specFromThinking(topic, thinking, category = "General", grounding = null) {
   const res = await openaiCreate({
     model: REASON_MODEL,
-    ...reasonParams(REASON_MODEL, 2200),
+    ...reasonParams(REASON_MODEL, 1500),
     ...jsonFormat(),
     messages: [
       {
@@ -988,13 +988,13 @@ RULES:
 - For experiment-bench: describe each beaker, reagent, pour gesture, and reaction threshold visuals`;
 
   const res = await openaiCreate({
-    model: REASON_MODEL,
-    ...reasonParams(REASON_MODEL, 1200),
+    model: REASON_MINI_MODEL,
+    ...reasonParams(REASON_MINI_MODEL, 1200),
     messages: [{ role: "user", content: prompt }],
   });
 
   const text = safeContent(res);
-  if (!text) throw new Error(`${REASON_MODEL} returned empty content`);
+  if (!text) throw new Error(`${REASON_MINI_MODEL} returned empty content`);
   return text.trim();
 }
 
