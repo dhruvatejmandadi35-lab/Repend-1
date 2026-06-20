@@ -1094,8 +1094,19 @@
     .course-module-body { flex: 1; min-width: 0; }
     .course-module-topic { font-size: 0.97rem; font-weight: 700; color: var(--text); margin-bottom: 3px; }
     .course-module-why { font-size: 0.8rem; color: var(--muted); line-height: 1.4; }
-    .course-module-cta { font-size: 0.78rem; font-weight: 700; color: var(--mars); white-space: nowrap; }
-    .course-module.done .course-module-cta { color: #6EE7B7; }
+    .course-module-cta { font-size: 0.82rem; font-weight: 800; color: #fff; white-space: nowrap; background: var(--mars); border: none; border-radius: 10px; padding: 9px 16px; cursor: pointer; font-family: inherit; transition: transform 0.12s, opacity 0.15s; }
+    .course-module-cta:hover { transform: translateY(-1px); }
+    .course-module-cta.locked { background: var(--surface2); color: var(--muted); cursor: not-allowed; }
+    .course-module-cta.locked:hover { transform: none; }
+    .course-module.done .course-module-cta { background: rgba(34,197,94,0.15); color: #6EE7B7; cursor: default; }
+    .course-module.done .course-module-cta:hover { transform: none; }
+    /* Per-module Lesson → Lab → Quiz step strip */
+    .mod-steps { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+    .mod-step { display: inline-flex; align-items: center; gap: 5px; font-size: 0.7rem; font-weight: 700; color: var(--muted); padding: 3px 10px; border-radius: 99px; border: 1px solid var(--border); background: var(--surface2); }
+    .mod-step.done { color: #6EE7B7; border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.07); }
+    .mod-step.active { color: var(--mars); border-color: rgba(232,93,4,0.45); background: rgba(232,93,4,0.07); }
+    .mod-step-ico { font-size: 0.78rem; }
+    .course-module-main { flex: 1; min-width: 0; }
     .course-generating { display: flex; align-items: center; gap: 10px; justify-content: center; padding: 40px; color: var(--muted); font-size: 0.9rem; }
     .course-spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--mars); border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -1374,13 +1385,11 @@
     </div>
     <button class="btn-publish-course" id="publishCourseBtn">🌐 Publish</button>
   </div>
-  <div class="course-flow">
-    <button class="course-step" id="courseStepLessons"><span class="course-step-n">1</span><span class="course-step-t">📖 Lessons</span><span class="course-step-s">Learn the concepts</span></button>
-    <button class="course-step" id="courseStepLab"><span class="course-step-n">2</span><span class="course-step-t">🚀 Lab</span><span class="course-step-s">Practice hands-on</span></button>
-    <button class="course-step" id="courseStepQuiz"><span class="course-step-n">3</span><span class="course-step-t">📝 Quiz</span><span class="course-step-s">Test yourself</span></button>
-  </div>
-  <div class="course-modules-label">Modules in this course</div>
+  <div class="course-modules-label">Your learning path — each module: Lesson → Lab → Quiz</div>
   <div class="course-modules" id="courseModules"></div>
+  <div id="courseCapstone" style="display:none">
+    <button class="btn-build-course-lab" id="courseCapstoneBtn">🚀 Build the Capstone Lab — everything you learned, one world</button>
+  </div>
   <div class="course-add-module">
     <input type="text" id="addModuleInput" class="course-add-input" placeholder="Add a module topic (e.g. 'Compound interest over 30 years')" />
     <button class="course-add-btn" id="addModuleBtn">+ Add module</button>
@@ -1731,46 +1740,71 @@
     renderCourseView(c);
   }
 
+  // A module is "fully done" when all three of its steps are complete.
+  function moduleComplete(mod) {
+    const p = mod.progress || {};
+    return !!(p.lessonDone && p.labDone && p.quizDone);
+  }
+
   function renderCourseView(course) {
     activeCourse = course;
-    const prog = course.progress || {};
-    // Progress counts SECTIONS done (Lessons/Lab/Quiz), not modules.
-    const SECTIONS = 3;
-    const sectionsDone = [prog.lessonsDone, prog.labDone, prog.quizDone].filter(Boolean).length;
     document.getElementById("courseTitle").textContent = course.title;
     document.getElementById("courseTagline").textContent = course.tagline;
-    document.getElementById("courseProgressFill").style.width = `${Math.round(sectionsDone / SECTIONS * 100)}%`;
-    document.getElementById("courseProgressLabel").textContent = `${sectionsDone} / ${SECTIONS} sections complete`;
+    // Progress now counts MODULES fully completed (Lesson+Lab+Quiz each).
+    const mods = course.modules || [];
+    const modsDone = mods.filter(moduleComplete).length;
+    const pct = mods.length ? Math.round(modsDone / mods.length * 100) : 0;
+    document.getElementById("courseProgressFill").style.width = `${pct}%`;
+    document.getElementById("courseProgressLabel").textContent = `${modsDone} / ${mods.length} modules complete`;
+
     const list = document.getElementById("courseModules");
     list.innerHTML = "";
-    course.modules.forEach(mod => {
+    // The first not-yet-complete module is the "current" one the learner can open.
+    const currentOrder = (mods.find(m => !moduleComplete(m)) || {}).order;
+    mods.forEach(mod => {
+      const p = mod.progress || {};
+      const done = moduleComplete(mod);
+      const started = !!(p.lessonDone || p.labDone || p.quizDone);
+      const isCurrent = mod.order === currentOrder;
+      // Each module is unlocked once every earlier module is complete.
+      const locked = !done && !isCurrent;
       const card = document.createElement("div");
-      card.className = "course-module outline";
+      card.className = "course-module" + (done ? " done" : isCurrent ? " active" : "");
+      const stepPill = (ico, label, isDone, isActive) =>
+        `<span class="mod-step${isDone ? " done" : isActive ? " active" : ""}"><span class="mod-step-ico">${ico}</span>${label}${isDone ? " ✓" : ""}</span>`;
+      // The active sub-step is the first incomplete one in this module.
+      const activeStep = !p.lessonDone ? "lesson" : !p.labDone ? "lab" : !p.quizDone ? "quiz" : null;
+      const cta = done ? `<button class="course-module-cta" disabled>✓ Done</button>`
+        : locked ? `<button class="course-module-cta locked" disabled>🔒 Locked</button>`
+        : `<button class="course-module-cta">${started ? "Continue →" : "Start →"}</button>`;
       card.innerHTML = `
         <div class="course-module-num">${mod.order}</div>
-        <div class="course-module-body">
+        <div class="course-module-main">
           <div class="course-module-topic">${mod.topic}</div>
-          <div class="course-module-why">${mod.why}</div>
-        </div>`;
+          <div class="course-module-why">${mod.why || ""}</div>
+          <div class="mod-steps">
+            ${stepPill("📖", "Lesson", !!p.lessonDone, activeStep === "lesson")}
+            ${stepPill("🔬", "Lab", !!p.labDone, activeStep === "lab")}
+            ${stepPill("📝", "Quiz", !!p.quizDone, activeStep === "quiz")}
+          </div>
+        </div>
+        ${cta}`;
+      if (!done && !locked) {
+        const btn = card.querySelector(".course-module-cta");
+        if (btn) btn.onclick = () => openModuleFlow(course, mod);
+      }
       list.appendChild(card);
     });
-    const stepLessons = document.getElementById("courseStepLessons");
-    const stepLab = document.getElementById("courseStepLab");
-    const stepQuiz = document.getElementById("courseStepQuiz");
-    stepLessons.classList.toggle("done", !!prog.lessonsDone);
-    stepLab.classList.toggle("done", !!prog.labDone);
-    stepQuiz.classList.toggle("done", !!prog.quizDone);
-    // Show resume hint on the lesson step if they've started but not finished
-    const resumeSlide = prog.lastSlideIdx || 0;
-    const stepLessonsLabel = stepLessons.querySelector(".course-step-s");
-    if (stepLessonsLabel) {
-      stepLessonsLabel.textContent = prog.lessonsDone ? "Complete ✓"
-        : resumeSlide > 0 ? `Resume (slide ${resumeSlide + 1})`
-        : "Learn the concepts";
+
+    // Capstone lab unlocks only after every module is fully complete.
+    const allDone = mods.length > 0 && mods.every(moduleComplete);
+    const capstone = document.getElementById("courseCapstone");
+    if (capstone) {
+      capstone.style.display = allDone ? "block" : "none";
+      const capBtn = document.getElementById("courseCapstoneBtn");
+      if (capBtn) capBtn.onclick = () => startCourseLab(course);
     }
-    stepLessons.onclick = () => openLessons(course);
-    stepLab.onclick = () => startCourseLab(course);
-    stepQuiz.onclick = () => openQuiz(course);
+
     const addInput = document.getElementById("addModuleInput");
     const addBtn = document.getElementById("addModuleBtn");
     if (addInput && addBtn) {
@@ -1822,38 +1856,70 @@
     return h;
   }
 
+  // ── INTEGRATED PER-MODULE FLOW ───────────────────────────────────────
+  // A module is a single forward journey: Lesson slides → its own Lab →
+  // its Quiz. _flowCourse/_flowMod track the active module across the three
+  // view transitions so each step can auto-advance to the next.
+  let _flowCourse = null, _flowMod = null;
+
+  // Persist one module's sub-progress ({lessonDone,labDone,quizDone}).
+  function setModuleProgress(course, mod, patch) {
+    mod.progress = Object.assign({}, mod.progress || {}, patch);
+    const courses = loadCourses();
+    const c = courses.find(x => x.title === course.title);
+    if (c) {
+      const m = (c.modules || []).find(x => x.order === mod.order);
+      if (m) m.progress = mod.progress;
+      saveCourses(courses);
+    }
+  }
+
+  // Entry point from a module card. Resumes at the first unfinished step.
+  function openModuleFlow(course, mod) {
+    activeCourse = course;
+    _flowCourse = course; _flowMod = mod;
+    const p = mod.progress || {};
+    if (!p.lessonDone) openLessons(course, mod);
+    else if (!p.labDone) startModuleLab(course, mod);
+    else openModuleQuiz(course, mod);
+  }
+
   // ── LESSONS (teach) ──────────────────────────────────────────────────
   let _lessonSlides = [], _lessonIdx = 0, _lessonCourse = null, _lessonVisited = new Set();
-  async function openLessons(course) {
+  // openLessons(course)        → all-module lessons (legacy capstone path)
+  // openLessons(course, mod)   → only this module's slides, part of the flow
+  async function openLessons(course, mod) {
     _lessonCourse = course;
     document.getElementById("courseView").style.display = "none";
     document.getElementById("lessonView").style.display = "block";
     const slideEl = document.getElementById("lessonSlide");
     const crumb = document.getElementById("lessonCrumbCourse");
-    if (crumb) crumb.textContent = course.title;
-    if (course._lessons && course._lessons.length) {
-      _lessonSlides = course._lessons;
+    if (crumb) crumb.textContent = mod ? `${course.title} · ${mod.title}` : course.title;
+    // Cache lessons per module on the module itself; fall back to course-level cache.
+    const cached = mod ? mod._lessons : course._lessons;
+    if (cached && cached.length) {
+      _lessonSlides = cached;
     } else {
       slideEl.innerHTML = '<p style="color:var(--muted);padding:20px">Writing your lessons… this takes a moment.</p>';
       _lessonSlides = [];
-      for (const mod of course.modules) {
+      const modulesToLoad = mod ? [mod] : course.modules;
+      for (const m of modulesToLoad) {
         try {
           const res = await fetch("/generate-lesson", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ module: mod, courseTitle: course.title, category: course.category,
+            body: JSON.stringify({ module: m, courseTitle: course.title, category: course.category,
               sourceMaterial: course.sourceMaterial || null, sourceFocus: course.sourceFocus || null }),
           });
           if (!res.ok) continue;
           const lesson = await res.json();
-          (lesson.slides || []).forEach(s => _lessonSlides.push({ ...s, module: mod.title }));
+          (lesson.slides || []).forEach(s => _lessonSlides.push({ ...s, module: m.title }));
         } catch (_) { /* skip a failed module, keep going */ }
       }
       if (!_lessonSlides.length) { slideEl.innerHTML = '<p>Couldn\'t generate lessons — please try again.</p>'; return; }
-      course._lessons = _lessonSlides;
+      if (mod) mod._lessons = _lessonSlides; else course._lessons = _lessonSlides;
     }
-    // Resume from last position; rebuild visited set from persisted progress
-    const prog = course.progress || {};
-    _lessonIdx = Math.min(prog.lastSlideIdx || 0, _lessonSlides.length - 1);
+    // Each module's lesson flow starts fresh at slide 0.
+    _lessonIdx = mod ? 0 : Math.min((course.progress || {}).lastSlideIdx || 0, _lessonSlides.length - 1);
     _lessonVisited = new Set(Array.from({ length: _lessonIdx + 1 }, (_, i) => i)); // all up to resume point are "visited"
     renderLessonSlide();
   }
@@ -1880,12 +1946,32 @@
   document.getElementById("lessonPrev").onclick = () => { if (_lessonIdx > 0) { _lessonIdx--; renderLessonSlide(); } };
   document.getElementById("lessonNext").onclick = () => {
     if (_lessonIdx < _lessonSlides.length - 1) { _lessonIdx++; renderLessonSlide(); }
-    else {
+    else if (_flowMod) {
+      // In-module flow: lessons done → straight into this module's lab.
+      setModuleProgress(_flowCourse, _flowMod, { lessonDone: true });
+      startModuleLab(_flowCourse, _flowMod);
+    } else {
       if (_lessonCourse) setCourseProgress(_lessonCourse.title, { lessonsDone: true, lastSlideIdx: _lessonSlides.length - 1 });
       backToCourse();
     }
   };
   document.getElementById("lessonBackBtn").onclick = backToCourse;
+
+  // Generate + play the lab for a SINGLE module's topic (not the capstone).
+  // The win (labCheck ok) is detected by onLabComplete via _activeCourseModuleOrder.
+  function startModuleLab(course, mod) {
+    _flowCourse = course; _flowMod = mod;
+    document.getElementById("lessonView").style.display = "none";
+    window._activeCourseTitle = course.title;
+    window._activeCourseModuleOrder = mod.order;
+    startLab(mod.topic || mod.title, course.category);
+  }
+
+  // Open the quiz scoped to a single module's concepts.
+  function openModuleQuiz(course, mod) {
+    _flowCourse = course; _flowMod = mod;
+    openQuiz(course, mod);
+  }
   function backToCourse() {
     document.getElementById("lessonView").style.display = "none";
     document.getElementById("quizView").style.display = "none";
@@ -1897,20 +1983,34 @@
   // Review mode after submit: dot nav, explanations visible on each question.
   let _quizData = null, _quizCourse = null, _quizPicks = {}, _quizIdx = 0, _quizGraded = false;
 
-  async function openQuiz(course) {
+  // openQuiz(course)       → quiz over ALL module concepts (legacy capstone path)
+  // openQuiz(course, mod)   → quiz scoped to one module, part of the flow
+  async function openQuiz(course, mod) {
     _quizCourse = course; _quizPicks = {}; _quizIdx = 0; _quizGraded = false;
+    document.getElementById("lessonView").style.display = "none";
     document.getElementById("courseView").style.display = "none";
+    // Coming from a module lab: hide the lab experience + its badge before the quiz.
+    const expEl = document.getElementById("experience");
+    if (expEl) expEl.style.display = "none";
+    const tb = document.getElementById("topicBadge");
+    if (tb) tb.style.display = "none";
     document.getElementById("quizView").style.display = "block";
-    document.getElementById("quizCourseTitle").textContent = course.title;
+    document.getElementById("quizCourseTitle").textContent = mod ? `${course.title} · ${mod.title}` : course.title;
     document.getElementById("quizResult").style.display = "none";
     document.getElementById("quizSubmit").style.display = "none";
     document.getElementById("quizQuestion").innerHTML = '<p style="color:var(--muted);padding:20px">Writing your quiz…</p>';
-    const combined = {
+    const combined = mod ? {
+      title: mod.title,
+      topic: mod.topic || mod.title,
+      key_concepts: mod.key_concepts || [],
+    } : {
       title: course.title,
       topic: course.title,
       key_concepts: [].concat(...course.modules.map(m => m.key_concepts || [])),
     };
-    const lessonMd = (course._lessons || []).map(s => `${s.title}\n${s.body}`).join("\n\n").slice(0, 6000);
+    // Scope lesson context to this module's slides when in the per-module flow.
+    const lessonSource = mod ? (mod._lessons || []) : (course._lessons || []);
+    const lessonMd = lessonSource.map(s => `${s.title}\n${s.body}`).join("\n\n").slice(0, 6000);
     try {
       const res = await fetch("/generate-quiz", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -2021,8 +2121,19 @@
     const r = document.getElementById("quizResult");
     r.style.display = "block";
     r.style.color = pass ? "var(--green)" : "#FCA5A5";
-    r.innerHTML = `${correct} / ${qs.length} correct (${pct}%)&nbsp;— ${pass ? "Passed! 🎉" : "Not quite"}<div class="quiz-result-sub">${pass ? "Review your answers below, then continue." : `Need ${threshold}% to pass. Review below, then go back and re-read the lessons.`}</div>`;
-    if (pass && _quizCourse) setCourseProgress(_quizCourse.title, { quizDone: true });
+    const flowMsg = pass && _flowMod ? " This module is complete — next module unlocked." : "";
+    r.innerHTML = `${correct} / ${qs.length} correct (${pct}%)&nbsp;— ${pass ? "Passed! 🎉" : "Not quite"}<div class="quiz-result-sub">${pass ? "Review your answers below, then continue." + flowMsg : `Need ${threshold}% to pass. Review below, then go back and re-read the lessons.`}</div>`;
+    if (pass) {
+      if (_flowMod) {
+        // In-module flow: mark this module's quiz done. The module is now fully
+        // complete; backToCourse() (via Next) re-renders with it checked off.
+        setModuleProgress(_flowCourse, _flowMod, { quizDone: true });
+        if (typeof RependGame !== "undefined") RependGame.showToast("✅ Module complete!");
+        _flowMod = null; _flowCourse = null;
+      } else if (_quizCourse) {
+        setCourseProgress(_quizCourse.title, { quizDone: true });
+      }
+    }
     // Re-render current question with reveals, update dots with pass/fail colours
     renderQuizQuestion();
   };
@@ -2215,7 +2326,7 @@
     }
     grid.innerHTML = "";
     courses.forEach(course => {
-      const done = course.modules.filter(m => m.done).length;
+      const done = course.modules.filter(moduleComplete).length;
       const total = course.modules.length;
       const card = document.createElement("div");
       card.className = "course-card";
@@ -2481,6 +2592,7 @@
   // Generate the SINGLE capstone lab for an entire course — passes every module
   // topic + key_concepts as course context so the lab thinking covers all of them.
   function startCourseLab(course) {
+    _flowMod = null; _flowCourse = null; // capstone is not a per-module flow
     window._activeCourseTitle = course.title;
     window._activeCourseModuleOrder = null; // whole-course lab, not a single module
     const courseContext = {
@@ -2666,23 +2778,30 @@
     RependGame.handleCompletion(result);
     showNextSteps(result.recommendations);
     renderDashboard();
-    // Completing the single course lab marks the whole course complete (it covered every module).
     if (window._activeCourseTitle) {
-      const courses = loadCourses();
-      const course = courses.find(c => c.title === window._activeCourseTitle);
-      if (course) {
-        if (window._activeCourseModuleOrder != null) {
-          markModuleDone(window._activeCourseTitle, window._activeCourseModuleOrder);
-        } else {
-          course.modules.forEach(m => { m.done = true; });
-          course.progress = Object.assign({}, course.progress, { labDone: true });
-          saveCourses(courses);
-        }
-        if (typeof RependGame !== "undefined") RependGame.showToast("🚀 Lab done! Next: take the quiz");
-      }
+      const courseTitle = window._activeCourseTitle;
+      const moduleOrder = window._activeCourseModuleOrder;
       window._activeCourseTitle = null;
       window._activeCourseModuleOrder = null;
       window._courseContext = null;
+      if (_flowMod && _flowCourse && moduleOrder != null) {
+        // Per-module flow: lab passed → record it, then advance to this module's
+        // quiz so the journey continues Lesson → Lab → Quiz without bouncing.
+        setModuleProgress(_flowCourse, _flowMod, { labDone: true });
+        if (typeof RependGame !== "undefined") RependGame.showToast("🔬 Lab passed! Now the quiz →");
+        const c = _flowCourse, m = _flowMod;
+        setTimeout(() => openModuleQuiz(c, m), 1300);
+      } else {
+        // Capstone lab (legacy whole-course path) marks the course's lab done.
+        const courses = loadCourses();
+        const course = courses.find(c => c.title === courseTitle);
+        if (course) {
+          course.modules.forEach(m => { m.done = true; });
+          course.progress = Object.assign({}, course.progress, { labDone: true });
+          saveCourses(courses);
+          if (typeof RependGame !== "undefined") RependGame.showToast("🚀 Capstone lab complete!");
+        }
+      }
     }
   }
 
