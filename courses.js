@@ -32,7 +32,7 @@ const NVIDIA_API_KEY = (() => {
 const COURSE_PROVIDER = (process.env.REASONING_PROVIDER || (NVIDIA_API_KEY ? "nvidia" : "openai")).toLowerCase();
 const useNvidiaCourses = COURSE_PROVIDER === "nvidia" && !!NVIDIA_API_KEY;
 const courseClient = useNvidiaCourses
-  ? new OpenAI({ apiKey: NVIDIA_API_KEY, baseURL: "https://integrate.api.nvidia.com/v1", maxRetries: 0 })
+  ? new OpenAI({ apiKey: NVIDIA_API_KEY, baseURL: "https://integrate.api.nvidia.com/v1", maxRetries: 0, timeout: 90000 })
   : openai;
 // Phase-1 reasoning model (outline only). Defaults to gpt-oss-20b on NVIDIA, gpt-4o on OpenAI.
 const COURSE_MODEL_ID = process.env.COURSE_MODEL_ID || process.env.REASON_MODEL
@@ -105,8 +105,11 @@ async function _aiJSONWith(model, isReasoning, prompt, maxTokens, label) {
       return parseLooseJSON(content);
     } catch (err) {
       lastErr = err;
-      const overloaded = err?.status === 429 || err?.status === 503 || /overload|rate.?limit/i.test(err?.message || "");
-      if (!overloaded || attempt === 3) throw err;
+      const transient = err?.status === 429 || err?.status === 503
+        || /overload|rate.?limit/i.test(err?.message || "")
+        || err?.name === "APIConnectionTimeoutError" || err?.name === "APIConnectionError"
+        || err?.code === "ECONNRESET" || err?.code === "ETIMEDOUT";
+      if (!transient || attempt === 3) throw err;
       await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
     }
   }
@@ -236,16 +239,15 @@ OUTPUT a JSON object:
 }
 
 HARD RULES:
-- 6 to 9 slides. ONE concept per slide. If a slide has two ideas, split it.
-- You MUST include at least one slide of EACH of these types: interactive_predict, real_world, case_study, challenge.
-- A strong order is: concept → example → process → comparison → interactive_predict → case_study → myth_vs_reality → key_takeaways. End with key_takeaways.
-- interactive_predict: pose "What do you think happens if…" BEFORE revealing the answer in the same slide.
-- challenge / quick_think: pose a question the learner answers in their head (no grading).
-- case_study: a REAL, verifiable scenario — real company/event/number, or omit it. NEVER fabricate statistics or companies.
-- Cover EVERY key concept across the slides. Do not introduce vocabulary outside the key concepts.
-- Markdown only in body (headings, bold, lists, inline code). No images.
+- Exactly 6 slides. ONE concept per slide.
+- Include one slide of EACH of these types: interactive_predict, real_world, case_study, challenge. Fill remaining with concept/example.
+- Order: concept → example → interactive_predict → case_study → real_world → challenge.
+- interactive_predict: pose "What do you think happens if…" then reveal the answer.
+- case_study: REAL verifiable scenario — real company/event/number. Never fabricate.
+- Cover EVERY key concept. No vocabulary outside the key concepts list.
+- Body: 2-4 sentences MAX per slide. Tight, direct, no fluff. Markdown bold for key terms only.
 
-Return ONLY the JSON.`, 3500, "lesson");
+Return ONLY valid JSON, no markdown fences.`, 2000, "lesson");
 
   const slides = (lesson.slides || []).map(s => ({
     type: SLIDE_TYPES.includes(s.type) ? s.type : "concept",
