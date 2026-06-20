@@ -572,19 +572,20 @@ function categoryGuidance(category) {
 // Preferred archetypes per course category — AI should pick from these first
 const CATEGORY_ARCHETYPE_HINTS = {
   "Physics": "physics-sim, wave-interference, threshold",
-  "Biology": "molecular-builder, agent-social-sim, process-flow, threshold",
+  "Biology": "molecular-builder, agent-social-sim, process-flow, threshold, explorable-world (for ecosystems/anatomy/food webs you travel through)",
   "Sports & Skills": "sports-game (always preferred for this category)",
   "Money & Econ": "accumulation, tradeoff, budget-allocation, agent-social-sim",
   "Math & Data": "data-sampling, accumulation, tradeoff",
-  "Everyday Science": "physics-sim, experiment-bench, wave-interference",
-  "Language & Humanities": "structure-puzzle, process-flow, branching-decision, threshold",
-  "General": "structure-puzzle, process-flow, branching-decision, threshold, physics-sim",
+  "Everyday Science": "physics-sim, experiment-bench, wave-interference, explorable-world (for watersheds/weather systems/geography you roam)",
+  "Language & Humanities": "structure-puzzle, process-flow, branching-decision, threshold, explorable-world (for historical places/cities/trade routes)",
+  "General": "structure-puzzle, process-flow, branching-decision, threshold, physics-sim, explorable-world (for any spatial/navigable topic)",
 };
 
 const LAB_ARCHETYPES = [
   "physics-sim", "threshold", "accumulation", "process-flow", "tradeoff",
   "structure-puzzle", "branching-decision", "bias-trap", "budget-allocation", "agent-social-sim",
   "sports-game", "wave-interference", "molecular-builder", "data-sampling", "experiment-bench",
+  "explorable-world",
 ];
 
 function categoryArchetypeHints(category) {
@@ -806,7 +807,8 @@ RULES:
 - rules MUST include at least one threshold that triggers the aha moment visually
 - the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
 - reflection question must be answerable only AFTER interacting — not a definition lookup
-- lab_archetype MUST be one of the fifteen listed — choose the one that best reveals the concept through interaction. Category hints: Physics → physics-sim/wave-interference; Biology → molecular-builder/agent-social-sim; Sports & Skills → sports-game (required); Money & Econ → accumulation/tradeoff; Math & Data → data-sampling/accumulation; Everyday Science → experiment-bench/physics-sim. History/ethics → branching-decision; psychology → bias-trap; nutrition/gov finance → budget-allocation; sociology/epidemiology → agent-social-sim
+- lab_archetype MUST be one of the sixteen listed — choose the one that best reveals the concept through interaction. Category hints: Physics → physics-sim/wave-interference; Biology → molecular-builder/agent-social-sim; Sports & Skills → sports-game (required); Money & Econ → accumulation/tradeoff; Math & Data → data-sampling/accumulation; Everyday Science → experiment-bench/physics-sim. History/ethics → branching-decision; psychology → bias-trap; nutrition/gov finance → budget-allocation; sociology/epidemiology → agent-social-sim
+- explorable-world: choose this ONLY when the concept is fundamentally SPATIAL/NAVIGABLE — something the learner understands best by MOVING THROUGH it: a city's layout/zoning/traffic, an ecosystem or food web, anatomy or a journey through the body, a watershed/river system, the solar system, a supply chain or trade route you travel along, a historical place. The learner drives/walks/flies an avatar (WASD) through a living world and discovers the concept by reaching labeled landmarks. Do NOT use it for abstract/quantitative topics (compound interest, statistics, chemical equilibrium) — those need a dashboard/sim, not a world to roam.
 - entry_misconception MUST be a specific wrong belief, not a vague gap — "they think heavier objects fall faster" not "they don't understand gravity"
 - first_move MUST describe a concrete action that surprises the learner within 10 seconds and directly challenges the entry_misconception
 - direct_manipulation MUST describe a 3D object the learner grabs with their finger/mouse or steers with keys — not a slider. The primary variable is controlled by interacting with the 3D world.
@@ -1225,6 +1227,32 @@ const reagents = [{ name, volume, color, temp }, ...]; let reactionState = 'idle
 // Threshold: color shift + particle burst when pH/temp/concentration crosses reaction point
 // Safety/readouts: live thermometer, pH meter, color indicator on HUD
 // Win: achieve target product state (color, pH, gas bubbles) by tuning variables`,
+
+    "explorable-world": `
+━━━ ARCHITECTURE: EXPLORABLE WORLD (Three.js — playable game, NOT a dashboard) ━━━
+The learner DRIVES/WALKS/FLIES through a living world to discover the concept by moving through it — like a casual low-poly city sim. This archetype OVERRIDES several defaults: use it ONLY when the topic is spatial/navigable (a city, ecosystem, the body, a watershed, the solar system, a supply chain you travel along, a historical place).
+
+PALETTE OVERRIDE: this archetype MAY use a BRIGHT, sunny, cartoon palette (sky-blue background, pastel objects, soft shadows, fluffy IcosahedronGeometry clouds) instead of the dark mission-control theme — pick whatever fits the world. Bright + playful is encouraged here.
+
+CONTROL OVERRIDE — continuous movement is the PRIMARY interaction (replaces sliders as the core loop):
+const keys = {}; addEventListener('keydown', e=>{keys[e.code]=true; if(e.code.startsWith('Arrow')||e.code==='Space')e.preventDefault();}); addEventListener('keyup', e=>{keys[e.code]=false;});
+const player = new THREE.Group(); /* build a recognizable avatar (car, character, drone, fish) from primitives */
+let speed=0, heading=0; const maxSpeed=64, accel=60;
+// In animate(dt): W/↑ accelerate, S/↓ brake/reverse, A/D or ←/→ steer (scale steer by speed), apply friction when no key.
+//   player.position.x += Math.cos(heading)*speed*dt; player.position.z += Math.sin(heading)*speed*dt;
+// FOLLOW CAMERA (smooth): camera lerps to a point behind the player every frame and lookAt(player). Q/E orbit the camera.
+//   camTarget.set(px+Math.cos(heading+Math.PI)*dist, py+height, pz+Math.sin(heading+Math.PI)*dist); camera.position.lerp(camTarget, 1-Math.pow(0.0001,dt));
+// Collision-free roaming with SOFT world bounds (clamp position) — never hard walls that trap the player.
+// On-screen control hint panel (DOM overlay, bottom-left): show the keys, like the gold standard.
+// ALSO provide on-screen touch/click buttons (◀▲▼▶) so it's playable without a keyboard.
+
+WORLD = the concept made literal: build the topic's real elements as procedural low-poly meshes (BoxGeometry buildings, CylinderGeometry trunks, IcosahedronGeometry foliage), plus ambient life (tiny drifting cars/agents, people, clouds) so it feels alive.
+
+MISSION (this is what keeps it a LAB, not just a toy): place 2–4 labeled TARGETS/LANDMARKS in the world that the learner must FIND or REACH to demonstrate the concept — each target teaches one idea. Track which are reached:
+const targets = [{name, pos, found:false}, ...];
+// In animate(): if player within radius of a target → mark found, pop a glowing label + a one-line concept reveal card, increment a "3 / 4 discovered" HUD counter.
+// WIN = all targets discovered (or the goal state reached): golden particle burst + "MISSION COMPLETE" card + labCheck postMessage with ok:true.
+// The reveal at each landmark is where the teaching happens — tie each one to a key_concept from the spec.`,
   };
 
   const briefText = `━━━ REPEND MISSION ━━━
