@@ -131,6 +131,35 @@ async function openaiCreate(params, label = "reason") {
   throw lastErr;
 }
 
+// Streaming variant — keeps the NVIDIA connection alive so a slow gpt-oss-20b
+// response doesn't trigger APIConnectionTimeoutError before text arrives.
+// Collects both delta.content and delta.reasoning_content (gpt-oss uses the latter).
+async function openaiCreateStreamed(params, label = "reason-stream") {
+  let lastErr;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const stream = await reason.chat.completions.create({ ...params, stream: true });
+      let content = "";
+      let reasoning = "";
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta || {};
+        content += delta.content || "";
+        reasoning += delta.reasoning_content || "";
+      }
+      return content || reasoning;
+    } catch (err) {
+      lastErr = err;
+      if (!isOverloadError(err)) throw err;
+      if (attempt < 3) {
+        const wait = 1000 * Math.pow(2, attempt);
+        console.warn(`[${label}] overloaded (attempt ${attempt + 1}), retrying in ${wait}ms`);
+        await new Promise(r => setTimeout(r, wait));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 // Extract an HTML document from a raw model response.
 // Models sometimes wrap the output in markdown fences or add a preamble sentence.
 // We find the first occurrence of <!doctype or <html (case-insensitive) and return
@@ -727,10 +756,9 @@ Write in plain direct prose. Be specific to ${topic}.`, 1000, REASON_MINI_MODEL)
 }
 
 async function specFromThinking(topic, thinking, category = "General", grounding = null) {
-  const res = await reason.chat.completions.create({
+  const raw = await openaiCreateStreamed({
     model: REASON_MODEL,
-    ...reasonParams(REASON_MODEL, 2200),
-    ...jsonFormat(),
+    max_tokens: 2200,
     messages: [
       {
         role: "system",
@@ -818,8 +846,8 @@ Now produce the spec JSON.`
       },
       { role: "user", content: `Topic: ${topic}\nCategory: ${category}\n\nReasoning:\n${thinking}\n${grounding ? `\nVERIFIED FACTS — formulas, constants, units, and real numbers MUST be consistent with these (use the real equation and real magnitudes, never fabricated ones):\n${grounding}\n` : ""}\nNow produce the spec JSON.` }
     ],
-  });
-  const parsed = parseLooseJSON(safeContent(res));
+  }, "spec");
+  const parsed = parseLooseJSON(raw);
   normalizeReflection(parsed);
   return parsed;
 }
@@ -985,13 +1013,11 @@ RULES:
 - For data-sampling: describe trial mechanics, bin layout, and what changes when sample size increases
 - For experiment-bench: describe each beaker, reagent, pour gesture, and reaction threshold visuals`;
 
-  const res = await reason.chat.completions.create({
+  const text = await openaiCreateStreamed({
     model: REASON_MODEL,
-    ...reasonParams(REASON_MODEL, 1200),
+    max_tokens: 1200,
     messages: [{ role: "user", content: prompt }],
-  });
-
-  const text = safeContent(res);
+  }, "labthink");
   if (!text) throw new Error(`${REASON_MODEL} returned empty content`);
   return text.trim();
 }
