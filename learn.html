@@ -2296,7 +2296,7 @@
 
       const courses = loadCourses();
       const existing = courses.findIndex(c => c.title === outline.title);
-      const course = { ...outline, modules: outline.modules.map(m => ({ ...m, done: false })),
+      const course = { ...outline, modules: outline.modules.map(m => ({ ...m, progress: {} })),
         sourceMaterial: src, sourceFocus: srcFocus };
       if (existing >= 0) courses[existing] = course; else courses.unshift(course);
       saveCourses(courses);
