@@ -598,6 +598,57 @@ function categoryArchetypeHints(category) {
   return CATEGORY_ARCHETYPE_HINTS[category] || CATEGORY_ARCHETYPE_HINTS.General;
 }
 
+// One-line description per archetype — single source of truth, used both by the
+// cheap archetype CHOOSER (chooseArchetype, llama) and the spec builder. Keeping
+// this in one place means the big 16-line menu lives once, not inlined twice.
+const ARCHETYPE_DESC = {
+  "physics-sim": "continuous motion/forces (orbital mechanics, waves, projectile, fluid dynamics)",
+  "threshold": "behavior jumps suddenly at a boundary (states of matter, action potential, tipping points, viral spread)",
+  "accumulation": "things compound over time (compound interest, debt, climate CO2, skill building)",
+  "process-flow": "something moves through stages (photosynthesis, digestion, supply chain, legislation passage)",
+  "tradeoff": "two competing forces find an optimum (supply/demand, risk/return, specialization/flexibility)",
+  "structure-puzzle": "click to arrange/mark a static structure (circuits, genetics pedigree, food web, historical timeline)",
+  "branching-decision": "learner makes sequential choices that lead to different outcomes (historical counterfactual, ethical dilemma, business strategy, medical diagnosis)",
+  "bias-trap": "learner EXPERIENCES a cognitive bias first-hand (anchoring, confirmation bias, groupthink, sunk cost)",
+  "budget-allocation": "learner allocates a fixed resource across competing priorities with live tradeoffs",
+  "agent-social-sim": "many autonomous agents follow simple rules; emergent patterns appear (segregation, epidemic spread, market prices)",
+  "sports-game": "playable sports video game with real venue, aim/release/steer controls, scoreboard, ghost replay (basketball, golf, soccer, tennis, swimming, baseball)",
+  "wave-interference": "superposition of waves in 3D; phase, frequency, amplitude control constructive/destructive interference (sound, light, strings, Doppler, noise cancellation)",
+  "molecular-builder": "drag-and-snap 3D atoms/molecules; bond formation, geometry, active sites (DNA, enzymes, chemical bonding, protein structure simplified)",
+  "data-sampling": "run many randomized trials; live histogram/distribution builds; sample size and bias visible (CLT, Bayes, birthday paradox, correlation, regression)",
+  "experiment-bench": "3D lab bench; pour/mix reagents, adjust temperature/concentration, observe reaction thresholds and color/state changes (chemistry, pH, reaction rates, catalysis)",
+  "explorable-world": "drive/walk/fly an avatar (WASD) through a living 3D world, discovering the concept by reaching labeled landmarks — ONLY for fundamentally spatial/navigable topics (city layout/zoning/traffic, ecosystem/food web, anatomy, watershed/river system, solar system, supply/trade route, historical place). NOT for abstract/quantitative topics (compound interest, statistics, equilibrium)",
+};
+const ARCHETYPE_MENU = LAB_ARCHETYPES.map(a => `  ${a} = ${ARCHETYPE_DESC[a]}`).join("\n");
+
+// Step 2b — the archetype CHOOSER. Picking 1-of-16 is a classification task, not
+// deep reasoning, so it runs on the fast mini model. Locking the archetype before
+// the spec call lets specFromThinking drop the entire 16-line menu from its prompt
+// (smaller input + less to decide = the reasoning model finishes faster).
+async function chooseArchetype(topic, thinking, category = "General") {
+  const sportsRule = category === "Sports & Skills"
+    ? "\nThis is the Sports & Skills category — you MUST answer sports-game."
+    : "";
+  const text = await openaiText(
+`Pick the ONE interactive lab archetype whose mechanic best exposes the core insight of this topic.
+
+TOPIC: ${topic}
+CATEGORY: ${category}
+Preferred for this category: ${categoryArchetypeHints(category)}${sportsRule}
+
+REASONING (the core insight is in here):
+${thinking}
+
+ARCHETYPES:
+${ARCHETYPE_MENU}
+
+Answer with ONLY the archetype id (e.g. physics-sim). Nothing else.`,
+    80, REASON_MINI_MODEL);
+  // The model may wrap the id in prose; pull the first valid id out of the reply.
+  const lower = String(text || "").toLowerCase();
+  return LAB_ARCHETYPES.find(a => lower.includes(a)) || null;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // FREEFORM LAB PIPELINE — six steps (image step is optional):
 //   0. expandTopic        — gpt-4o-mini: sharpens vague input to one specific concept
@@ -733,10 +784,20 @@ State: "INTERACTION TYPE: [chosen type] because [one sentence reason]."
 Write in plain direct prose. Be specific to ${topic}.`, 1000, REASON_MINI_MODEL);
 }
 
-async function specFromThinking(topic, thinking, category = "General", grounding = null) {
+async function specFromThinking(topic, thinking, category = "General", grounding = null, archetype = null) {
+  // If the archetype was already chosen (chooseArchetype), lock it and strip the
+  // 16-line menu from the prompt; otherwise fall back to letting the spec model pick.
+  const locked = archetype && LAB_ARCHETYPES.includes(archetype) ? archetype : null;
+  const archetypeField = locked
+    ? `MUST be exactly: ${locked} — already chosen for this topic (${ARCHETYPE_DESC[locked]}). Output this exact string.`
+    : `Exactly one of: ${LAB_ARCHETYPES.join(" | ")}. Choose the ONE whose interaction mechanic best exposes the core insight:\n${ARCHETYPE_MENU}`;
+  const archetypeRules = locked
+    ? `- lab_archetype is LOCKED to "${locked}" — output exactly that string and design every element to fit its mechanic.`
+    : `- lab_archetype MUST be one of the listed archetypes — choose the one that best reveals the concept through interaction. Category hints: Physics → physics-sim/wave-interference; Biology → molecular-builder/agent-social-sim; Sports & Skills → sports-game (required); Money & Econ → accumulation/tradeoff; Math & Data → data-sampling/accumulation; Everyday Science → experiment-bench/physics-sim. History/ethics → branching-decision; psychology → bias-trap; nutrition/gov finance → budget-allocation; sociology/epidemiology → agent-social-sim
+- explorable-world: choose this ONLY when the concept is fundamentally SPATIAL/NAVIGABLE (a city's layout/traffic, an ecosystem/food web, anatomy, a watershed, the solar system, a trade route, a historical place). Do NOT use it for abstract/quantitative topics.`;
   const res = await openaiCreate({
     model: REASON_MODEL,
-    ...reasonParams(REASON_MODEL, 2500),
+    ...reasonParams(REASON_MODEL, 3500),
     ...jsonFormat(),
     messages: [
       {
@@ -753,7 +814,7 @@ Return ONLY JSON with this exact shape:
   "spec": {
     "title": "Short punchy lab title",
     "course_category": "${category}",
-    "lab_archetype": "Exactly one of: ${LAB_ARCHETYPES.join(" | ")}. Choose the ONE whose interaction mechanic best exposes the core insight:\n  physics-sim = continuous motion/forces (orbital mechanics, waves, projectile, fluid dynamics)\n  threshold = behavior jumps suddenly at a boundary (states of matter, action potential, tipping points, viral spread)\n  accumulation = things compound over time (compound interest, debt, climate CO2, skill building)\n  process-flow = something moves through stages (photosynthesis, digestion, supply chain, legislation passage)\n  tradeoff = two competing forces find an optimum (supply/demand, risk/return, specialization/flexibility)\n  structure-puzzle = click to arrange/mark a static structure (circuits, genetics pedigree, food web, historical timeline)\n  branching-decision = learner makes sequential choices that lead to different outcomes (historical counterfactual, ethical dilemma, business strategy, medical diagnosis)\n  bias-trap = learner EXPERIENCES a cognitive bias first-hand (anchoring, confirmation bias, groupthink, sunk cost)\n  budget-allocation = learner allocates a fixed resource across competing priorities with live tradeoffs\n  agent-social-sim = many autonomous agents follow simple rules; emergent patterns appear (segregation, epidemic spread, market prices)\n  sports-game = playable sports video game with real venue, aim/release/steer controls, scoreboard, ghost replay (basketball, golf, soccer, tennis, swimming, baseball)\n  wave-interference = superposition of waves in 3D; phase, frequency, amplitude control constructive/destructive interference (sound, light, strings, Doppler, noise cancellation)\n  molecular-builder = drag-and-snap 3D atoms/molecules; bond formation, geometry, active sites (DNA, enzymes, chemical bonding, protein structure simplified)\n  data-sampling = run many randomized trials; live histogram/distribution builds; sample size and bias visible (CLT, Bayes, birthday paradox, correlation, regression)\n  experiment-bench = 3D lab bench; pour/mix reagents, adjust temperature/concentration, observe reaction thresholds and color/state changes (chemistry, pH, reaction rates, catalysis)",
+    "lab_archetype": "${archetypeField}",
     "learning_goal": "One sentence using the exact words of the core insight from the reasoning.",
     "visualMetaphor": "One vivid sentence describing what the simulation looks and feels like IN MOTION. Not a chart type — a scene. E.g. 'Money piling up in stacks of gold coins, each new coin landing with a clink, the stacks growing taller until they overflow the screen.' Copy from the reasoning verbatim.",
     "entry_misconception": "A specific wrong belief the learner likely holds — e.g. 'heavier objects fall faster' not 'they don't understand gravity'",
@@ -813,8 +874,7 @@ RULES:
 - rules MUST include at least one threshold that triggers the aha moment visually
 - the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
 - reflection question must be answerable only AFTER interacting — not a definition lookup
-- lab_archetype MUST be one of the sixteen listed — choose the one that best reveals the concept through interaction. Category hints: Physics → physics-sim/wave-interference; Biology → molecular-builder/agent-social-sim; Sports & Skills → sports-game (required); Money & Econ → accumulation/tradeoff; Math & Data → data-sampling/accumulation; Everyday Science → experiment-bench/physics-sim. History/ethics → branching-decision; psychology → bias-trap; nutrition/gov finance → budget-allocation; sociology/epidemiology → agent-social-sim
-- explorable-world: choose this ONLY when the concept is fundamentally SPATIAL/NAVIGABLE — something the learner understands best by MOVING THROUGH it: a city's layout/zoning/traffic, an ecosystem or food web, anatomy or a journey through the body, a watershed/river system, the solar system, a supply chain or trade route you travel along, a historical place. The learner drives/walks/flies an avatar (WASD) through a living world and discovers the concept by reaching labeled landmarks. Do NOT use it for abstract/quantitative topics (compound interest, statistics, chemical equilibrium) — those need a dashboard/sim, not a world to roam.
+${archetypeRules}
 - entry_misconception MUST be a specific wrong belief, not a vague gap — "they think heavier objects fall faster" not "they don't understand gravity"
 - first_move MUST describe a concrete action that surprises the learner within 10 seconds and directly challenges the entry_misconception
 - direct_manipulation MUST describe a 3D object the learner grabs with their finger/mouse or steers with keys — not a slider. The primary variable is controlled by interacting with the 3D world.
@@ -2786,8 +2846,12 @@ const server = http.createServer(async (req, res) => {
               .catch(e => console.warn("[grounding] failed, continuing ungrounded:", e.message)),
           ]);
 
-          send("design", "Translating insight into lab spec…");
-          const design = await specFromThinking(topic, thinking, category, groundingText);
+          send("design", "Designing 3D environment…");
+          // Pick the archetype on the fast model first (1-of-16 classification), then
+          // hand the locked choice to the reasoning model — its prompt loses the whole
+          // 16-line menu, so the slow spec step has less to read and less to decide.
+          const archetype = await chooseArchetype(topic, thinking, category).catch(() => null);
+          const design = await specFromThinking(topic, thinking, category, groundingText, archetype);
 
           send("labthink", "Thinking about how to build it…");
           const [labThinking, pedagogy] = await Promise.all([
