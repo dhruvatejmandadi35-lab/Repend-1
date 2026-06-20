@@ -89,6 +89,12 @@ const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "openai/g
 // Mini calls (expand, think-topic, pedagogy) use a fast 8B instruct model on NVIDIA path —
 // no null-content risk and much lower latency than the reasoning model.
 const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ? "meta/llama-3.1-8b-instruct" : OPENAI_MINI_MODEL);
+// The lab creative brief (thinkAboutLab) is the one open-ended "invent a 3D world"
+// step — it's where a lab's design freedom comes from. A reasoning model EXPLORES
+// the topic and invents a bespoke world; an 8B instruct model just pattern-matches,
+// producing generic labs. So default it to the reasoning model. Set
+// LAB_BRIEF_MODEL=<mini id> to trade richness for speed.
+const LAB_BRIEF_MODEL = process.env.LAB_BRIEF_MODEL || REASON_MODEL;
 const visionClient = NVIDIA_API_KEY ? nvidia : openai;
 const VISION_MODEL = process.env.VISION_MODEL_ID || (NVIDIA_API_KEY ? "nvidia/nemotron-nano-12b-v2-vl" : OPENAI_MODEL);
 console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL}), mini: ${REASON_MINI_MODEL}` : `OpenAI (${REASON_MODEL})`}`);
@@ -988,13 +994,13 @@ RULES:
 - For experiment-bench: describe each beaker, reagent, pour gesture, and reaction threshold visuals`;
 
   const res = await openaiCreate({
-    model: REASON_MINI_MODEL,
-    ...reasonParams(REASON_MINI_MODEL, 1200),
+    model: LAB_BRIEF_MODEL,
+    ...reasonParams(LAB_BRIEF_MODEL, 1200),
     messages: [{ role: "user", content: prompt }],
   });
 
   const text = safeContent(res);
-  if (!text) throw new Error(`${REASON_MINI_MODEL} returned empty content`);
+  if (!text) throw new Error(`${LAB_BRIEF_MODEL} returned empty content`);
   return text.trim();
 }
 
