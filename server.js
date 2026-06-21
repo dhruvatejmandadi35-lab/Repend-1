@@ -1335,6 +1335,9 @@ SECTION 10 — THE ANIMATION LOOP (THE only place rendering ever happens — cop
     updateTweens(dt);
     updateBursts(dt);
     // [topic-specific per-frame updates here: move meshes, rotate objects, advance physics]
+    // CRITICAL: Every mesh/object accessed in animate() MUST be declared at the top scope
+    // and initialized BEFORE animate() is called. NEVER access .position/.x/.y/.z on
+    // a variable that could be null/undefined. Use: if (myMesh) myMesh.position.x = ...
     // idle life: objects bob/rotate; dust drifts; camera.position.x = Math.sin(t*0.15)*0.5; camera.lookAt(0,0.3,0)
     renderer.render(scene, camera);
     labelRenderer.render(scene, camera);
