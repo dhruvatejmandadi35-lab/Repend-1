@@ -85,7 +85,7 @@ const OPENAI_MINI_MODEL = process.env.OPENAI_MINI_MODEL || "gpt-4o-mini";
 const REASONING_PROVIDER = (process.env.REASONING_PROVIDER || (NVIDIA_API_KEY ? "nvidia" : "openai")).toLowerCase();
 const useNvidiaReasoning = REASONING_PROVIDER === "nvidia" && !!NVIDIA_API_KEY;
 const reason = useNvidiaReasoning ? nvidia : openai;
-const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-20b" : OPENAI_MODEL);
+const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "meta/llama-3.3-70b-instruct" : OPENAI_MODEL);
 // Mini calls (expand, think-topic, pedagogy) use a fast 8B instruct model on NVIDIA path —
 // no null-content risk and much lower latency than the reasoning model.
 const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ? "meta/llama-3.1-8b-instruct" : OPENAI_MINI_MODEL);
