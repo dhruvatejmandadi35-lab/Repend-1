@@ -758,7 +758,7 @@ Write in plain direct prose. Be specific to ${topic}.`, 1000, REASON_MINI_MODEL)
 async function specFromThinking(topic, thinking, category = "General", grounding = null) {
   const raw = await openaiCreateStreamed({
     model: REASON_MODEL,
-    max_tokens: 2200,
+    max_tokens: 4096,
     messages: [
       {
         role: "system",
