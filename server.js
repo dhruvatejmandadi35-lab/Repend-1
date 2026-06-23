@@ -1438,6 +1438,118 @@ A lab that nails the visuals but misses any pillar below is a FAILED lab. These 
      • Real units on every readout (N, m/s², $, %, °). The learner should leave seeing this concept in their savings account, the ISS overhead, the bridge they drive over — not just on a screen.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+━━━ INTERACTIVITY REQUIREMENTS — every major object must feel ALIVE and RESPONSIVE ━━━
+This is the difference between a real lab and a dead mockup. A lab where buttons do nothing, sliders feel inert, or the scene sits frozen is REJECTED no matter how good it looks. The learner must spend more time dragging, adjusting, testing, and experimenting than reading — interaction IS the lesson; reading only supports it.
+
+AVOID (these are failure states — a lab with any of them is incomplete):
+  • Static buttons (a button that doesn't visibly react when pressed)
+  • Static sliders (a slider that produces no motion in the scene)
+  • Decorative 3D objects (geometry that exists only to look nice)
+  • Objects that ONLY change color (color alone is too weak — also move/scale/pulse them)
+  • Purely visual animations with no educational consequence
+
+REQUIRE all six:
+  1. INTERACTIVE AFFORDANCES — every clickable/grabbable object visibly reacts to hover, focus, drag, success, and failure via at least one of: scale, rotation, glow, pulse, bounce, particle burst, or physics reaction. A bare cursor change is not enough.
+  2. EDUCATIONAL FEEDBACK — every interaction causes a visual change AND a numerical/conceptual change, so the learner immediately understands "if I change this, what happens and why?".
+  3. OBJECT AGENCY — major scene objects behave like simulation entities, not labels: a binary bit physically expands and lights up when activated, a planet changes its orbit, a pendulum changes its motion, a circuit lights up, molecules collide, waves interfere. An object that is only a static label is a failure.
+  4. STATE TRANSITIONS — success feels rewarding through camera movement, particle effects, object transformation, or environmental change. NEVER signal success with green text alone.
+  5. MOTION DENSITY — at every moment the scene contains at least one learner-controlled animation, at least one simulation-driven animation, and at least one environmental animation (drifting dust, idle bob, slow camera breath). The scene must never look frozen.
+  6. MANIPULATION FIRST — the primary way to drive the lab is direct hands-on manipulation in the play area (grab/drag/click/steer), not a wall of sliders. Sliders are a secondary, supporting control.
+
+━━━ INTERACTION TECHNIQUE LIBRARY (Three.js r128, non-module CDN — copy these, do NOT just use sliders) ━━━
+These are verified r128 idioms. Pick the ones that fit the topic; you must implement at least ONE direct-manipulation technique (drag, click-toggle, or keyboard-steer) as the primary interaction — sliders alone never satisfy MANIPULATION FIRST.
+
+R128 HARD FACTS (getting these wrong = a black/dead lab):
+  • There is NO THREE.Geometry — build particles/lines with THREE.BufferGeometry + Float32Array attributes.
+  • After mutating a BufferAttribute array each frame you MUST set attr.needsUpdate = true or the GPU never sees it.
+  • Non-module helpers live at examples/js/ (UMD, assign to window.THREE), never examples/jsm/. Load build/three.min.js FIRST, then any examples/js script. Globals are THREE.OrbitControls, THREE.DragControls, THREE.TransformControls.
+
+A) RAYCASTER CLICK / DRAG of a 3D mesh (core THREE, no helper needed — the primary "grab it" interaction):
+  const raycaster=new THREE.Raycaster(), pointer=new THREE.Vector2();
+  const dragPlane=new THREE.Plane(), planeN=new THREE.Vector3(), hitPt=new THREE.Vector3(), off=new THREE.Vector3();
+  let picked=null;
+  function ndc(e){ const r=renderer.domElement.getBoundingClientRect();
+    pointer.x=((e.clientX-r.left)/r.width)*2-1; pointer.y=-((e.clientY-r.top)/r.height)*2+1; }
+  renderer.domElement.addEventListener('pointerdown', e=>{
+    ndc(e); raycaster.setFromCamera(pointer,camera);
+    const hit=raycaster.intersectObjects(draggables,false)[0];
+    if(hit){ picked=hit.object; if(controls)controls.enabled=false;
+      renderer.domElement.setPointerCapture(e.pointerId);
+      camera.getWorldDirection(planeN); dragPlane.setFromNormalAndCoplanarPoint(planeN,picked.position);
+      if(raycaster.ray.intersectPlane(dragPlane,hitPt)) off.copy(picked.position).sub(hitPt); } });
+  renderer.domElement.addEventListener('pointermove', e=>{ if(!picked)return;
+    ndc(e); raycaster.setFromCamera(pointer,camera);
+    if(raycaster.ray.intersectPlane(dragPlane,hitPt)) picked.position.copy(hitPt).add(off); });
+  function endDrag(e){ if(!picked)return; picked=null; if(controls)controls.enabled=true;
+    renderer.domElement.releasePointerCapture?.(e.pointerId); }
+  renderer.domElement.addEventListener('pointerup',endDrag);
+  renderer.domElement.addEventListener('pointercancel',endDrag);
+  // For a flat ground drag use: dragPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0,1,0), picked.position);
+
+B) HOVER HIGHLIGHT (raycast on move → cursor + emissive; works on Standard/Phong/Lambert materials, NOT Basic):
+  let hovered=null;
+  renderer.domElement.addEventListener('pointermove', e=>{ ndc(e); raycaster.setFromCamera(pointer,camera);
+    const hit=raycaster.intersectObjects(hoverables,false)[0]; const o=hit?hit.object:null;
+    if(o!==hovered){ if(hovered)hovered.material.emissiveIntensity=hovered.userData._ei??0.3;
+      if(o){ o.userData._ei=o.material.emissiveIntensity; o.material.emissiveIntensity=1.0; }
+      hovered=o; renderer.domElement.style.cursor=o?'pointer':'default'; } });
+
+C) CLICK-TOGGLE OBJECT that punches scale + flashes emissive (THE binary-bit pattern — a clicked object must GROW and LIGHT UP, never just recolor):
+  // pointerdown raycast as in (A); on hit: toggleBit(hit.object)
+  function toggleBit(cube){ const on=cube.userData.value=cube.userData.value?0:1;
+    cube.userData.tScale=on?1.25:1.0; cube.userData.tEmis=on?1.6:0.15; cube.userData.flash=1.0; recompute(); }
+  // per-frame, registered once per cube:
+  function tickBit(cube,dt){ const punch=cube.userData.flash*0.3;
+    cube.scale.setScalar(damp(cube.scale.x, cube.userData.tScale+punch, 0.001, dt));
+    cube.userData.flash=Math.max(0,cube.userData.flash-dt*4);
+    cube.material.emissiveIntensity=damp(cube.material.emissiveIntensity, cube.userData.tEmis, 0.001, dt); }
+  // toggling a bit must immediately recompute and redisplay the real value (binary→decimal), so the
+  // interaction has an EDUCATIONAL consequence, not just a visual one.
+
+D) FRAME-RATE-INDEPENDENT EASE/SPRING (the "snap into slot", smooth follow — no physics engine):
+  function damp(cur,target,smoothing,dt){ return THREE.MathUtils.lerp(cur,target,1-Math.pow(smoothing,dt*60)); }
+  // critically-damped (zero overshoot) for a satisfying click-into-place; state={value,vel}:
+  function smoothDamp(s,target,smoothTime,dt){ const w=2/smoothTime, x=w*dt,
+    exp=1/(1+x+0.48*x*x+0.235*x*x*x), ch=s.value-target, tmp=(s.vel+w*ch)*dt;
+    s.vel=(s.vel-w*tmp)*exp; s.value=target+(ch+tmp)*exp; return s.value; }
+
+E) BOUNCE / COLLISION (no physics engine):
+  // ground bounce: vy+=GRAVITY*dt; pos.y+=vy*dt; if(pos.y<FLOOR){ pos.y=FLOOR; vy=-vy*0.7; if(Math.abs(vy)<0.05)vy=0; }
+  // sphere separation: const n=new THREE.Vector3().subVectors(b,a); const d=n.length(), min=ra+rb;
+  //   if(d>0&&d<min){ n.multiplyScalar(1/d); const p=(min-d)*0.5; a.addScaledVector(n,-p); b.addScaledVector(n,p); }
+
+F) HELD-KEYS STEERING (continuous WASD/arrows — smooth simultaneous keys, no OS key-repeat lag):
+  const keys=new Set();
+  addEventListener('keydown',e=>{ if(e.code.startsWith('Arrow')||['KeyW','KeyA','KeyS','KeyD','Space'].includes(e.code)){keys.add(e.code); e.preventDefault();} });
+  addEventListener('keyup',e=>keys.delete(e.code)); addEventListener('blur',()=>keys.clear()); // blur clear = no stuck keys
+  // inside update(dt): build a move vector from keys, move.normalize().multiplyScalar(SPEED*dt), player.position.add(move);
+  // ALWAYS mirror with on-screen ◀▲▼▶ touch buttons (pointerdown adds to keys, pointerup deletes) so phones get the same game.
+
+G) PARTICLE BURST on success (BufferGeometry + additive — the celebration / aha visual event):
+  function burst(origin,color){ const n=120,pos=new Float32Array(n*3),vel=[];
+    for(let i=0;i<n;i++){ pos[i*3]=origin.x;pos[i*3+1]=origin.y;pos[i*3+2]=origin.z;
+      vel.push(new THREE.Vector3(Math.random()-.5,Math.random()-.5,Math.random()-.5).normalize().multiplyScalar(2+Math.random()*3)); }
+    const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    const m=new THREE.PointsMaterial({color,size:0.15,transparent:true,opacity:1,blending:THREE.AdditiveBlending,depthWrite:false});
+    const pts=new THREE.Points(g,m); scene.add(pts); let life=0;
+    const up=dt=>{ life+=dt; const a=g.attributes.position.array;
+      for(let i=0;i<n;i++){ vel[i].y-=4*dt; a[i*3]+=vel[i].x*dt; a[i*3+1]+=vel[i].y*dt; a[i*3+2]+=vel[i].z*dt; }
+      g.attributes.position.needsUpdate=true; m.opacity=Math.max(0,1-life/1.2);
+      if(life>=1.2){ scene.remove(pts); g.dispose(); m.dispose(); bursts.splice(bursts.indexOf(up),1);} };
+    bursts.push(up); } // call each up(dt) from the animate loop
+
+H) IDLE LIFE so the scene is NEVER frozen (drive oscillation from elapsed time t, accumulation from dt):
+  // per key object: mesh.position.y = baseY + Math.sin(t*2+phase)*0.1; mesh.rotation.y += dt*0.5;
+  //   if(mesh.material.emissive) mesh.material.emissiveIntensity = 0.4 + Math.sin(t*3+phase)*0.25;
+  // give each object a random phase so a grid of objects never breathes in unison; drift the dust; let the camera breathe.
+
+SELF-TEST before returning (answer YES to all):
+  □ Is the PRIMARY interaction a direct grab/click/steer in the play area (technique A, C, or F) — not just sliders?
+  □ Does every control AND every clickable object visibly react (scale/glow/pulse/burst) AND change a real readout?
+  □ Is something moving at all times (idle bob + a simulation-driven motion + an environmental drift)?
+  □ Does success fire a non-text reward (burst + camera move + transformation), never green text alone?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 ━━━ TOPIC-SPECIFIC VISUAL PEDAGOGY (apply these rules above all generic patterns) ━━━
 The following analysis was written specifically for "${design.topic}" — use it to override any generic instruction that conflicts:
 
