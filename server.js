@@ -174,6 +174,41 @@ function extractHtml(raw) {
   return html.length > 200 ? html : null;
 }
 
+// Static, dependency-free liveness check on a generated lab. Encodes the
+// "a lab must be live, manipulable, and winnable" contract as cheap structural
+// assertions so blank / dead / truncated labs are caught BEFORE they ship — no
+// headless browser, so it runs ALWAYS (even when the visual critic is disabled).
+// It only ever triggers a regeneration; it never hard-rejects a lab, so a quirky
+// but valid lab can't be turned into an error by a regex miss.
+function validateLabHtml(html) {
+  const s = String(html || "");
+  const issues = [];
+  if (!/<\/html\s*>/i.test(s))
+    issues.push("HTML is truncated (no closing </html>) — it likely hit the output token cap; output the COMPLETE file.");
+  else if (!/<\/script\s*>/i.test(s))
+    issues.push("The script is cut off (no closing </script>) — finish the JavaScript and close every tag.");
+  if (!/THREE\s*\.\s*(WebGLRenderer|Scene)/.test(s))
+    issues.push("No Three.js renderer/scene is created — build a THREE.WebGLRenderer and THREE.Scene so the 3D world actually renders.");
+  if (!/requestAnimationFrame/.test(s))
+    issues.push("No requestAnimationFrame loop — add an animation loop so the scene is live and changes are visible, not a frozen frame.");
+  const hasListener = /addEventListener\s*\(\s*['"`](pointer|mouse|click|input|change|key|touch|wheel|drag)/i.test(s);
+  const hasControl = /<input\b/i.test(s) || /<button\b/i.test(s);
+  if (!hasListener && !hasControl)
+    issues.push("No interaction wiring — add pointer/key/drag listeners (or input/button controls) so the learner can manipulate the scene.");
+  if (!/labCheck/.test(s) || !/postMessage/.test(s))
+    issues.push("No labCheck win signal — call window.parent.postMessage({type:'labCheck', result:{ok:true,score,total}}, '*') when the learner succeeds, so the lab is winnable.");
+  return { ok: issues.length === 0, issues };
+}
+
+// Turn liveness failures into a corrective note fed back into the SAME codegen
+// call (reuses codeFromImageBrief's existing critiqueNotes input — no new model,
+// no new flow, no extra dependency).
+function labCheckNotes(issues) {
+  return "AUTOMATED QA FOUND BLOCKERS IN YOUR PREVIOUS OUTPUT. Regenerate the COMPLETE corrected HTML file and fix ALL of these:\n"
+    + issues.map(i => `- ${i}`).join("\n")
+    + "\nThe file MUST end with </script></body></html>.";
+}
+
 // Whether to send response_format:{type:"json_object"}. OpenAI honors it; many
 // NVIDIA Build models (incl. gpt-oss-20b) reject it with a 400. When using the
 // NVIDIA reasoning provider we omit it and rely on the prompt + parseLooseJSON.
@@ -755,7 +790,7 @@ State: "INTERACTION TYPE: [chosen type] because [one sentence reason]."
 Write in plain direct prose. Be specific to ${topic}.`, 1000, REASON_MINI_MODEL);
 }
 
-async function specFromThinking(topic, thinking, category = "General", grounding = null) {
+async function specFromThinking(topic, thinking, category = "General", grounding = null, courseContext = null) {
   const raw = await openaiCreateStreamed({
     model: REASON_MODEL,
     max_tokens: 4096,
@@ -844,12 +879,36 @@ RULES:
 
 Now produce the spec JSON.`
       },
-      { role: "user", content: `Topic: ${topic}\nCategory: ${category}\n\nReasoning:\n${thinking}\n${grounding ? `\nVERIFIED FACTS — formulas, constants, units, and real numbers MUST be consistent with these (use the real equation and real magnitudes, never fabricated ones):\n${grounding}\n` : ""}\nNow produce the spec JSON.` }
+      { role: "user", content: `Topic: ${topic}\nCategory: ${category}\n\nReasoning:\n${thinking}\n${grounding ? `\nVERIFIED FACTS — formulas, constants, units, and real numbers MUST be consistent with these (use the real equation and real magnitudes, never fabricated ones):\n${grounding}\n` : ""}${courseContextBlock(courseContext)}\nNow produce the spec JSON.` }
     ],
   }, "spec");
   const parsed = parseLooseJSON(raw);
   normalizeReflection(parsed);
+  normalizeSpec(parsed);
   return parsed;
+}
+
+// Fill critical interactivity fields when the spec model leaves them empty.
+// These fields are interpolated into the design brief (thinkAboutLab) and the
+// codegen prompt; an empty value used to collapse whole interaction/purpose
+// sections to a blank line — or print "undefined" — which is a leading cause of
+// mechanically inert "weak" labs. Fallbacks are neutral and topic-derived, never
+// fabricated specifics, so they can only improve a thin spec, never mislead.
+function normalizeSpec(design) {
+  const sp = design && design.spec;
+  if (!sp) return;
+  const topic = (design.topic || sp.title || "this concept").toString().trim() || "this concept";
+  const fill = (v, fallback) => ((typeof v === "string" && v.trim()) ? v.trim() : fallback);
+  sp.learning_goal       = fill(sp.learning_goal,       `Build an intuition for ${topic} by manipulating it directly and watching what changes.`);
+  sp.entry_misconception = fill(sp.entry_misconception, `Learners often predict ${topic} will behave one way; the lab shows what actually happens.`);
+  sp.first_move          = fill(sp.first_move,          `Grab and move the primary 3D object (or adjust the main control) to see the effect immediately.`);
+  sp.direct_manipulation = fill(sp.direct_manipulation, sp.first_move);
+  sp.aha_trigger         = fill(sp.aha_trigger,         `The moment the visible result diverges from what the learner expected.`);
+  sp.success_condition   = fill(sp.success_condition,   sp.aha_trigger);
+  sp.real_world_payoff   = fill(sp.real_world_payoff,   `Connect ${topic} to a concrete real-world situation where it matters.`);
+  sp.visualMetaphor      = fill(sp.visualMetaphor,      `A clear, legible 3D scene that makes ${topic} directly visible.`);
+  if (!Array.isArray(sp.variables)) sp.variables = [];
+  if (!Array.isArray(sp.interaction_palette)) sp.interaction_palette = [];
 }
 
 // Guard the reflection quiz so Step 3 never lands in a broken state.
@@ -2297,6 +2356,20 @@ function probeIssues(probe) {
 async function codeFromImageBriefWithCritique(design, labThinking, pedagogy, imageDataUrl, category, onProgress, maxRetries = 2) {
   let html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress);
 
+  // ── ALWAYS-ON static guardrail (cheap regex, no headless browser) ──────────
+  // Catches the failure modes that ship blank/dead/truncated labs — truncated
+  // HTML, no Three.js scene, no animation loop, no interaction, no win hook —
+  // and regenerates via the SAME codegen call with a corrective note. Runs even
+  // when the heavier (OOM-prone) visual critic below is disabled. This is the
+  // primary defense against empty/weak labs in the default deployment.
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const check = validateLabHtml(html);
+    if (check.ok) break;
+    console.warn(`[labcheck] attempt ${attempt} blockers: ${check.issues.join(" | ")}`);
+    if (onProgress) { try { onProgress(null, `Reviewing and fixing your lab… (${check.issues.length} issue${check.issues.length > 1 ? "s" : ""})`); } catch (_) {} }
+    html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress, labCheckNotes(check.issues));
+  }
+
   // The render→critique loop launches headless Chromium (puppeteer). On a
   // memory-limited Railway container, SwiftShader software-WebGL rendering can
   // OOM-kill the whole process (→ 502). So it's OFF by default and only runs when
@@ -2780,7 +2853,7 @@ const server = http.createServer(async (req, res) => {
           ]);
 
           send("design", "Translating insight into lab spec…");
-          const design = await specFromThinking(topic, thinking, category, groundingText);
+          const design = await specFromThinking(topic, thinking, category, groundingText, courseContext);
 
           send("labthink", "Thinking about how to build it…");
           const [labThinking, pedagogy] = await Promise.all([
