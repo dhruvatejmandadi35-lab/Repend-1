@@ -241,9 +241,25 @@ function parseLooseJSON(text) {
       else if (c === '"') inStr = false;
     } else if (c === '"') inStr = true;
     else if (c === open) depth++;
-    else if (c === close) { depth--; if (depth === 0) return JSON.parse(t.slice(start, i + 1)); }
+    else if (c === close) {
+      if (--depth === 0) {
+        const block = t.slice(start, i + 1);
+        try { return JSON.parse(block); }
+        // Models writing math/LaTeX (\frac, \times, \alpha) emit invalid JSON
+        // escapes. Repair lone backslashes that aren't a valid JSON escape,
+        // then retry — otherwise the whole pipeline 500s on math topics.
+        catch (_) { return JSON.parse(repairJSONEscapes(block)); }
+      }
+    }
   }
   throw new Error("Unbalanced JSON in model response");
+}
+
+// Escape any backslash that is NOT the start of a valid JSON escape sequence
+// (\" \\ \/ \b \f \n \r \t \uXXXX). Turns invalid `\frac` into `\\frac` so
+// JSON.parse accepts strings containing LaTeX/Windows-path-like content.
+function repairJSONEscapes(s) {
+  return s.replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, "\\\\");
 }
 
 // Safely read the assistant text from a chat completion. Reasoning models
