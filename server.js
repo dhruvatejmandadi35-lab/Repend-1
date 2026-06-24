@@ -99,7 +99,7 @@ console.log(`[boot] vision provider: ${NVIDIA_API_KEY ? `NVIDIA Build (${VISION_
 // gated behind USE_MOCKUP=1; it is OFF by default because the text brief drives
 // codegen. Swap models from env: black-forest-labs/flux.1-schnell (fast, default),
 // black-forest-labs/flux.1-dev (more detail), or qwen/qwen-image (legible labels).
-const IMAGE_MODEL_ID = process.env.IMAGE_MODEL_ID || "black-forest-labs/flux.1-schnell";
+const IMAGE_MODEL_ID = process.env.IMAGE_MODEL_ID || "black-forest-labs/flux.1-dev";
 
 const { createClient } = require("@supabase/supabase-js");
 let supabase = null;
