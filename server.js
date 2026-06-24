@@ -56,6 +56,13 @@ const CODEGEN_MODEL = process.env.CODEGEN_MODEL || "nvidia";
 // The id must match exactly what the NVIDIA Build model card's code snippet shows.
 const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "moonshotai/kimi-k2.6";
 
+// Output token cap for codegen. The NVIDIA Build FREE endpoint rejects requests
+// above ~16384 and returns an EMPTY stream (0 chars in content AND
+// reasoning_content) with no error — which silently drops every lab to the
+// weaker llama fallback. 16384 is the safe ceiling; override via env only on a
+// paid NIM endpoint that genuinely supports more.
+const CODEGEN_MAX_TOKENS = parseInt(process.env.CODEGEN_MAX_TOKENS || "16384", 10);
+
 // OpenAI model selectors — centralized so you can swap models from env (Railway
 // variable, no code change). Two tiers:
 //   OPENAI_MODEL      → heavy/quality stages: spec, visual critic, codegen fallback
@@ -1360,6 +1367,12 @@ SECTION 4 — HUD (position:fixed, glass-panel style, top-left)
   Contains: topic title, subtitle/goal, progress meter (bar + count), ratio/result line.
   Legend fixed bottom-left. Reset button fixed bottom-right. Hint strip fixed bottom-center.
   CRITICAL: HUD is NOT inside the Three.js canvas. It is a plain HTML div with higher z-index.
+  NO TEXT OVERLAP — each fixed panel sits in its OWN screen corner and must not collide:
+    • top-left = #hud, bottom-left = legend, bottom-right = reset, bottom-center = hint strip, top-right = score/timer.
+    • Give each panel a max-width (≤320px) so long text wraps INSIDE its panel instead of spilling across the screen.
+    • Use normal block flow inside a panel (stacked divs / line-height ≥1.4) — never absolutely-position two text lines at the same top offset.
+    • CSS2D labels must use a small font and an opaque/blurred background chip so they stay readable when several overlap in 3D; offset labels above their mesh, never centered on it.
+    • Leave ≥16px gap between any two fixed panels; if two would touch on a narrow viewport, the lower-priority one collapses to an icon.
 
 SECTION 5 — Drag / interaction
   • Raycaster for 3D drag: pointerdown → find intersected object → pointerup → snap/reject
@@ -2081,6 +2094,8 @@ A reviewer looked at a screenshot of the lab you (or a previous attempt) generat
 ${critiqueNotes}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : ""}
+OUTPUT BUDGET — you have a hard ~16000-token output limit and the file MUST be COMPLETE and end with </script></body></html>. Write efficiently: no verbose comments, no repeated boilerplate, reuse helper functions instead of copy-pasting. A complete, working, smaller lab beats a richer one that gets cut off mid-script. Prioritize finishing every section over adding extra flourish.
+
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
   // ── CODEGEN DISPATCH ──────────────────────────────────────────────────────
@@ -2099,7 +2114,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
         // never idles (no proxy/browser drop) and we can report live progress.
         const stream = await nvidia.chat.completions.create({
           model: CODEGEN_MODEL_ID,
-          max_tokens: 32768,   // Kimi K2.6 supports up to 131k output tokens
+          max_tokens: CODEGEN_MAX_TOKENS,
           temperature: 0.7,
           stream: true,
           messages: [{ role: "user", content: briefText }],
@@ -2107,8 +2122,11 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
         let raw = "";
         let reasoning = "";
         let lastReport = 0;
+        let finishReason = null;
         for await (const chunk of stream) {
-          const delta = chunk.choices?.[0]?.delta || {};
+          const choice = chunk.choices?.[0] || {};
+          const delta = choice.delta || {};
+          if (choice.finish_reason) finishReason = choice.finish_reason;
           if (delta.content) raw += delta.content;
           // Kimi K2.6 and other NVIDIA "thinking" models stream their output via
           // reasoning_content and often leave content empty — capture both so the
@@ -2121,13 +2139,21 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
             try { onProgress(seen); } catch (_) {}
           }
         }
+        // Empty stream (0 chars in BOTH fields) means NVIDIA accepted the request
+        // but produced nothing — usually a transient endpoint hiccup, a rate-limit,
+        // or max_tokens above the free-tier cap. Treat it as RETRYABLE so we get
+        // another shot at Kimi instead of silently dropping to the llama fallback.
+        if (raw.length === 0 && reasoning.length === 0) {
+          const e = new Error(`${CODEGEN_MODEL_ID} returned empty stream (finish_reason:${finishReason})`);
+          e.status = 503; // mark retryable
+          throw e;
+        }
         // Prefer the real answer (content); fall back to reasoning_content if the
         // model routed the HTML there and left content empty.
         let html = extractHtml(raw) || extractHtml(reasoning);
         if (!html) {
-          // Non-HTML is not a transient error — retrying won't help unless it's
-          // a rate limit. Throw immediately so we don't waste attempts.
-          throw new Error(`${CODEGEN_MODEL_ID} returned non-HTML content (content:${raw.length} reasoning:${reasoning.length} chars)`);
+          // We got text but no HTML — a genuine format refusal. Retrying won't help.
+          throw new Error(`${CODEGEN_MODEL_ID} returned non-HTML content (content:${raw.length} reasoning:${reasoning.length} chars, finish_reason:${finishReason})`);
         }
         return html;
       } catch (err) {
@@ -2172,7 +2198,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
     try {
       const stream = await openaiCreate({
         model: REASON_MODEL,
-        max_tokens: 32768,
+        max_tokens: CODEGEN_MAX_TOKENS,
         temperature: 0.7,
         stream: true,
         messages,
