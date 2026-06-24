@@ -2369,8 +2369,11 @@
     const toggle = document.getElementById("myLabsToggle");
     const open = grid.style.display !== "none";
     grid.style.display = open ? "none" : "block";
-    const count = document.getElementById("myLabsCount").textContent;
-    toggle.textContent = `🧪 Your saved labs (${count}) ${open ? "▶" : "▼"}`;
+    // Read count from the span BEFORE overwriting innerHTML, otherwise the span
+    // is destroyed by textContent assignment and the next click throws null.
+    const countEl = document.getElementById("myLabsCount");
+    const count = countEl ? countEl.textContent : "0";
+    toggle.innerHTML = `🧪 Your saved labs (<span id="myLabsCount">${count}</span>) ${open ? "▶" : "▼"}`;
   });
 
   // Course module completion is handled inside onLabComplete (below)
