@@ -2780,6 +2780,10 @@ const server = http.createServer(async (req, res) => {
 
           // Heartbeat: keeps Railway's HTTP/2 proxy from closing idle SSE connections.
           // Railway drops streams after ~10s of silence, so we ping every 5s.
+          // Exempt this SSE response from the default server socket timeout
+          res.socket?.setTimeout(0);
+          req.socket?.setTimeout(0);
+
           const heartbeat = setInterval(() => {
             try {
               res.write(`: ping\n\n`);
@@ -2977,7 +2981,8 @@ process.on("uncaughtException", (err) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.timeout = 180_000; // 180 s — lab generation is multi-step and long
+server.timeout = 900_000;       // 15 min — Kimi codegen + optional visual critic
+server.keepAliveTimeout = 905_000;
 if (require.main === module) {
   server.listen(PORT, "0.0.0.0", () => console.log(`Repend running at http://0.0.0.0:${PORT}`));
 }
