@@ -1162,7 +1162,19 @@ function isOverloadError(err) {
   // Quota/billing exhaustion is a 429 too, but retrying won't help — treat
   // it as a hard error so we surface a clear billing message instead.
   if (/insufficient_quota|exceeded your current quota|billing/i.test(msg)) return false;
-  return /\b(503|429|overloaded|high demand|Service Unavailable|rate limit)\b/i.test(msg);
+  // EngineCore is NVIDIA's backend inference engine — "EngineCore encountered an
+  // issue" is a transient server-side crash that usually clears on retry. Also
+  // catch generic connection/timeout blips so a single network hiccup doesn't
+  // abort the whole pipeline.
+  return /\b(503|429|500|overloaded|high demand|Service Unavailable|rate limit|EngineCore|ECONNRESET|ETIMEDOUT|socket hang up|Connection error)\b/i.test(msg);
+}
+
+// True when a usable OpenAI key is configured (not the boot placeholder). Used
+// to decide whether a truly-independent last-resort fallback to OpenAI gpt-4o is
+// possible when the NVIDIA Build endpoint is wholly down.
+function hasOpenAIKey() {
+  const k = process.env.OPENAI_API_KEY;
+  return !!k && k !== "missing-openai-key";
 }
 
 function isQuotaError(err) {
@@ -2243,6 +2255,42 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
     }
   }
   console.error("[codegen/openai] lab generation failed:", oaLastErr && oaLastErr.message);
+
+  // LAST-RESORT INDEPENDENT FALLBACK — when the reasoning provider is NVIDIA
+  // Build, both Kimi (primary) and llama-3.3-70b (fallback above) live on the
+  // SAME endpoint. If NVIDIA's EngineCore is down, both fail and the learner gets
+  // a bare network error. So if a real OpenAI key is configured, make one final
+  // attempt against OpenAI gpt-4o — a genuinely separate provider — before giving up.
+  if (useNvidiaReasoning && hasOpenAIKey()) {
+    console.warn("[codegen] NVIDIA Build exhausted — trying independent OpenAI gpt-4o last-resort");
+    if (onProgress) { try { onProgress(null, "Switching to backup model…"); } catch (_) {} }
+    try {
+      const oaMessages = imageDataUrl
+        ? [{ role: "user", content: [{ type: "text", text: briefText }, { type: "image_url", image_url: { url: imageDataUrl } }] }]
+        : [{ role: "user", content: briefText }];
+      const stream = await openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        max_tokens: CODEGEN_MAX_TOKENS,
+        temperature: 0.7,
+        stream: true,
+        messages: oaMessages,
+      });
+      let raw = "", reasoning = "", lastReport = 0;
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta || {};
+        if (delta.content) raw += delta.content;
+        if (delta.reasoning_content) reasoning += delta.reasoning_content;
+        const seen = raw.length + reasoning.length;
+        if (onProgress && seen - lastReport >= 2000) { lastReport = seen; try { onProgress(seen); } catch (_) {} }
+      }
+      const html = extractHtml(raw) || extractHtml(reasoning);
+      if (html) return html;
+      console.error(`[codegen/openai-lastresort] ${OPENAI_MODEL} returned non-HTML (content:${raw.length} reasoning:${reasoning.length})`);
+    } catch (e) {
+      console.error("[codegen/openai-lastresort] failed:", e && e.message);
+    }
+  }
+
   throw oaLastErr;
 }
 
@@ -3007,10 +3055,10 @@ const server = http.createServer(async (req, res) => {
           : (err.message || "Something went wrong");
         if (!res.headersSent) {
           res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: err.message || "Something went wrong" }));
+          res.end(JSON.stringify({ error: friendly }));
         } else {
           // SSE already started — send error event then close
-          res.write(`data: ${JSON.stringify({ stage: "error", msg: err.message || "Something went wrong" })}\n\n`);
+          res.write(`data: ${JSON.stringify({ stage: "error", msg: friendly })}\n\n`);
           res.end();
         }
       }
