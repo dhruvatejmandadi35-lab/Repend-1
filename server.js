@@ -100,6 +100,7 @@ const visionClient = NVIDIA_API_KEY ? nvidia : openai;
 const VISION_MODEL = process.env.VISION_MODEL_ID || (NVIDIA_API_KEY ? "nvidia/nemotron-nano-12b-v2-vl" : OPENAI_MODEL);
 console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL}), mini: ${REASON_MINI_MODEL}` : `OpenAI (${REASON_MODEL})`}`);
 console.log(`[boot] vision provider: ${NVIDIA_API_KEY ? `NVIDIA Build (${VISION_MODEL})` : `OpenAI (${OPENAI_MODEL})`}`);
+console.log(`[boot] visual critic: ${process.env.ENABLE_VISUAL_CRITIC === "1" ? "ON (puppeteer headless Chrome — OOM risk on small containers)" : "OFF (static guardrail only)"}`);
 
 // Optional mockup-image model — runs on NVIDIA Build (free) via the OpenAI-
 // compatible images endpoint, reusing the `nvidia` client. The mockup step is
@@ -2317,9 +2318,30 @@ async function getBrowser() {
       "--use-gl=angle", "--use-angle=swiftshader",
       "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist",
       "--enable-webgl", "--enable-accelerated-2d-canvas",
+      // Memory reduction — the headless Chrome + SwiftShader stack OOM-kills small
+      // Railway containers (process SIGKILLed → SSE drops → "network error" with
+      // NOTHING logged). Trim every non-essential subsystem and cap the V8 heap.
+      "--no-zygote", "--renderer-process-limit=1", "--disable-extensions",
+      "--disable-background-networking", "--disable-default-apps", "--mute-audio",
+      "--disable-features=site-per-process,Translate,BackForwardCache",
+      "--js-flags=--max-old-space-size=256",
     ],
   });
+  // If Chrome dies (OOM / crash), drop the cached handle so the next call relaunches
+  // instead of reusing a dead browser and throwing on every subsequent lab.
+  _puppeteerBrowser.on("disconnected", () => { _puppeteerBrowser = null; });
   return _puppeteerBrowser;
+}
+
+// Serialize screenshotLab — two concurrent headless renders double the memory
+// footprint and are the most common trigger for the OOM kill. A simple promise
+// chain forces renders to run one at a time.
+let _screenshotLock = Promise.resolve();
+function withScreenshotLock(fn) {
+  const run = _screenshotLock.then(fn, fn);
+  // Keep the chain alive even if fn rejects, but don't leak the rejection.
+  _screenshotLock = run.catch(() => {});
+  return run;
 }
 
 // Renders the lab HTML in headless Chrome, screenshots it, AND probes it for
@@ -2491,7 +2513,7 @@ async function codeFromImageBriefWithCritique(design, labThinking, pedagogy, ima
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     let probe, critique;
     try {
-      probe = await screenshotLab(html);
+      probe = await withScreenshotLock(() => screenshotLab(html));
       critique = probe.screenshot
         ? await critiqueLab(probe.screenshot, design)
         : { score: 0, accept: false, issues: [] };
