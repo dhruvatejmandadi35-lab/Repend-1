@@ -2082,7 +2082,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
         // never idles (no proxy/browser drop) and we can report live progress.
         const stream = await nvidia.chat.completions.create({
           model: CODEGEN_MODEL_ID,
-          max_tokens: 16384,   // NVIDIA Build free endpoint output cap
+          max_tokens: 32768,   // Kimi K2.6 supports up to 131k output tokens
           temperature: 0.7,
           stream: true,
           messages: [{ role: "user", content: briefText }],
@@ -2155,7 +2155,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
     try {
       const stream = await openaiCreate({
         model: REASON_MODEL,
-        max_tokens: 16384,
+        max_tokens: 32768,
         temperature: 0.7,
         stream: true,
         messages,
