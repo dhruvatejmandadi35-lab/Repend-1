@@ -1976,6 +1976,14 @@ PLATFORM CONSTRAINTS (the lab runs inside a sandboxed iframe — these are non-n
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
     <script>function renderFormula(el, tex, plain){ if(typeof katex!=='undefined'){ katex.render(tex, el, {throwOnError:false}); } else { el.textContent = plain; } }</script>
     Always call renderFormula with BOTH the TeX string and a plain-text fallback — if KaTeX fails to load, the formula still shows as readable text and the lab keeps working.
+    ⚠️ BACKSLASH ESCAPING — THE #1 CAUSE OF BROKEN EQUATIONS (missing Greek letters / "= 1/( · ²)" garbage):
+      A normal JS string EATS backslashes: "\frac" becomes a formfeed+"rac", "\lambda" becomes "lambda", "\eta" becomes "eta". KaTeX then renders nonsense, and because throwOnError:false it does so SILENTLY.
+      RULE: write EVERY TeX command with String.raw OR a doubled backslash. Use ONE of:
+        renderFormula(el, String.raw\`E = \\frac{hc}{\\lambda}\`, 'E = hc/λ');   // ← PREFERRED: raw template literal (backtick-quoted, no extra escaping needed)
+        renderFormula(el, "E = \\\\frac{hc}{\\\\lambda}", 'E = hc/λ');           // ← or double every backslash in a normal "..." string
+      NEVER write renderFormula(el, "\\frac{hc}{\\lambda}", ...) with SINGLE backslashes — they are gone before KaTeX ever sees them.
+      The plain-text fallback should use real Unicode symbols (λ η E ² ·) so it's still readable if KaTeX is unavailable.
+      SELF-TEST: scan your output for any TeX command (\\frac, \\lambda, \\eta, \\sqrt, \\cdot, etc.) sitting inside a normal "..." or '...' string passed to renderFormula. If you find one with a single backslash, it is BROKEN — convert that string to a String.raw template literal or double every backslash.
   - Google Fonts — ALWAYS include this one (typography is the cheapest polish; if it fails to load, system fonts take over automatically — zero risk):
     <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
