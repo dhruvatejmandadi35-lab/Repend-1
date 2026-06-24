@@ -2088,22 +2088,29 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
           messages: [{ role: "user", content: briefText }],
         });
         let raw = "";
+        let reasoning = "";
         let lastReport = 0;
         for await (const chunk of stream) {
-          const delta = chunk.choices?.[0]?.delta?.content || "";
-          if (!delta) continue;
-          raw += delta;
+          const delta = chunk.choices?.[0]?.delta || {};
+          if (delta.content) raw += delta.content;
+          // Kimi K2.6 and other NVIDIA "thinking" models stream their output via
+          // reasoning_content and often leave content empty — capture both so the
+          // HTML isn't silently dropped (the #1 cause of empty-lab fallbacks).
+          if (delta.reasoning_content) reasoning += delta.reasoning_content;
           // Report progress roughly every 2000 chars so the client sees life.
-          if (onProgress && raw.length - lastReport >= 2000) {
-            lastReport = raw.length;
-            try { onProgress(raw.length); } catch (_) {}
+          const seen = raw.length + reasoning.length;
+          if (onProgress && seen - lastReport >= 2000) {
+            lastReport = seen;
+            try { onProgress(seen); } catch (_) {}
           }
         }
-        let html = extractHtml(raw);
+        // Prefer the real answer (content); fall back to reasoning_content if the
+        // model routed the HTML there and left content empty.
+        let html = extractHtml(raw) || extractHtml(reasoning);
         if (!html) {
           // Non-HTML is not a transient error — retrying won't help unless it's
           // a rate limit. Throw immediately so we don't waste attempts.
-          throw new Error(`${CODEGEN_MODEL_ID} returned non-HTML content (${raw.length} chars)`);
+          throw new Error(`${CODEGEN_MODEL_ID} returned non-HTML content (content:${raw.length} reasoning:${reasoning.length} chars)`);
         }
         return html;
       } catch (err) {
@@ -2154,19 +2161,21 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
         messages,
       }, "codegen/fallback");
       let raw = "";
+      let reasoning = "";
       let lastReport = 0;
       for await (const chunk of stream) {
-        const delta = chunk.choices?.[0]?.delta?.content || "";
-        if (!delta) continue;
-        raw += delta;
-        if (onProgress && raw.length - lastReport >= 2000) {
-          lastReport = raw.length;
-          try { onProgress(raw.length); } catch (_) {}
+        const delta = chunk.choices?.[0]?.delta || {};
+        if (delta.content) raw += delta.content;
+        if (delta.reasoning_content) reasoning += delta.reasoning_content;
+        const seen = raw.length + reasoning.length;
+        if (onProgress && seen - lastReport >= 2000) {
+          lastReport = seen;
+          try { onProgress(seen); } catch (_) {}
         }
       }
-      const html = extractHtml(raw);
+      const html = extractHtml(raw) || extractHtml(reasoning);
       if (!html) {
-        throw new Error(`${REASON_MODEL} returned non-HTML content (${raw.length} chars)`);
+        throw new Error(`${REASON_MODEL} returned non-HTML content (content:${raw.length} reasoning:${reasoning.length} chars)`);
       }
       return html;
     } catch (err) {
