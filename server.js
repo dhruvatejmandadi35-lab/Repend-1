@@ -67,7 +67,7 @@ const CODEGEN_MAX_TOKENS = parseInt(process.env.CODEGEN_MAX_TOKENS || "16384", 1
 // Kimi call; CODEGEN_IDLE_MS = max gap between streamed chunks before we treat
 // the stream as stalled. Both abort into a retryable fallback so a hung thinking
 // model never leaves the request silently dangling (the Iter 6/7 failure mode).
-const CODEGEN_TIMEOUT_MS = parseInt(process.env.CODEGEN_TIMEOUT_MS || "180000", 10); // 3 min
+const CODEGEN_TIMEOUT_MS = parseInt(process.env.CODEGEN_TIMEOUT_MS || "300000", 10); // 5 min (GLM-5.1 is slower than Kimi)
 const CODEGEN_IDLE_MS = parseInt(process.env.CODEGEN_IDLE_MS || "45000", 10);        // 45 s
 
 // OpenAI model selectors — centralized so you can swap models from env (Railway
@@ -2221,7 +2221,7 @@ A reviewer looked at a screenshot of the lab you (or a previous attempt) generat
 ${critiqueNotes}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : ""}
-OUTPUT BUDGET — you have a hard ~16000-token output limit and the file MUST be COMPLETE and end with </script></body></html>. Write efficiently: no verbose comments, no repeated boilerplate, reuse helper functions instead of copy-pasting. A complete, working, smaller lab beats a richer one that gets cut off mid-script. Prioritize finishing every section over adding extra flourish.
+OUTPUT BUDGET — you have a hard ~16000-token output limit and the file MUST be COMPLETE and end with </script></body></html>. Write efficiently: no verbose comments, no repeated boilerplate, reuse helper functions, keep CSS/JS concise. Target 600–900 lines total. A complete, working, smaller lab beats a richer one that gets cut off mid-script. Prioritize finishing over adding extra flourish. If you are approaching the limit, skip optional polish and close all tags.
 
 Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
 
