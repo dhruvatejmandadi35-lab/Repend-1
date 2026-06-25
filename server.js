@@ -1211,6 +1211,68 @@ Be specific to "${topic}". Do not give generic answers. Do not repeat the archet
   return openaiText(prompt, 800, REASON_MINI_MODEL);
 }
 
+// ── KIMI CONCURRENCY LOCK ─────────────────────────────────────────────────────
+// The NVIDIA Build FREE tier accepts ONE Kimi request at a time. When two lab
+// generations run concurrently, both queue on NVIDIA's side, both sit idle for
+// ~47-49s, and both return empty streams (content:0 reasoning:0 finish_reason:null).
+// This lock serialises all Kimi calls so concurrent requests wait in line rather
+// than hammering the endpoint in parallel.
+let _kimiLock = Promise.resolve();
+function withKimiLock(fn) {
+  const run = _kimiLock.then(fn, fn);
+  _kimiLock = run.catch(() => {});
+  return run;
+}
+
+// One Kimi streaming call with wall-clock + idle-stall timeouts. Returns the
+// extracted HTML or throws a retryable error.
+async function _runKimiStream(briefText, onProgress) {
+  const ac = new AbortController();
+  const startedAt = Date.now();
+  let idleTimer = null;
+  const hardTimer = setTimeout(() => ac.abort(new Error("codegen hard timeout")), CODEGEN_TIMEOUT_MS);
+  const resetIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => ac.abort(new Error("codegen idle stall")), CODEGEN_IDLE_MS);
+  };
+  const stream = await nvidia.chat.completions.create({
+    model: CODEGEN_MODEL_ID,
+    max_tokens: CODEGEN_MAX_TOKENS,
+    temperature: 0.7,
+    stream: true,
+    messages: [{ role: "user", content: briefText }],
+  }, { signal: ac.signal });
+  let raw = "", reasoning = "", lastReport = 0, finishReason = null;
+  try {
+    resetIdle();
+    for await (const chunk of stream) {
+      resetIdle();
+      const choice = chunk.choices?.[0] || {};
+      const delta = choice.delta || {};
+      if (choice.finish_reason) finishReason = choice.finish_reason;
+      if (delta.content) raw += delta.content;
+      if (delta.reasoning_content) reasoning += delta.reasoning_content;
+      const seen = raw.length + reasoning.length;
+      if (onProgress && seen - lastReport >= 2000) {
+        lastReport = seen;
+        try { onProgress(seen); } catch (_) {}
+      }
+    }
+  } finally {
+    clearTimeout(hardTimer);
+    if (idleTimer) clearTimeout(idleTimer);
+  }
+  console.log(`[codegen/nvidia] stream done: content=${raw.length} reasoning=${reasoning.length} finish=${finishReason} elapsed=${Math.round((Date.now() - startedAt) / 1000)}s`);
+  if (raw.length === 0 && reasoning.length === 0) {
+    const e = new Error(`${CODEGEN_MODEL_ID} returned empty stream (finish_reason:${finishReason})`);
+    e.status = 503;
+    throw e;
+  }
+  const html = extractHtml(raw) || extractHtml(reasoning);
+  if (!html) throw new Error(`${CODEGEN_MODEL_ID} returned non-HTML content (content:${raw.length} reasoning:${reasoning.length} chars, finish_reason:${finishReason})`);
+  return html;
+}
+
 async function codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category = "General", onProgress = null, critiqueNotes = null) {
   const cat = design.spec.course_category || category;
   const vars = (design.spec.variables || [])
@@ -2172,85 +2234,20 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
 
   if (useNvidia) {
     console.log(`[codegen] routing to NVIDIA Build model: ${CODEGEN_MODEL_ID}`);
+    // Serialize all Kimi calls — the NVIDIA Build FREE tier accepts one request
+    // at a time. When two lab generations run concurrently, both queue on NVIDIA's
+    // side, both time out at ~47-49s, and both return empty streams (finish_reason:null).
+    // The lock makes concurrent requests wait in line instead of hammering in parallel.
     let lastErr;
     for (let attempt = 1; attempt <= 4; attempt++) {
       try {
-        // Hard wall-clock + idle-stall guards. Kimi K2.6 is a THINKING model:
-        // on open-ended topics it can stream reasoning_content for many minutes
-        // and never emit the final HTML. Without a cap the request hangs until the
-        // client/Railway edge proxy gives up — the learner sees "network error"
-        // while the server logs NOTHING (the exact Iter 6/7 signature). An
-        // AbortController turns that silent hang into a logged, retryable fallback.
-        const ac = new AbortController();
-        const startedAt = Date.now();
-        let idleTimer = null;
-        const hardTimer = setTimeout(() => ac.abort(new Error("codegen hard timeout")), CODEGEN_TIMEOUT_MS);
-        const resetIdle = () => {
-          if (idleTimer) clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => ac.abort(new Error("codegen idle stall")), CODEGEN_IDLE_MS);
-        };
-        // Stream the response so tokens arrive continuously — the connection
-        // never idles (no proxy/browser drop) and we can report live progress.
-        const stream = await nvidia.chat.completions.create({
-          model: CODEGEN_MODEL_ID,
-          max_tokens: CODEGEN_MAX_TOKENS,
-          temperature: 0.7,
-          stream: true,
-          messages: [{ role: "user", content: briefText }],
-        }, { signal: ac.signal });
-        let raw = "";
-        let reasoning = "";
-        let lastReport = 0;
-        let finishReason = null;
-        try {
-          resetIdle();
-          for await (const chunk of stream) {
-            resetIdle();
-            const choice = chunk.choices?.[0] || {};
-            const delta = choice.delta || {};
-            if (choice.finish_reason) finishReason = choice.finish_reason;
-            if (delta.content) raw += delta.content;
-            // Kimi K2.6 and other NVIDIA "thinking" models stream their output via
-            // reasoning_content and often leave content empty — capture both so the
-            // HTML isn't silently dropped (the #1 cause of empty-lab fallbacks).
-            if (delta.reasoning_content) reasoning += delta.reasoning_content;
-            // Report progress roughly every 2000 chars so the client sees life.
-            const seen = raw.length + reasoning.length;
-            if (onProgress && seen - lastReport >= 2000) {
-              lastReport = seen;
-              try { onProgress(seen); } catch (_) {}
-            }
-          }
-        } finally {
-          clearTimeout(hardTimer);
-          if (idleTimer) clearTimeout(idleTimer);
-        }
-        console.log(`[codegen/nvidia] stream done: content=${raw.length} reasoning=${reasoning.length} finish=${finishReason} elapsed=${Math.round((Date.now() - startedAt) / 1000)}s`);
-        // Empty stream (0 chars in BOTH fields) means NVIDIA accepted the request
-        // but produced nothing — usually a transient endpoint hiccup, a rate-limit,
-        // or max_tokens above the free-tier cap. Treat it as RETRYABLE so we get
-        // another shot at Kimi instead of silently dropping to the llama fallback.
-        if (raw.length === 0 && reasoning.length === 0) {
-          const e = new Error(`${CODEGEN_MODEL_ID} returned empty stream (finish_reason:${finishReason})`);
-          e.status = 503; // mark retryable
-          throw e;
-        }
-        // Prefer the real answer (content); fall back to reasoning_content if the
-        // model routed the HTML there and left content empty.
-        let html = extractHtml(raw) || extractHtml(reasoning);
-        if (!html) {
-          // We got text but no HTML — a genuine format refusal. Retrying won't help.
-          throw new Error(`${CODEGEN_MODEL_ID} returned non-HTML content (content:${raw.length} reasoning:${reasoning.length} chars, finish_reason:${finishReason})`);
-        }
+        const html = await withKimiLock(() => _runKimiStream(briefText, onProgress));
         return html;
       } catch (err) {
         lastErr = err;
-        // An abort (hard timeout / idle stall) is transient — mark it retryable so
-        // we try Kimi again, then fall through to the independent OpenAI last-resort.
-        // The OpenAI SDK surfaces aborts as APIUserAbortError ("Request was aborted").
         if (err && (/abort/i.test(err.name || "") || /abort|timeout|idle stall/i.test(err.message || ""))) {
           err.status = err.status || 503;
-          console.warn(`[codegen/nvidia] aborted after ${Math.round((CODEGEN_TIMEOUT_MS) / 1000)}s ceiling (${err.message}) — will retry/fall back`);
+          console.warn(`[codegen/nvidia] aborted: ${err.message} — will retry/fall back`);
         }
         const status = err && (err.status || err.statusCode);
         const retryable = status === 429 || status === 503 || status === 500;
@@ -2263,9 +2260,6 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
         }
       }
     }
-    // Kimi failed — fall through to OpenAI fallback only for network/rate errors.
-    // If it was a content/format refusal, the fallback will also refuse, so we
-    // skip it and surface the error immediately (saves ~2 min of pointless retries).
     const isNetworkError = lastErr && (lastErr.status === 429 || lastErr.status === 503 || lastErr.status === 500 || !lastErr.status);
     if (!isNetworkError) {
       throw new Error("Lab generation failed: the AI returned an unexpected response. Please retry — a different phrasing usually works.");
