@@ -1374,12 +1374,41 @@ SECTION 3 — Palette + topic objects (FILL THIS IN for the topic — the meshes
   • IDLE ANIMATION: key objects must bob, pulse, or rotate gently when the learner isn't interacting — the scene must feel alive on load, never frozen
 
 SECTION 4 — HUD (position:fixed, glass-panel style, top-left)
-  #hud { position:fixed; top:18px; left:18px; padding:16px 20px; width:300px;
+  #hud { position:fixed; top:18px; left:18px; padding:16px 20px; width:280px; max-width:280px;
     background:rgba(10,15,30,.75); backdrop-filter:blur(10px);
-    border:1px solid rgba(232,93,4,.3); border-radius:14px; }
+    border:1px solid rgba(232,93,4,.3); border-radius:14px; z-index:10; }
   Contains: topic title, subtitle/goal, progress meter (bar + count), ratio/result line.
-  Legend fixed bottom-left. Reset button fixed bottom-right. Hint strip fixed bottom-center.
+  Legend fixed bottom-left (max-width:220px). Reset button fixed bottom-right. Hint strip fixed bottom-center.
   CRITICAL: HUD is NOT inside the Three.js canvas. It is a plain HTML div with higher z-index.
+
+  PANEL LAYOUT — HARD RULES (the #1 source of overlapping UI):
+  The viewport has FIVE reserved corners. ONE panel per corner, NEVER two:
+    top-left(0,0)→(320,∞)   = #hud  (title + goal + progress)
+    top-right(∞,0)→(320,∞)  = controls/sliders panel OR score — pick ONE
+    bottom-left               = legend (collapsible, max 180px wide)
+    bottom-right              = reset button only (not a full panel)
+    bottom-center             = hint strip (single line, no taller than 40px)
+  If you have MORE than one secondary panel (e.g. Controls + Live Metrics + Formula),
+  STACK THEM VERTICALLY inside the SAME top-right column (display:flex; flex-direction:column; gap:8px)
+  rather than placing each in a different position. They must never overlap #hud.
+
+  COLLAPSIBLE SECONDARY PANELS — MANDATORY when total panel height > 60% of viewport:
+  Every secondary panel (Controls, Live Metrics, Formula, Legend) MUST have a collapse toggle:
+    <div class="panel">
+      <div class="panel-header" onclick="this.parentElement.classList.toggle('collapsed')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+        <span>Controls</span><span class="chevron">▲</span>
+      </div>
+      <div class="panel-body">...sliders...</div>
+    </div>
+    .panel.collapsed .panel-body { display:none; }
+    .panel.collapsed .chevron { transform:rotate(180deg); }
+  The #hud (top-left goal/progress panel) is ALWAYS fully visible and cannot be collapsed.
+  All other panels start EXPANDED but collapse to their header bar on one click — giving the
+  learner a clear stage to work in.
+
+  SELF-TEST before returning: open the lab at 1280×800. Mentally drag every fixed panel's
+  bounding box onto the viewport grid. If ANY two boxes overlap by more than 4px, the layout
+  is BROKEN — move panels or collapse them until there is zero overlap.
   NO TEXT OVERLAP — each fixed panel sits in its OWN screen corner and must not collide:
     • top-left = #hud, bottom-left = legend, bottom-right = reset, bottom-center = hint strip, top-right = score/timer.
     • Give each panel a max-width (≤320px) so long text wraps INSIDE its panel instead of spilling across the screen.
