@@ -63,6 +63,13 @@ const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "moonshotai/kimi-k2.6";
 // paid NIM endpoint that genuinely supports more.
 const CODEGEN_MAX_TOKENS = parseInt(process.env.CODEGEN_MAX_TOKENS || "16384", 10);
 
+// Codegen stream guards. CODEGEN_TIMEOUT_MS = hard wall-clock ceiling for ONE
+// Kimi call; CODEGEN_IDLE_MS = max gap between streamed chunks before we treat
+// the stream as stalled. Both abort into a retryable fallback so a hung thinking
+// model never leaves the request silently dangling (the Iter 6/7 failure mode).
+const CODEGEN_TIMEOUT_MS = parseInt(process.env.CODEGEN_TIMEOUT_MS || "180000", 10); // 3 min
+const CODEGEN_IDLE_MS = parseInt(process.env.CODEGEN_IDLE_MS || "45000", 10);        // 45 s
+
 // OpenAI model selectors — centralized so you can swap models from env (Railway
 // variable, no code change). Two tiers:
 //   OPENAI_MODEL      → heavy/quality stages: spec, visual critic, codegen fallback
@@ -2160,6 +2167,20 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
     let lastErr;
     for (let attempt = 1; attempt <= 4; attempt++) {
       try {
+        // Hard wall-clock + idle-stall guards. Kimi K2.6 is a THINKING model:
+        // on open-ended topics it can stream reasoning_content for many minutes
+        // and never emit the final HTML. Without a cap the request hangs until the
+        // client/Railway edge proxy gives up — the learner sees "network error"
+        // while the server logs NOTHING (the exact Iter 6/7 signature). An
+        // AbortController turns that silent hang into a logged, retryable fallback.
+        const ac = new AbortController();
+        const startedAt = Date.now();
+        let idleTimer = null;
+        const hardTimer = setTimeout(() => ac.abort(new Error("codegen hard timeout")), CODEGEN_TIMEOUT_MS);
+        const resetIdle = () => {
+          if (idleTimer) clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => ac.abort(new Error("codegen idle stall")), CODEGEN_IDLE_MS);
+        };
         // Stream the response so tokens arrive continuously — the connection
         // never idles (no proxy/browser drop) and we can report live progress.
         const stream = await nvidia.chat.completions.create({
@@ -2168,27 +2189,35 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
           temperature: 0.7,
           stream: true,
           messages: [{ role: "user", content: briefText }],
-        });
+        }, { signal: ac.signal });
         let raw = "";
         let reasoning = "";
         let lastReport = 0;
         let finishReason = null;
-        for await (const chunk of stream) {
-          const choice = chunk.choices?.[0] || {};
-          const delta = choice.delta || {};
-          if (choice.finish_reason) finishReason = choice.finish_reason;
-          if (delta.content) raw += delta.content;
-          // Kimi K2.6 and other NVIDIA "thinking" models stream their output via
-          // reasoning_content and often leave content empty — capture both so the
-          // HTML isn't silently dropped (the #1 cause of empty-lab fallbacks).
-          if (delta.reasoning_content) reasoning += delta.reasoning_content;
-          // Report progress roughly every 2000 chars so the client sees life.
-          const seen = raw.length + reasoning.length;
-          if (onProgress && seen - lastReport >= 2000) {
-            lastReport = seen;
-            try { onProgress(seen); } catch (_) {}
+        try {
+          resetIdle();
+          for await (const chunk of stream) {
+            resetIdle();
+            const choice = chunk.choices?.[0] || {};
+            const delta = choice.delta || {};
+            if (choice.finish_reason) finishReason = choice.finish_reason;
+            if (delta.content) raw += delta.content;
+            // Kimi K2.6 and other NVIDIA "thinking" models stream their output via
+            // reasoning_content and often leave content empty — capture both so the
+            // HTML isn't silently dropped (the #1 cause of empty-lab fallbacks).
+            if (delta.reasoning_content) reasoning += delta.reasoning_content;
+            // Report progress roughly every 2000 chars so the client sees life.
+            const seen = raw.length + reasoning.length;
+            if (onProgress && seen - lastReport >= 2000) {
+              lastReport = seen;
+              try { onProgress(seen); } catch (_) {}
+            }
           }
+        } finally {
+          clearTimeout(hardTimer);
+          if (idleTimer) clearTimeout(idleTimer);
         }
+        console.log(`[codegen/nvidia] stream done: content=${raw.length} reasoning=${reasoning.length} finish=${finishReason} elapsed=${Math.round((Date.now() - startedAt) / 1000)}s`);
         // Empty stream (0 chars in BOTH fields) means NVIDIA accepted the request
         // but produced nothing — usually a transient endpoint hiccup, a rate-limit,
         // or max_tokens above the free-tier cap. Treat it as RETRYABLE so we get
@@ -2208,6 +2237,13 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
         return html;
       } catch (err) {
         lastErr = err;
+        // An abort (hard timeout / idle stall) is transient — mark it retryable so
+        // we try Kimi again, then fall through to the independent OpenAI last-resort.
+        // The OpenAI SDK surfaces aborts as APIUserAbortError ("Request was aborted").
+        if (err && (/abort/i.test(err.name || "") || /abort|timeout|idle stall/i.test(err.message || ""))) {
+          err.status = err.status || 503;
+          console.warn(`[codegen/nvidia] aborted after ${Math.round((CODEGEN_TIMEOUT_MS) / 1000)}s ceiling (${err.message}) — will retry/fall back`);
+        }
         const status = err && (err.status || err.statusCode);
         const retryable = status === 429 || status === 503 || status === 500;
         if (retryable && attempt < 4) {
@@ -3133,6 +3169,21 @@ process.on("uncaughtException", (err) => {
 const PORT = process.env.PORT || 3000;
 server.timeout = 900_000;       // 15 min — Kimi codegen + optional visual critic
 server.keepAliveTimeout = 905_000;
+
+// Crash visibility — when a lab dies with NOTHING logged, we can't tell a silent
+// hang from a process kill. These handlers log the cause before the process exits
+// so the next failure leaves a fingerprint instead of pure silence. We log and
+// keep running on unhandledRejection (a single bad lab shouldn't take down the
+// server); uncaughtException is logged then re-thrown to let the platform restart.
+process.on("unhandledRejection", (reason) => {
+  console.error("[process] UNHANDLED REJECTION:", reason && (reason.stack || reason.message || reason));
+});
+process.on("uncaughtException", (err) => {
+  console.error("[process] UNCAUGHT EXCEPTION:", err && (err.stack || err.message || err));
+});
+process.on("SIGTERM", () => { console.error("[process] received SIGTERM (platform stop/redeploy/OOM)"); process.exit(0); });
+process.on("warning", (w) => { if (w && w.name === "MaxListenersExceededWarning") console.warn("[process] warning:", w.message); });
+
 if (require.main === module) {
   server.listen(PORT, "0.0.0.0", () => console.log(`Repend running at http://0.0.0.0:${PORT}`));
 }
