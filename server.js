@@ -54,7 +54,7 @@ const CODEGEN_MODEL = process.env.CODEGEN_MODEL || "nvidia";
 //   moonshotai/kimi-k2.6              (default — current pick)
 //   nvidia/nemotron-3-ultra-550b-a55b (previous pick)
 // The id must match exactly what the NVIDIA Build model card's code snippet shows.
-const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "moonshotai/kimi-k2.6";
+const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "z-ai/glm-5.1";
 
 // Output token cap for codegen. The NVIDIA Build FREE endpoint rejects requests
 // above ~16384 and returns an EMPTY stream (0 chars in content AND
