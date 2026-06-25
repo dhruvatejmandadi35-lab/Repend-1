@@ -1742,6 +1742,14 @@ A Three.js scene only moves when state is mutated inside a self-rescheduling per
 
 1. ONE shared mutable state object holds everything that can change:
      const state = { /* positions, velocities, target, score, matchPct, won:false, ...topic values */ };
+   ⚠️ CONST vs LET — THE #1 CAUSE OF "Assignment to constant variable" CRASHES:
+   • const means the binding cannot change — NEVER use it for values you mutate in update() or event handlers.
+   • All numeric counters, scores, positions, angles, velocities, and flags that animate() or update() writes to
+     MUST be either (a) properties on the shared state object (state.score += 1 is correct) or (b) declared with let.
+   • NEVER do:  const score = 0; ... score++;   — this throws "Assignment to constant variable" every frame.
+   • ALWAYS do: let score = 0;   or put it in state:   const state = { score: 0 }; ... state.score++;
+   SELF-TEST: scan your output for any const variable that appears on the LEFT-HAND side of =, +=, -=,
+   ++, --, or inside a for-loop body that reassigns it. If you find one, change it to let or move it into state.
 2. ONE animation function is the ONLY place rendering happens:
      const clock = new THREE.Clock();
      function animate(){
