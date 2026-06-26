@@ -970,6 +970,105 @@ function normalizeReflection(design) {
 
 // Step 3 — reasons concretely about what to draw and how.
 // Output is a structured visual brief the coder can follow exactly.
+// Generate lesson slides (text-only, fast mini model) from the design spec.
+// Returns { slides: [{title, bullets:[]}], summary } or null on failure.
+async function generateLesson(design) {
+  const spec = design.spec || {};
+  const prompt = `You are a curriculum writer. Given this lab topic and spec, write a short lesson that prepares the learner to understand and use the interactive lab.
+
+TOPIC: ${design.topic}
+LEARNING GOAL: ${spec.learning_goal || ""}
+ENTRY MISCONCEPTION: ${spec.entry_misconception || ""}
+REAL WORLD PAYOFF: ${spec.real_world_payoff || ""}
+KEY VARIABLES: ${(spec.variables || []).map(v => `${v.name} (${v.unit || ""}): ${v.why_it_matters}`).join("; ")}
+AHA TRIGGER: ${spec.aha_trigger || ""}
+
+Return ONLY valid JSON (no markdown, no fences):
+{
+  "summary": "1-2 sentence hook that makes the learner excited for the lab",
+  "slides": [
+    { "title": "slide title", "bullets": ["bullet 1", "bullet 2", "bullet 3"] }
+  ]
+}
+
+Rules:
+- Exactly 3 slides
+- Slide 1: The core concept (what it is and why it matters)
+- Slide 2: The key variables and how they relate (use the real variable names)
+- Slide 3: The real-world payoff + what they'll discover in the lab
+- Each slide: 3-4 bullets, max 15 words each
+- Address the entry misconception head-on in slide 1 or 2
+- No filler, no "in this lesson we will learn" — start every bullet with a concrete fact or action verb`;
+
+  try {
+    const resp = await reason.chat.completions.create({
+      model: REASON_MINI_MODEL,
+      max_tokens: 800,
+      temperature: 0.4,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const raw = resp.choices?.[0]?.message?.content || "";
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("no JSON in lesson response");
+    return JSON.parse(m[0]);
+  } catch (e) {
+    console.warn("[lesson] generation failed:", e.message);
+    return null;
+  }
+}
+
+// Generate quiz questions (fast mini model) from the design spec.
+// Returns { questions: [{q, options:[4], answer:0-based-index, explanation}] } or null.
+async function generateQuiz(design) {
+  const spec = design.spec || {};
+  const prompt = `You are a curriculum writer. Create a short quiz that tests whether the learner understood the key insight from this interactive lab.
+
+TOPIC: ${design.topic}
+LEARNING GOAL: ${spec.learning_goal || ""}
+VERIFICATION QUESTION: ${design.verificationQuestion || ""}
+AHA TRIGGER: ${spec.aha_trigger || ""}
+REAL WORLD PAYOFF: ${spec.real_world_payoff || ""}
+KEY VARIABLES: ${(spec.variables || []).map(v => `${v.name}: ${v.why_it_matters}`).join("; ")}
+
+Return ONLY valid JSON (no markdown, no fences):
+{
+  "questions": [
+    {
+      "q": "question text",
+      "options": ["option A", "option B", "option C", "option D"],
+      "answer": 0,
+      "explanation": "1 sentence why this is correct and what the others miss"
+    }
+  ]
+}
+
+Rules:
+- Exactly 4 questions
+- Question 1: conceptual (tests the core insight, not memorization)
+- Question 2: application (a scenario where they apply the concept)
+- Question 3: the verification question from the lab itself (reuse it verbatim)
+- Question 4: real-world payoff (what would they do differently now?)
+- Each question: 4 options, exactly one correct (answer = 0-based index of correct option)
+- Wrong options should be plausible misconceptions, not obviously silly
+- Explanation: punchy, 1 sentence, reinforces the aha moment`;
+
+  try {
+    const resp = await reason.chat.completions.create({
+      model: REASON_MINI_MODEL,
+      max_tokens: 1000,
+      temperature: 0.3,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const raw = resp.choices?.[0]?.message?.content || "";
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("no JSON in quiz response");
+    return JSON.parse(m[0]);
+  } catch (e) {
+    console.warn("[quiz] generation failed:", e.message);
+    return null;
+  }
+}
+
 async function thinkAboutLab(design, category = "General", courseContext = null) {
   const cat = design.spec.course_category || category;
   const courseCtx = courseContextBlock(courseContext);
@@ -3058,9 +3157,20 @@ const server = http.createServer(async (req, res) => {
           const design = await specFromThinking(topic, thinking, category, groundingText, courseContext);
 
           send("labthink", "Thinking about how to build it…");
+          // Fire lesson + quiz generation in parallel with labthink — they use the fast
+          // mini model (~10s) while labthink + codegen takes minutes. Badges light up fast.
+          let lessonResult = null, quizResult = null;
           const [labThinking, pedagogy] = await Promise.all([
             thinkAboutLab(design, category, courseContext),
             thinkAboutVisualPedagogy(design.topic, design.spec.lab_archetype || "physics-sim", category),
+            generateLesson(design).then(r => {
+              lessonResult = r;
+              if (r) send("lesson", "Lesson ready.", { lesson: r });
+            }).catch(() => {}),
+            generateQuiz(design).then(r => {
+              quizResult = r;
+              if (r) send("quiz", "Quiz ready.", { quiz: r });
+            }).catch(() => {}),
           ]);
 
           let imageDataUrl = null;
@@ -3091,6 +3201,8 @@ const server = http.createServer(async (req, res) => {
             realWorldPayoff: design.spec.real_world_payoff,
             reflection: design.spec.reflection || null,
             labHtml: html,
+            lesson: lessonResult || undefined,
+            quiz: quizResult || undefined,
           };
 
           clearInterval(heartbeat);
