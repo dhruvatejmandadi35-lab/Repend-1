@@ -1249,21 +1249,33 @@
 <!-- LEVEL ASSESSMENT MODAL -->
 <div class="level-modal" id="levelModal">
   <div class="level-card">
-    <div class="level-title">Quick check before we build <span class="level-topic" id="levelTopicName"></span></div>
-    <div class="level-sub">2 quick questions so the lab matches your level.</div>
-    <div class="level-q">What's your background with this topic?</div>
-    <div class="level-options" id="levelOpts1">
-      <button class="level-opt" data-q="1" data-v="beginner">🌱 Complete beginner — I've never really touched it</button>
-      <button class="level-opt" data-q="1" data-v="some">📖 Some familiarity — I've heard of it but don't deeply get it</button>
-      <button class="level-opt" data-q="1" data-v="advanced">🔬 Pretty solid — I want to go deeper or apply it</button>
+    <!-- Step 1: background + goal (shown first) -->
+    <div id="levelStep1">
+      <div class="level-title">Quick check before we build <span class="level-topic" id="levelTopicName"></span></div>
+      <div class="level-sub">2 quick questions so the lab matches your level.</div>
+      <div class="level-q">What's your background with this topic?</div>
+      <div class="level-options" id="levelOpts1">
+        <button class="level-opt" data-q="1" data-v="beginner">🌱 Complete beginner — I've never really touched it</button>
+        <button class="level-opt" data-q="1" data-v="some">📖 Some familiarity — I've heard of it but don't deeply get it</button>
+        <button class="level-opt" data-q="1" data-v="advanced">🔬 Pretty solid — I want to go deeper or apply it</button>
+      </div>
+      <div class="level-q">What's your goal?</div>
+      <div class="level-options" id="levelOpts2">
+        <button class="level-opt" data-q="2" data-v="understand">💡 Understand the concept — I want the "aha" moment</button>
+        <button class="level-opt" data-q="2" data-v="apply">🛠️ Apply it — I need to use this in the real world</button>
+        <button class="level-opt" data-q="2" data-v="master">🎯 Master it deeply — I want to be able to explain it to anyone</button>
+      </div>
+      <button class="level-go" id="levelGo" disabled>Next →</button>
     </div>
-    <div class="level-q">What's your goal?</div>
-    <div class="level-options" id="levelOpts2">
-      <button class="level-opt" data-q="2" data-v="understand">💡 Understand the concept — I want the "aha" moment</button>
-      <button class="level-opt" data-q="2" data-v="apply">🛠️ Apply it — I need to use this in the real world</button>
-      <button class="level-opt" data-q="2" data-v="master">🎯 Master it deeply — I want to be able to explain it to anyone</button>
+    <!-- Step 2: module structure choice (shown after step 1) -->
+    <div id="levelStep2" style="display:none">
+      <div class="level-title">How do you want to structure the course?</div>
+      <div class="level-sub">You can always edit modules after.</div>
+      <div class="level-options" style="margin-top:18px">
+        <button class="level-opt" id="levelOptAI">✨ Let AI build the modules — just generate it</button>
+        <button class="level-opt" id="levelOptCustom">✏️ I'll design the modules myself</button>
+      </div>
     </div>
-    <button class="level-go" id="levelGo" disabled>Build my lab →</button>
   </div>
 </div>
 
@@ -3181,14 +3193,19 @@
   let _levelBackground = null;
   let _levelGoal = null;
 
-  function showLevelModal(topic, onConfirm) {
+  function showLevelModal(topic, onConfirm, onWizard) {
     const modal = document.getElementById("levelModal");
+    const step1 = document.getElementById("levelStep1");
+    const step2 = document.getElementById("levelStep2");
     document.getElementById("levelTopicName").textContent = topic;
     _levelBackground = null; _levelGoal = null;
     modal.querySelectorAll(".level-opt").forEach(b => b.classList.remove("selected"));
     document.getElementById("levelGo").disabled = true;
+    step1.style.display = "block";
+    step2.style.display = "none";
     modal.classList.add("open");
-    modal.querySelectorAll(".level-opt").forEach(btn => {
+
+    modal.querySelectorAll(".level-opt[data-q]").forEach(btn => {
       btn.onclick = () => {
         const q = btn.dataset.q;
         modal.querySelectorAll(`.level-opt[data-q="${q}"]`).forEach(b => b.classList.remove("selected"));
@@ -3198,9 +3215,21 @@
         document.getElementById("levelGo").disabled = !(_levelBackground && _levelGoal);
       };
     });
+
     document.getElementById("levelGo").onclick = () => {
+      // Advance to step 2 (module structure choice)
+      step1.style.display = "none";
+      step2.style.display = "block";
+    };
+
+    document.getElementById("levelOptAI").onclick = () => {
       modal.classList.remove("open");
       onConfirm(_levelBackground, _levelGoal);
+    };
+
+    document.getElementById("levelOptCustom").onclick = () => {
+      modal.classList.remove("open");
+      if (onWizard) onWizard(_levelBackground, _levelGoal);
     };
   }
 
@@ -3347,7 +3376,11 @@
     if (!topic) { topicInput.focus(); return; }
     // Show level check on fresh topics (not when re-generating same topic)
     if (topic !== lastTopic) {
-      showLevelModal(topic, (bg, goal) => _doGenerate(topic, bg, goal));
+      showLevelModal(
+        topic,
+        (bg, goal) => _doGenerate(topic, bg, goal),
+        (bg, goal) => { _levelBackground = bg; _levelGoal = goal; openCourseWizard(); }
+      );
       return;
     }
     _doGenerate(topic, _levelBackground, _levelGoal);
