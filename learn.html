@@ -2255,7 +2255,18 @@
   document.getElementById("wizardBuildBtn").addEventListener("click", buildCourseFromWizard);
   document.getElementById("wizardBackBtn").addEventListener("click", () => showView("homeView"));
 
-  document.getElementById("buildCourseBtn").addEventListener("click", () => openCourseWizard());
+  document.getElementById("buildCourseBtn").addEventListener("click", () => {
+    const subject = topicInput.value.trim() ||
+      (uploadedMaterial && (uploadedMaterial.focus || uploadedMaterial.name.replace(/\.[^.]+$/, ""))) || "";
+    if (!subject) { topicInput.focus(); return; }
+    showLevelModal(
+      subject,
+      // "Let AI build the modules" → skip the wizard, generate the course outline directly
+      (bg, goal) => { _levelBackground = bg; _levelGoal = goal; openCourseWizard(); buildCourseFromWizard(); },
+      // "I'll design the modules myself" → open the wizard
+      (bg, goal) => { _levelBackground = bg; _levelGoal = goal; openCourseWizard(); }
+    );
+  });
 
   // ── RENDER YOUR COURSES GRID ─────────────────────────────────────────
   function renderYourCourses() {
