@@ -2914,6 +2914,52 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // POST /api/gen-lesson-quiz — generate lesson+quiz for a course module (fast mini model)
+  if (req.method === "POST" && url === "/api/gen-lesson-quiz") {
+    let body = "";
+    req.on("data", c => (body += c));
+    req.on("end", async () => {
+      try {
+        const { topic, subject, category } = JSON.parse(body || "{}");
+        if (!topic) { res.writeHead(400); res.end('{"error":"missing topic"}'); return; }
+        const prompt = `You are a curriculum writer. Write a short lesson + quiz for the module "${topic}" in a course about "${subject || topic}" (category: ${category || "General"}).
+
+Return ONLY valid JSON (no markdown):
+{
+  "lesson": {
+    "summary": "1-2 sentence hook that excites the learner",
+    "slides": [
+      { "title": "slide title", "bullets": ["bullet 1", "bullet 2", "bullet 3"] }
+    ]
+  },
+  "quiz": {
+    "questions": [
+      { "q": "question", "options": ["A","B","C","D"], "answer": 0, "explanation": "why correct" }
+    ]
+  }
+}
+Rules: lesson has exactly 3 slides (3-4 bullets each, ≤15 words per bullet). Quiz has exactly 4 questions (1 correct, 3 plausible distractors). Be concrete, not vague.`;
+
+        const resp = await reason.chat.completions.create({
+          model: REASON_MINI_MODEL,
+          max_tokens: 1400,
+          temperature: 0.4,
+          messages: [{ role: "user", content: prompt }],
+        });
+        const raw = resp.choices?.[0]?.message?.content || "";
+        const m = raw.match(/\{[\s\S]*\}/);
+        if (!m) throw new Error("no JSON");
+        const result = JSON.parse(m[0]);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(result));
+      } catch (e) {
+        console.warn("[gen-lesson-quiz] error:", e.message);
+        res.writeHead(500); res.end('{"error":"generation failed"}');
+      }
+    });
+    return;
+  }
+
   // GET /api/recommended-labs — top-rated cached labs (free to replay, no AI cost)
   if (req.method === "GET" && url === "/api/recommended-labs") {
     try {

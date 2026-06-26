@@ -842,6 +842,135 @@
     .auth-msg.error { color: #FCA5A5; }
     .auth-msg.success { color: #6EE7B7; }
 
+    /* ── COURSE GENERATION SCREEN ── */
+    #courseGenScreen {
+      display: none;
+      position: fixed; inset: 0;
+      background: #0a0a12;
+      z-index: 500;
+      overflow-y: auto;
+      padding: 48px 24px 64px;
+    }
+    .cgen-inner {
+      max-width: 560px;
+      margin: 0 auto;
+    }
+    .cgen-header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .cgen-sparkle {
+      font-size: 2.2rem;
+      display: block;
+      margin-bottom: 14px;
+      animation: sparkle-pulse 2.5s ease-in-out infinite;
+    }
+    @keyframes sparkle-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.18); opacity: 0.7; }
+    }
+    .cgen-sparkle.done { animation: none; }
+    .cgen-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 6px;
+    }
+    .cgen-status {
+      font-size: 0.82rem;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      min-height: 18px;
+      transition: opacity 0.3s;
+    }
+    /* Progress bar */
+    .cgen-progress-wrap {
+      height: 5px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 99px;
+      overflow: hidden;
+      margin: 24px 0 36px;
+    }
+    .cgen-progress-bar {
+      height: 100%;
+      width: 0%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--mars), var(--ice));
+      transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+      box-shadow: 0 0 12px rgba(232,93,4,0.5);
+    }
+    /* Number ticker */
+    .cgen-pct {
+      text-align: right;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      margin-top: -28px;
+      margin-bottom: 24px;
+      letter-spacing: 0.5px;
+    }
+    /* Module cards */
+    .cgen-modules {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .cgen-mod-card {
+      background: rgba(18,20,32,0.8);
+      border: 1px solid rgba(76,201,240,0.1);
+      border-radius: 14px;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      opacity: 0;
+      transform: translateY(16px);
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+    .cgen-mod-card.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .cgen-mod-card.active-build {
+      border-color: rgba(232,93,4,0.35);
+      box-shadow: 0 0 20px rgba(232,93,4,0.08);
+    }
+    .cgen-mod-num {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--muted);
+      min-width: 22px;
+      font-variant-numeric: tabular-nums;
+    }
+    .cgen-mod-title {
+      flex: 1;
+      font-size: 0.92rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .cgen-badges {
+      display: flex;
+      gap: 5px;
+    }
+    .cgen-badge {
+      font-size: 0.64rem;
+      font-weight: 700;
+      padding: 3px 7px;
+      border-radius: 6px;
+      letter-spacing: 0.4px;
+      opacity: 0.2;
+      transition: opacity 0.4s, box-shadow 0.4s;
+      text-transform: uppercase;
+    }
+    .cgen-badge.lesson { background: rgba(76,201,240,0.15); color: var(--ice); border: 1px solid rgba(76,201,240,0.3); }
+    .cgen-badge.quiz   { background: rgba(251,191,36,0.12); color: #FCD34D; border: 1px solid rgba(251,191,36,0.25); }
+    .cgen-badge.lab    { background: rgba(167,139,250,0.12); color: #C4B5FD; border: 1px solid rgba(167,139,250,0.25); }
+    .cgen-badge.lit { opacity: 1; box-shadow: 0 0 8px currentColor; }
+    @media (max-width: 600px) {
+      #courseGenScreen { padding: 32px 16px 48px; }
+    }
+
     /* ── SIDEBAR LAYOUT ── */
     body { display: flex; }
     .sidebar {
@@ -1490,6 +1619,22 @@
   <div class="error-actions">
     <button class="btn-retry" id="retryBtn">Try again</button>
     <button class="btn-dismiss" id="dismissBtn">Dismiss</button>
+  </div>
+</div>
+
+<!-- COURSE GENERATION SCREEN -->
+<div id="courseGenScreen">
+  <div class="cgen-inner">
+    <div class="cgen-header">
+      <span class="cgen-sparkle" id="cgenSparkle">✨</span>
+      <div class="cgen-title" id="cgenTitle">Building your course</div>
+      <div class="cgen-status" id="cgenStatus">Starting up…</div>
+    </div>
+    <div class="cgen-progress-wrap">
+      <div class="cgen-progress-bar" id="cgenBar"></div>
+    </div>
+    <div class="cgen-pct" id="cgenPct">0%</div>
+    <div class="cgen-modules" id="cgenModules"></div>
   </div>
 </div>
 
@@ -2261,44 +2406,158 @@
     if (!subject) { topicInput.focus(); return; }
     showLevelModal(
       subject,
-      // "Let AI build the modules" → skip wizard entirely, go straight to generation
+      // "Let AI build the modules" → rich generation screen
       async (bg, goal) => {
         _levelBackground = bg; _levelGoal = goal;
-        // Show the generation loading screen immediately
         showView("homeView");
         heroSection.style.display = "none";
-        loadingEl.style.display = "block";
-        loadingEl.querySelector(".loading-title").textContent = "Building your course";
-        try {
-          const cat = typeof RependGame !== "undefined" ? RependGame.inferCategory(subject) : "General";
-          const src = uploadedMaterial ? uploadedMaterial.text.slice(0, 12000) : null;
-          const srcFocus = uploadedMaterial ? (uploadedMaterial.focus || "") : null;
-          const res = await fetch("/plan-course", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ subject, category: cat, sourceMaterial: src, sourceFocus: srcFocus }),
-          });
-          if (!res.ok) throw new Error("Server error");
-          const outline = await res.json();
-          if (!outline.modules || !outline.modules.length) throw new Error("No modules returned");
-          const courses = loadCourses();
-          const existing = courses.findIndex(c => c.title === outline.title);
-          const course = { ...outline, modules: outline.modules.map(m => ({ ...m, done: false })),
-            sourceMaterial: src, sourceFocus: srcFocus };
-          if (existing >= 0) courses[existing] = course; else courses.unshift(course);
-          saveCourses(courses);
-          loadingEl.style.display = "none";
-          renderCourseView(course);
-        } catch (e) {
-          loadingEl.style.display = "none";
-          heroSection.style.display = "block";
-          renderDashboard();
-          alert("Couldn't build course: " + e.message);
-        }
+        await runCourseGeneration(subject, bg, goal);
       },
       // "I'll design the modules myself" → open the wizard
       (bg, goal) => { _levelBackground = bg; _levelGoal = goal; openCourseWizard(); }
     );
   });
+
+  // ── COURSE GENERATION SCREEN ─────────────────────────────────────────────
+  async function runCourseGeneration(subject, bg, goal) {
+    const screen = document.getElementById("courseGenScreen");
+    const bar = document.getElementById("cgenBar");
+    const pct = document.getElementById("cgenPct");
+    const status = document.getElementById("cgenStatus");
+    const modulesEl = document.getElementById("cgenModules");
+    const sparkle = document.getElementById("cgenSparkle");
+    const titleEl = document.getElementById("cgenTitle");
+
+    screen.style.display = "block";
+    modulesEl.innerHTML = "";
+    bar.style.width = "0%";
+    pct.textContent = "0%";
+    status.textContent = "Contacting AI…";
+    sparkle.textContent = "✨";
+    sparkle.classList.remove("done");
+    titleEl.textContent = "Building your course";
+
+    function setProgress(raw) {
+      // ease-out power curve: display = 1 − (1 − raw)^2.5
+      const display = 1 - Math.pow(1 - Math.min(raw, 0.98), 2.5);
+      const p = Math.round(display * 100);
+      bar.style.width = p + "%";
+      pct.textContent = p + "%";
+    }
+
+    // Animate to 30% while waiting for outline
+    let fakeRaw = 0;
+    const fakeTick = setInterval(() => {
+      fakeRaw = Math.min(fakeRaw + 0.018, 0.28);
+      setProgress(fakeRaw);
+    }, 400);
+
+    try {
+      const cat = typeof RependGame !== "undefined" ? RependGame.inferCategory(subject) : "General";
+      const src = uploadedMaterial ? uploadedMaterial.text.slice(0, 12000) : null;
+      const srcFocus = uploadedMaterial ? (uploadedMaterial.focus || "") : null;
+
+      status.textContent = "Planning modules…";
+      const res = await fetch("/plan-course", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject, category: cat, sourceMaterial: src, sourceFocus: srcFocus }),
+      });
+      clearInterval(fakeTick);
+      if (!res.ok) throw new Error("Server error " + res.status);
+      const outline = await res.json();
+      if (!outline.modules || !outline.modules.length) throw new Error("No modules returned");
+
+      setProgress(0.32);
+      status.textContent = `Course planned — ${outline.modules.length} modules`;
+      titleEl.textContent = outline.title || subject;
+
+      // Stagger module card reveals: 350ms apart
+      const cards = [];
+      for (let i = 0; i < outline.modules.length; i++) {
+        const mod = outline.modules[i];
+        await new Promise(r => setTimeout(r, 350));
+        const card = document.createElement("div");
+        card.className = "cgen-mod-card";
+        card.innerHTML = `
+          <span class="cgen-mod-num">${i + 1}</span>
+          <span class="cgen-mod-title">${mod.title}</span>
+          <div class="cgen-badges">
+            <span class="cgen-badge lesson" data-badge="lesson-${i}">LES</span>
+            <span class="cgen-badge quiz"   data-badge="quiz-${i}">QUI</span>
+            <span class="cgen-badge lab"    data-badge="lab-${i}">LAB</span>
+          </div>`;
+        modulesEl.appendChild(card);
+        // Force reflow then animate in
+        requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add("visible")));
+        cards.push(card);
+        setProgress(0.32 + (i + 1) / outline.modules.length * 0.18);
+      }
+
+      // Now generate lesson+quiz for each module in parallel
+      // Lab badge stays queued (labs take 3-5 min each — generated on demand)
+      status.textContent = "Generating lessons and quizzes…";
+      setProgress(0.52);
+
+      const perModProgress = 0.38 / outline.modules.length;
+      let doneCount = 0;
+
+      await Promise.all(outline.modules.map(async (mod, i) => {
+        const card = cards[i];
+        card.classList.add("active-build");
+        status.textContent = `Building Module ${i + 1} of ${outline.modules.length}: ${mod.title}`;
+
+        try {
+          const lqRes = await fetch("/api/gen-lesson-quiz", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ topic: mod.title, subject, category: cat }),
+          });
+          if (lqRes.ok) {
+            const lq = await lqRes.json();
+            if (lq.lesson) {
+              mod.lesson = lq.lesson;
+              card.querySelector('[data-badge="lesson-' + i + '"]').classList.add("lit");
+            }
+            if (lq.quiz) {
+              mod.quiz = lq.quiz;
+              card.querySelector('[data-badge="quiz-' + i + '"]').classList.add("lit");
+            }
+          }
+        } catch (_) {}
+
+        card.classList.remove("active-build");
+        doneCount++;
+        setProgress(0.52 + doneCount / outline.modules.length * 0.38);
+      }));
+
+      // Save to localStorage
+      const course = {
+        ...outline,
+        modules: outline.modules.map(m => ({ ...m, done: false })),
+        sourceMaterial: src,
+        sourceFocus: srcFocus,
+      };
+      const courses = loadCourses();
+      const existing = courses.findIndex(c => c.title === course.title);
+      if (existing >= 0) courses[existing] = course; else courses.unshift(course);
+      saveCourses(courses);
+
+      setProgress(1.0);
+      pct.textContent = "100%";
+      sparkle.textContent = "✓";
+      sparkle.classList.add("done");
+      status.textContent = "Course ready!";
+
+      await new Promise(r => setTimeout(r, 900));
+      screen.style.display = "none";
+      renderCourseView(course);
+    } catch (e) {
+      clearInterval(fakeTick);
+      screen.style.display = "none";
+      heroSection.style.display = "block";
+      renderDashboard();
+      alert("Couldn't build course: " + e.message);
+    }
+  }
 
   // ── RENDER YOUR COURSES GRID ─────────────────────────────────────────
   function renderYourCourses() {
