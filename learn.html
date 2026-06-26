@@ -819,6 +819,12 @@
     .modal-title { font-size: 1.4rem; font-weight: 800; margin-bottom: 6px; color: var(--text); }
     .modal-sub { font-size: 0.85rem; color: var(--muted); margin-bottom: 28px; }
     .modal-tabs { display: flex; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
+    /* Module Lesson | Lab | Quiz tab switcher */
+    .module-tabs { display: flex; gap: 4px; margin-bottom: 24px; background: var(--surface); border-radius: 14px; padding: 5px; width: fit-content; }
+    .module-tab { background: none; border: none; padding: 9px 22px; border-radius: 10px; font-family: inherit; font-size: 0.88rem; font-weight: 700; color: var(--muted); cursor: pointer; transition: background 0.15s, color 0.15s; }
+    .module-tab.active { background: var(--mars); color: #fff; }
+    .tab-lesson-summary { font-size: 0.95rem; color: var(--muted); padding: 14px 20px; margin-bottom: 16px; line-height: 1.6; }
+    #tabLesson ul { list-style: disc; padding-left: 22px; } #tabLesson li { margin-bottom: 8px; line-height: 1.6; }
     .modal-tab { flex: 1; background: none; border: none; padding: 10px; font-size: 0.88rem; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-family: inherit; }
     .modal-tab.active { color: var(--mars); border-bottom-color: var(--mars); }
     .auth-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
@@ -1486,70 +1492,105 @@
 </div>
 
 <div id="experience">
-  <div id="stepScenario">
-    <div class="step-header">
-      <div class="step-num">1</div>
-      <div><div class="step-label">Step 1 of 3</div><div class="step-title">Why this matters</div></div>
-    </div>
-    <div class="scenario-card glass-panel">
-      <div id="scenarioSlide"></div>
-      <div class="goal-pill" id="goalPill"></div>
-      <div class="scenario-nav" id="scenarioNav" style="display:none">
-        <button type="button" class="lesson-nav-btn" id="scenarioPrev">← Prev</button>
-        <div class="lesson-dots" id="scenarioDots"></div>
-        <button type="button" class="lesson-nav-btn primary" id="scenarioNext">Next →</button>
-      </div>
+  <!-- Lesson | Lab | Quiz tab switcher -->
+  <div class="module-tabs" id="moduleTabs">
+    <button class="module-tab" id="tabBtnLesson" style="display:none" onclick="switchModuleTab('lesson')">📖 Lesson</button>
+    <button class="module-tab active" id="tabBtnLab" onclick="switchModuleTab('lab')">🔬 Lab</button>
+    <button class="module-tab" id="tabBtnQuiz" style="display:none" onclick="switchModuleTab('quiz')">⚡ Quiz</button>
+  </div>
+
+  <!-- LESSON TAB -->
+  <div id="tabLesson" class="module-tab-pane" style="display:none">
+    <div class="tab-lesson-summary glass-panel" id="tabLessonSummary" style="display:none"></div>
+    <div class="lesson-slide glass-panel" id="tabLessonSlide"></div>
+    <div class="lesson-nav">
+      <button class="lesson-nav-btn" id="tabLessonPrev">← Prev</button>
+      <div class="lesson-dots" id="tabLessonDots"></div>
+      <button class="lesson-nav-btn primary" id="tabLessonNext">Next →</button>
     </div>
   </div>
 
-  <div class="step-divider"><span>Interactive lab</span></div>
-
-  <div id="stepSim">
-    <div class="step-header">
-      <div class="step-num">2</div>
-      <div><div class="step-label">Step 2 of 3</div><div class="step-title">Interact with it</div></div>
-    </div>
-    <div class="sim-frame-wrap">
-      <iframe id="simFrame" sandbox="allow-scripts" title="Interactive 3D Lab"></iframe>
-    </div>
-  </div>
-
-  <div class="step-divider"><span>Verify your understanding</span></div>
-
-  <div id="stepVerify">
-    <div class="step-header">
-      <div class="step-num">3</div>
-      <div><div class="step-label">Step 3 of 3</div><div class="step-title">Show what you discovered</div></div>
-    </div>
-    <div class="verify-card glass-panel">
-      <div id="questionText"></div>
-      <div id="quizOptions" class="quiz-options" style="display:none"></div>
-      <div id="textVerify" style="display:none">
-        <textarea id="answerInput" placeholder="Use the lab above to find the answer, then describe what you observed…"></textarea>
-        <div><button id="checkBtn">Check my answer</button></div>
+  <!-- LAB TAB (original experience) -->
+  <div id="tabLab" class="module-tab-pane">
+    <div id="stepScenario">
+      <div class="step-header">
+        <div class="step-num">1</div>
+        <div><div class="step-label">Step 1 of 3</div><div class="step-title">Why this matters</div></div>
       </div>
-      <div id="feedback">
-        <div class="feedback-prefix" id="feedbackPrefix"></div>
-        <div id="feedbackText"></div>
-      </div>
-      <div id="payoffCard">
-        <div class="payoff-label">Real-world payoff</div>
-        <div id="payoffText"></div>
-      </div>
-    </div>
-    <div id="nextSteps" class="next-steps glass-panel">
-      <div id="rateLab" class="rate-lab" style="display:none">
-        <h4>Rate this lab</h4>
-        <p class="rate-hint">Great labs get recommended to others — and reused for free.</p>
-        <div class="rate-stars" id="rateStars">
-          <span data-star="1">★</span><span data-star="2">★</span><span data-star="3">★</span><span data-star="4">★</span><span data-star="5">★</span>
+      <div class="scenario-card glass-panel">
+        <div id="scenarioSlide"></div>
+        <div class="goal-pill" id="goalPill"></div>
+        <div class="scenario-nav" id="scenarioNav" style="display:none">
+          <button type="button" class="lesson-nav-btn" id="scenarioPrev">← Prev</button>
+          <div class="lesson-dots" id="scenarioDots"></div>
+          <button type="button" class="lesson-nav-btn primary" id="scenarioNext">Next →</button>
         </div>
-        <div class="rate-thanks" id="rateThanks" style="display:none">Thanks for the rating! ⭐</div>
       </div>
-      <h4>Keep going</h4>
-      <div class="next-btns" id="nextBtns"></div>
     </div>
-    <button id="againBtn" onclick="reset()">← Try a different topic</button>
+
+    <div class="step-divider"><span>Interactive lab</span></div>
+
+    <div id="stepSim">
+      <div class="step-header">
+        <div class="step-num">2</div>
+        <div><div class="step-label">Step 2 of 3</div><div class="step-title">Interact with it</div></div>
+      </div>
+      <div class="sim-frame-wrap">
+        <iframe id="simFrame" sandbox="allow-scripts" title="Interactive 3D Lab"></iframe>
+      </div>
+    </div>
+
+    <div class="step-divider"><span>Verify your understanding</span></div>
+
+    <div id="stepVerify">
+      <div class="step-header">
+        <div class="step-num">3</div>
+        <div><div class="step-label">Step 3 of 3</div><div class="step-title">Show what you discovered</div></div>
+      </div>
+      <div class="verify-card glass-panel">
+        <div id="questionText"></div>
+        <div id="quizOptions" class="quiz-options" style="display:none"></div>
+        <div id="textVerify" style="display:none">
+          <textarea id="answerInput" placeholder="Use the lab above to find the answer, then describe what you observed…"></textarea>
+          <div><button id="checkBtn">Check my answer</button></div>
+        </div>
+        <div id="feedback">
+          <div class="feedback-prefix" id="feedbackPrefix"></div>
+          <div id="feedbackText"></div>
+        </div>
+        <div id="payoffCard">
+          <div class="payoff-label">Real-world payoff</div>
+          <div id="payoffText"></div>
+        </div>
+      </div>
+      <div id="nextSteps" class="next-steps glass-panel">
+        <div id="rateLab" class="rate-lab" style="display:none">
+          <h4>Rate this lab</h4>
+          <p class="rate-hint">Great labs get recommended to others — and reused for free.</p>
+          <div class="rate-stars" id="rateStars">
+            <span data-star="1">★</span><span data-star="2">★</span><span data-star="3">★</span><span data-star="4">★</span><span data-star="5">★</span>
+          </div>
+          <div class="rate-thanks" id="rateThanks" style="display:none">Thanks for the rating! ⭐</div>
+        </div>
+        <h4>Keep going</h4>
+        <div class="next-btns" id="nextBtns"></div>
+      </div>
+      <button id="againBtn" onclick="reset()">← Try a different topic</button>
+    </div>
+  </div>
+
+  <!-- QUIZ TAB -->
+  <div id="tabQuiz" class="module-tab-pane" style="display:none">
+    <div class="quiz-title">Check your understanding</div>
+    <div class="quiz-counter" id="tabQuizCounter"></div>
+    <div id="tabQuizQuestion"></div>
+    <div class="quiz-nav">
+      <button class="lesson-nav-btn" id="tabQuizPrev">← Prev</button>
+      <div class="quiz-dots" id="tabQuizDots"></div>
+      <button class="lesson-nav-btn primary" id="tabQuizNext">Next →</button>
+    </div>
+    <button class="upload-build" id="tabQuizSubmit" style="margin-top:24px;display:none">Submit answers</button>
+    <div class="quiz-result" id="tabQuizResult" style="display:none"></div>
   </div>
 </div>
 
@@ -2781,6 +2822,8 @@
     if (event.stage === "labthink") setStage("labthink");
     if (event.stage === "image") setStage("image");
     if (event.stage === "code") setStage("code");
+    if (event.stage === "lesson") { window._pendingLesson = event.data.lesson; }
+    if (event.stage === "quiz") { window._pendingQuiz = event.data.quiz; }
     if (event.stage === "error") throw new Error(event.msg);
     if (event.stage === "done") return event.data;
     if (event.stage === "similar_found") return { _similar: event.data };
@@ -2954,7 +2997,144 @@
     experienceEl.style.display = "block";
     experienceEl.scrollIntoView({ behavior: "smooth", block: "start" });
     simFrame.srcdoc = result.labHtml;
+    // Populate lesson/quiz tabs from SSE events that arrived during generation
+    const lesson = window._pendingLesson || result.lesson;
+    const quiz = window._pendingQuiz || result.quiz;
+    window._pendingLesson = null; window._pendingQuiz = null;
+    if (lesson) populateLessonTab(lesson);
+    if (quiz) populateQuizTab(quiz);
+    switchModuleTab('lab');
   }
+
+  // ── MODULE TABS: Lesson | Lab | Quiz ─────────────────────────────────
+  let _tabLessonSlides = [], _tabLessonIdx = 0;
+  let _tabQuizData = null, _tabQuizPicks = {}, _tabQuizIdx = 0, _tabQuizGraded = false;
+
+  function switchModuleTab(tab) {
+    document.querySelectorAll('.module-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.module-tab-pane').forEach(p => { p.style.display = 'none'; });
+    const btnId = { lesson: 'tabBtnLesson', lab: 'tabBtnLab', quiz: 'tabBtnQuiz' }[tab];
+    const paneId = { lesson: 'tabLesson', lab: 'tabLab', quiz: 'tabQuiz' }[tab];
+    const btn = document.getElementById(btnId);
+    if (btn) { btn.classList.add('active'); btn.style.display = ''; }
+    const pane = document.getElementById(paneId);
+    if (pane) pane.style.display = 'block';
+  }
+
+  function populateLessonTab(lesson) {
+    if (!lesson || !lesson.slides || !lesson.slides.length) return;
+    _tabLessonSlides = lesson.slides; _tabLessonIdx = 0;
+    const summaryEl = document.getElementById('tabLessonSummary');
+    if (lesson.summary && summaryEl) { summaryEl.textContent = lesson.summary; summaryEl.style.display = 'block'; }
+    const btn = document.getElementById('tabBtnLesson');
+    if (btn) btn.style.display = '';
+    renderTabLessonSlide();
+  }
+
+  function renderTabLessonSlide() {
+    const s = _tabLessonSlides[_tabLessonIdx];
+    if (!s) return;
+    const bullets = (s.bullets || []).map(b => `<li>${_escHtml(b)}</li>`).join('');
+    const slideEl = document.getElementById('tabLessonSlide');
+    if (slideEl) slideEl.innerHTML =
+      `<div class="slide-meta"><span class="slide-counter">${_tabLessonIdx + 1} / ${_tabLessonSlides.length}</span></div>` +
+      `<h2>${_escHtml(s.title || '')}</h2><ul>${bullets}</ul>`;
+    const dotsEl = document.getElementById('tabLessonDots');
+    if (dotsEl) dotsEl.innerHTML = _tabLessonSlides.map((_, i) =>
+      `<span class="${i === _tabLessonIdx ? 'active' : i < _tabLessonIdx ? 'visited' : ''}"></span>`).join('');
+    const prev = document.getElementById('tabLessonPrev');
+    const next = document.getElementById('tabLessonNext');
+    if (prev) prev.disabled = _tabLessonIdx === 0;
+    if (next) next.textContent = _tabLessonIdx === _tabLessonSlides.length - 1 ? 'Done — try the lab →' : 'Next →';
+  }
+
+  document.getElementById('tabLessonPrev').onclick = () => { if (_tabLessonIdx > 0) { _tabLessonIdx--; renderTabLessonSlide(); } };
+  document.getElementById('tabLessonNext').onclick = () => {
+    if (_tabLessonIdx < _tabLessonSlides.length - 1) { _tabLessonIdx++; renderTabLessonSlide(); }
+    else switchModuleTab('lab');
+  };
+
+  function populateQuizTab(quiz) {
+    if (!quiz || !quiz.questions || !quiz.questions.length) return;
+    _tabQuizData = quiz; _tabQuizPicks = {}; _tabQuizIdx = 0; _tabQuizGraded = false;
+    const btn = document.getElementById('tabBtnQuiz');
+    if (btn) btn.style.display = '';
+    const result = document.getElementById('tabQuizResult');
+    const submit = document.getElementById('tabQuizSubmit');
+    if (result) result.style.display = 'none';
+    if (submit) submit.style.display = 'none';
+    renderTabQuizQuestion();
+  }
+
+  function renderTabQuizQuestion() {
+    if (!_tabQuizData) return;
+    const qs = _tabQuizData.questions;
+    const q = qs[_tabQuizIdx];
+    if (!q) return;
+    const counter = document.getElementById('tabQuizCounter');
+    if (counter) counter.textContent = `Question ${_tabQuizIdx + 1} of ${qs.length}`;
+    const letters = ['A','B','C','D'];
+    const qEl = document.getElementById('tabQuizQuestion');
+    if (qEl) {
+      qEl.innerHTML =
+        `<div class="quiz-q"><div class="q-text">${_escHtml(q.q)}</div>` +
+        q.options.map((opt, i) => {
+          let cls = 'quiz-opt';
+          if (_tabQuizGraded) {
+            if (i === q.answer) cls += ' reveal-correct';
+            else if (_tabQuizPicks[_tabQuizIdx] === i) cls += ' reveal-wrong';
+          } else if (_tabQuizPicks[_tabQuizIdx] === i) cls += ' selected';
+          return `<button class="${cls}" data-qi="${_tabQuizIdx}" data-oi="${i}" ${_tabQuizGraded ? 'disabled' : ''}>` +
+            `<span class="quiz-opt-letter">${letters[i]}</span>${_escHtml(opt)}</button>`;
+        }).join('') +
+        (_tabQuizGraded && q.explanation ? `<div class="quiz-explain" style="display:block">${_escHtml(q.explanation)}</div>` : '') +
+        `</div>`;
+      qEl.querySelectorAll('.quiz-opt').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (_tabQuizGraded) return;
+          _tabQuizPicks[_tabQuizIdx] = +btn.dataset.oi;
+          renderTabQuizQuestion();
+          const submit = document.getElementById('tabQuizSubmit');
+          if (submit && Object.keys(_tabQuizPicks).length === qs.length) submit.style.display = 'block';
+        });
+      });
+    }
+    const dotsEl = document.getElementById('tabQuizDots');
+    if (dotsEl) {
+      dotsEl.innerHTML = qs.map((_, i) =>
+        `<span class="${i === _tabQuizIdx ? 'active' : _tabQuizPicks[i] !== undefined ? 'answered' : ''}"></span>`).join('');
+      dotsEl.querySelectorAll('span').forEach((dot, i) => {
+        dot.onclick = () => { _tabQuizIdx = i; renderTabQuizQuestion(); };
+      });
+    }
+    const prev = document.getElementById('tabQuizPrev');
+    const next = document.getElementById('tabQuizNext');
+    if (prev) prev.disabled = _tabQuizIdx === 0;
+    if (next) next.textContent = _tabQuizIdx === qs.length - 1 ? 'Review →' : 'Next →';
+  }
+
+  document.getElementById('tabQuizPrev').onclick = () => { if (_tabQuizIdx > 0) { _tabQuizIdx--; renderTabQuizQuestion(); } };
+  document.getElementById('tabQuizNext').onclick = () => {
+    if (_tabQuizData && _tabQuizIdx < _tabQuizData.questions.length - 1) { _tabQuizIdx++; renderTabQuizQuestion(); }
+  };
+  document.getElementById('tabQuizSubmit').onclick = () => {
+    if (!_tabQuizData) return;
+    _tabQuizGraded = true;
+    const submit = document.getElementById('tabQuizSubmit');
+    if (submit) submit.style.display = 'none';
+    const qs = _tabQuizData.questions;
+    const correct = qs.filter((q, i) => _tabQuizPicks[i] === q.answer).length;
+    const pct = Math.round(correct / qs.length * 100);
+    const pass = pct >= 70;
+    const r = document.getElementById('tabQuizResult');
+    if (r) {
+      r.style.display = 'block';
+      r.style.background = pass ? 'rgba(34,197,94,0.12)' : 'rgba(248,113,113,0.1)';
+      r.style.border = pass ? '1px solid var(--green)' : '1px solid #FCA5A5';
+      r.innerHTML = `${correct}/${qs.length} correct (${pct}%) — ${pass ? 'Passed! 🎉' : 'Keep studying'}<div class="quiz-result-sub">${pass ? 'Review below.' : 'Go back to the lesson and try the lab again.'}</div>`;
+    }
+    _tabQuizIdx = 0; renderTabQuizQuestion();
+  };
 
   function showError(msg) {
     loadingEl.style.display = "none";
