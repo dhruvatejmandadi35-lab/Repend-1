@@ -2261,8 +2261,40 @@
     if (!subject) { topicInput.focus(); return; }
     showLevelModal(
       subject,
-      // "Let AI build the modules" → skip the wizard, generate the course outline directly
-      (bg, goal) => { _levelBackground = bg; _levelGoal = goal; openCourseWizard(); buildCourseFromWizard(); },
+      // "Let AI build the modules" → skip wizard entirely, go straight to generation
+      async (bg, goal) => {
+        _levelBackground = bg; _levelGoal = goal;
+        // Show the generation loading screen immediately
+        showView("homeView");
+        heroSection.style.display = "none";
+        loadingEl.style.display = "block";
+        loadingEl.querySelector(".loading-title").textContent = "Building your course";
+        try {
+          const cat = typeof RependGame !== "undefined" ? RependGame.inferCategory(subject) : "General";
+          const src = uploadedMaterial ? uploadedMaterial.text.slice(0, 12000) : null;
+          const srcFocus = uploadedMaterial ? (uploadedMaterial.focus || "") : null;
+          const res = await fetch("/plan-course", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ subject, category: cat, sourceMaterial: src, sourceFocus: srcFocus }),
+          });
+          if (!res.ok) throw new Error("Server error");
+          const outline = await res.json();
+          if (!outline.modules || !outline.modules.length) throw new Error("No modules returned");
+          const courses = loadCourses();
+          const existing = courses.findIndex(c => c.title === outline.title);
+          const course = { ...outline, modules: outline.modules.map(m => ({ ...m, done: false })),
+            sourceMaterial: src, sourceFocus: srcFocus };
+          if (existing >= 0) courses[existing] = course; else courses.unshift(course);
+          saveCourses(courses);
+          loadingEl.style.display = "none";
+          renderCourseView(course);
+        } catch (e) {
+          loadingEl.style.display = "none";
+          heroSection.style.display = "block";
+          renderDashboard();
+          alert("Couldn't build course: " + e.message);
+        }
+      },
       // "I'll design the modules myself" → open the wizard
       (bg, goal) => { _levelBackground = bg; _levelGoal = goal; openCourseWizard(); }
     );
