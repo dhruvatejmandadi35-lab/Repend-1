@@ -1828,6 +1828,7 @@
         <button class="lab-card-menu-btn" aria-label="Options">⋯</button>
         <div class="lab-card-menu">
           <button data-act="open">Open</button>
+          <button data-act="copylink">Copy link</button>
           <button data-act="rename">Rename</button>
           <button data-act="delete" class="danger">Delete</button>
         </div>`;
@@ -1842,6 +1843,14 @@
         menu.classList.toggle("open");
       };
       menu.querySelector('[data-act="open"]').onclick = (e) => { e.stopPropagation(); menu.classList.remove("open"); openSavedLab(lab.topicKey); };
+      menu.querySelector('[data-act="copylink"]').onclick = (e) => {
+        e.stopPropagation(); menu.classList.remove("open");
+        const link = new URL(savedLabUrl(lab), window.location.origin).toString();
+        navigator.clipboard.writeText(link).then(
+          () => { if (typeof RependGame !== "undefined") RependGame.showToast("Link copied"); },
+          () => { if (typeof RependGame !== "undefined") RependGame.showToast("Couldn't copy link"); }
+        );
+      };
       menu.querySelector('[data-act="delete"]').onclick = (e) => {
         e.stopPropagation(); menu.classList.remove("open");
         LabLibrary.remove(lab.topicKey);
@@ -1867,7 +1876,7 @@
     });
   }
 
-  function openSavedLab(key) {
+  function openSavedLab(key, opts) {
     const lab = LabLibrary.get(key);
     if (!lab) return;
     lastCategory = lab.category;
@@ -1880,7 +1889,40 @@
     errorBox.style.display = "none";
     loadingEl.style.display = "none";
     showResult({ ...lab.result, source: "cached" });
+    // Give this lab its own address so it's linkable / back-button friendly.
+    if (!opts || opts.pushUrl !== false) {
+      try { history.pushState({ labKey: key }, "", savedLabUrl(lab)); } catch (_) {}
+    }
   }
+
+  // Build the per-lab shareable URL. Uses ?topic=&cat= so it also works for
+  // people who don't have the lab in their localStorage (server replays from cache).
+  function savedLabUrl(lab) {
+    const u = new URL("/learn", window.location.origin);
+    u.searchParams.set("topic", lab.topic);
+    if (lab.category) u.searchParams.set("cat", lab.category);
+    return u.pathname + u.search;
+  }
+
+  // Back/forward button: reflect the URL. If it points at a saved lab we own,
+  // open it instantly from localStorage; otherwise return to the dashboard.
+  window.addEventListener("popstate", () => {
+    const params = new URLSearchParams(location.search);
+    const qTopic = params.get("topic");
+    if (qTopic) {
+      const match = LabLibrary.all().find(l => l.topic === qTopic);
+      if (match) { openSavedLab(match.topicKey, { pushUrl: false }); return; }
+      window._rependCat = params.get("cat") || RependGame.inferCategory(qTopic);
+      startLab(qTopic, window._rependCat);
+      return;
+    }
+    // No topic in URL → show the home dashboard.
+    const exp = document.getElementById("experience");
+    if (exp) exp.style.display = "none";
+    heroSection.style.display = "block";
+    const dash = document.getElementById("learnDashboard");
+    if (dash) dash.style.display = "block";
+  });
 
   document.addEventListener("click", () => {
     document.querySelectorAll(".lab-card-menu.open").forEach(m => m.classList.remove("open"));
@@ -3074,8 +3116,15 @@
     const qTopic = params.get("topic");
     const qCat = params.get("cat");
     if (qTopic) {
-      window._rependCat = qCat || RependGame.inferCategory(qTopic);
-      startLab(qTopic, window._rependCat);
+      // If we already own this exact lab, open it instantly from localStorage
+      // (no regeneration); otherwise replay it from the server cache.
+      const match = LabLibrary.all().find(l => l.topic === qTopic);
+      if (match) {
+        openSavedLab(match.topicKey, { pushUrl: false });
+      } else {
+        window._rependCat = qCat || RependGame.inferCategory(qTopic);
+        startLab(qTopic, window._rependCat);
+      }
     }
   });
 
