@@ -70,6 +70,18 @@ const CODEGEN_MAX_TOKENS = parseInt(process.env.CODEGEN_MAX_TOKENS || "16384", 1
 const CODEGEN_TIMEOUT_MS = parseInt(process.env.CODEGEN_TIMEOUT_MS || "300000", 10); // 5 min (GLM-5.1 is slower than Kimi)
 const CODEGEN_IDLE_MS = parseInt(process.env.CODEGEN_IDLE_MS || "45000", 10);        // 45 s
 
+// GLM-5.1 is a hybrid reasoning model: by default it emits a long internal
+// chain-of-thought (reasoning_content) BEFORE writing any HTML. But by codegen
+// time we've already done all the design reasoning upstream (thinkAboutTopic →
+// specFromThinking → thinkAboutLab → thinkAboutVisualPedagogy), so the model
+// re-thinking from scratch is pure wasted wall-clock — often 40-60% of the call.
+// Turning thinking OFF makes GLM go straight to writing the file.
+//   CODEGEN_THINKING=off  (default) → disable GLM's chain-of-thought
+//   CODEGEN_THINKING=on             → keep it (revert if quality drops)
+// The control key for the Zhipu GLM family on NVIDIA NIM is
+// chat_template_kwargs.thinking; the OpenAI SDK forwards it verbatim in the body.
+const CODEGEN_THINKING = (process.env.CODEGEN_THINKING || "off").toLowerCase() === "on";
+
 // OpenAI model selectors — centralized so you can swap models from env (Railway
 // variable, no code change). Two tiers:
 //   OPENAI_MODEL      → heavy/quality stages: spec, visual critic, codegen fallback
