@@ -5,3 +5,6 @@ node_modules/
 # stray runtime logs
 *.log
 server_output.log
+
+# graphify knowledge-graph output (generated, rebuildable via `graphify update .`)
+graphify-out/

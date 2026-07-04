@@ -82,6 +82,23 @@ const CODEGEN_IDLE_MS = parseInt(process.env.CODEGEN_IDLE_MS || "45000", 10);   
 // chat_template_kwargs.thinking; the OpenAI SDK forwards it verbatim in the body.
 const CODEGEN_THINKING = (process.env.CODEGEN_THINKING || "off").toLowerCase() === "on";
 
+// ── INTERACTION DIRECTOR ──────────────────────────────────────────────────────
+// A parallel extended-thinking call that picks the INTERACTION LANGUAGE for each
+// lab — the way a game designer picks 3D for a Madden-style football game but 2D
+// canvas for a platform fighter. It runs alongside thinkAboutLab/visualPedagogy
+// (zero added wall-clock) and outputs a concrete "interaction contract" injected
+// into codegen, so labs stop defaulting to slider-only interactivity.
+// Default model: gpt-oss-20b on NVIDIA Build (a reasoning model — same family the
+// course generator already uses; reasoning_effort=high gives the extended think).
+//   ENABLE_INTERACTION_DIRECTOR=off  → skip entirely (pipeline identical to before)
+//   INTERACTION_MODEL_ID=<id>        → any NVIDIA Build / OpenAI-compatible model
+const ENABLE_INTERACTION_DIRECTOR = (process.env.ENABLE_INTERACTION_DIRECTOR || "on").toLowerCase() !== "off";
+// DeepSeek-R1 on NVIDIA Build: a native thinking model (reasons by default, no
+// reasoning_effort param needed; openaiCreateStreamed already collects its
+// reasoning_content). If it's unreachable, thinkAboutInteraction falls back to
+// REASON_MODEL (llama-70b) — a non-thinking contract beats no contract.
+const INTERACTION_MODEL_ID = process.env.INTERACTION_MODEL_ID || "deepseek-ai/deepseek-r1";
+
 // OpenAI model selectors — centralized so you can swap models from env (Railway
 // variable, no code change). Two tiers:
 //   OPENAI_MODEL      → heavy/quality stages: spec, visual critic, codegen fallback
@@ -207,7 +224,7 @@ function extractHtml(raw) {
 // headless browser, so it runs ALWAYS (even when the visual critic is disabled).
 // It only ever triggers a regeneration; it never hard-rejects a lab, so a quirky
 // but valid lab can't be turned into an error by a regex miss.
-function validateLabHtml(html) {
+function validateLabHtml(html, interactionContract = null) {
   const s = String(html || "");
   const issues = [];
   if (!/<\/html\s*>/i.test(s))
@@ -224,6 +241,16 @@ function validateLabHtml(html) {
     issues.push("No interaction wiring — add pointer/key/drag listeners (or input/button controls) so the learner can manipulate the scene.");
   if (!/labCheck/.test(s) || !/postMessage/.test(s))
     issues.push("No labCheck win signal — call window.parent.postMessage({type:'labCheck', result:{ok:true,score,total}}, '*') when the learner succeeds, so the lab is winnable.");
+  // Interaction-contract check (only when a director contract demanded direct
+  // manipulation — never fires on the legacy path, so no new regen risk there).
+  // A lab whose only wiring is <input> 'input'/'change' listeners is slider-only:
+  // require at least one direct-manipulation listener (pointer/mouse/touch/key/
+  // drag/wheel) so the primary interaction from the contract can actually exist.
+  if (interactionContract && interactionContract.primary_interaction) {
+    const hasDirect = /addEventListener\s*\(\s*['"`](pointerdown|pointermove|mousedown|mousemove|touchstart|keydown|keyup|drag|wheel)/i.test(s);
+    if (!hasDirect)
+      issues.push(`Slider-only lab — the interaction contract requires "${interactionContract.primary_interaction.style}" as the PRIMARY interaction (${interactionContract.primary_interaction.binding || ""}). Wire pointer/key listeners on the play area so the learner directly manipulates the scene; sliders may only be secondary.`);
+  }
   return { ok: issues.length === 0, issues };
 }
 
@@ -1322,6 +1349,111 @@ Be specific to "${topic}". Do not give generic answers. Do not repeat the archet
   return openaiText(prompt, 800, REASON_MINI_MODEL);
 }
 
+// Step 3c — INTERACTION DIRECTOR (parallel extended-thinking call).
+// Picks the interaction language the way a human game designer would: the medium
+// and mechanics must fit the genre. Football sim → 3D field with aim/steer/release.
+// Card probability → drag-and-flip. Ethics dilemma → branching choices you click
+// through and can rewind. The current pipeline always lands on "3D scene + HUD
+// sliders"; this step forces a deliberate choice of PRIMARY direct manipulation
+// and demotes sliders to secondary. Additive: on any failure it returns null and
+// the pipeline behaves exactly as before.
+const INTERACTION_PALETTE = [
+  "grab-and-drag-3d (raycast: pick up objects in the scene, move them, drop them — placement IS the answer)",
+  "aim-and-release (pull back / set angle+power, release, watch consequence — projectile, investment timing, immune response)",
+  "steer (WASD/arrow keys or on-screen joystick: drive an entity through the space in real time)",
+  "drag-and-snap-assembly (drag parts that snap into valid configurations — molecules, circuits, timelines, food webs)",
+  "pour-mix-heat (run an experiment: combine amounts, apply conditions, cross a reaction threshold)",
+  "scrub-time (drag a timeline scrubber to move the whole system through time; discover rates by feeling them)",
+  "draw-a-path (sketch a trajectory/boundary/curve with the pointer; the sim tests whether the drawn hypothesis survives reality)",
+  "place-bets-then-reveal (commit a prediction FIRST — click/drag a marker — then run reality and confront the gap)",
+  "click-sequence-choices (make sequential decisions at branch points; backtrack and explore alternate universes)",
+  "swarm-perturbation (poke/attract/scatter many agents with the pointer and watch emergent order re-form)",
+  "orbit-inspect-probe (orbit camera around a structure, click hotspots to probe/measure — anatomy, machines, geology)",
+  "chase-and-collect (move to catch/avoid moving targets under the topic's real rules — timed, arcade-feel)",
+];
+
+async function thinkAboutInteraction(design, category = "General", courseContext = null) {
+  if (!ENABLE_INTERACTION_DIRECTOR) return null;
+  const cat = design.spec.course_category || category;
+  const vars = (design.spec.variables || []).map(v => `${v.name} (${v.min}–${v.max} ${v.unit || ""})`).join(", ");
+  const prompt = `You are the INTERACTION DIRECTOR for an interactive learning lab. Think like a game designer choosing the medium for a genre: a football sim earns a 3D field with aim/steer/release controls; a platform fighter earns 2D canvas with keyboard combat; a card-odds game earns draggable cards on a table. The interaction style must FIT the concept — not default to one house pattern.
+
+THE HOUSE PATTERN TO BREAK: our labs currently all converge on "3D scene + sliders in a HUD panel". Sliders are fine as a SECONDARY tuning control, but the PRIMARY interaction must be direct manipulation inside the play area, chosen to fit this specific topic.
+
+TOPIC: ${design.topic}
+CATEGORY: ${cat}
+ARCHETYPE: ${design.spec.lab_archetype || "physics-sim"}
+LEARNING GOAL: ${design.spec.learning_goal}
+FIRST MOVE: ${design.spec.first_move || ""}
+AHA TRIGGER: ${design.spec.aha_trigger || ""}
+DIRECT MANIPULATION (from spec): ${design.spec.direct_manipulation || ""}
+VARIABLES: ${vars}${courseContext ? `\nCOURSE CONTEXT: part of a course — keep controls consistent with a learning sequence.` : ""}
+
+INTERACTION PALETTE (choose from these, or invent a better one if the topic demands it):
+${INTERACTION_PALETTE.map(p => `• ${p}`).join("\n")}
+
+Reason it through: (1) What does UNDERSTANDING this concept feel like as a physical action? (2) Which palette entry makes that action the gameplay itself — not chocolate-covered broccoli? (3) What can the learner EXPLORE beyond the win path — what open-ended "what if I…" moves should be possible and rewarded?
+
+Then return ONLY a JSON object (no markdown, no prose) with exactly this shape:
+{
+  "primary_interaction": {
+    "style": "<one palette style name>",
+    "binding": "<exact controls: what the pointer/keys do, e.g. 'drag the electron with pointer; hold Shift to slow time'>",
+    "why_it_is_the_learning": "<one sentence: doing this action correctly REQUIRES understanding the concept>"
+  },
+  "secondary_interaction": { "style": "<different style or 'sliders'>", "binding": "<controls>" },
+  "slider_policy": "<which variables (if any) stay on sliders, and why they are tuning knobs rather than the core action>",
+  "exploration_moments": ["<2-3 open-ended discoveries: things a curious learner can try that are NOT required to win but produce a visible, honest consequence>"],
+  "surprise_variation": "<one unpredictable element that makes each session feel alive (randomized scenario flavor, a second hidden regime, an entity with autonomous behavior) — must not change WHAT is taught>",
+  "controls_legend": "<one line shown in the HUD, e.g. 'DRAG planet · SCROLL zoom · SPACE pause · R reset'>"
+}`;
+
+  try {
+    const raw = await openaiCreateStreamed({
+      model: INTERACTION_MODEL_ID,
+      max_tokens: 4000,
+      // Extended thinking: gpt-oss reasoning models take reasoning_effort; high =
+      // real deliberation. Non-reasoning models simply ignore the field.
+      ...(isReasoningModel(INTERACTION_MODEL_ID) ? { reasoning_effort: "high" } : {}),
+      messages: [{ role: "user", content: prompt }],
+    }, "interaction-director");
+    const contract = parseLooseJSON(raw);
+    if (!contract || !contract.primary_interaction || !contract.primary_interaction.style) {
+      console.warn("[interaction] director returned unusable JSON — continuing without contract");
+      return null;
+    }
+    console.log(`[interaction] primary=${contract.primary_interaction.style}`);
+    return contract;
+  } catch (err) {
+    console.warn("[interaction] director failed, continuing without contract:", err.message);
+    return null;
+  }
+}
+
+// Render the interaction contract as a codegen prompt section. Empty string when
+// the director is disabled or failed — codegen prompt is then byte-identical to
+// the pre-director pipeline.
+function interactionContractBlock(ic) {
+  if (!ic) return "";
+  const explore = (ic.exploration_moments || []).map(m => `  • ${m}`).join("\n");
+  return `
+━━━ INTERACTION CONTRACT (from the interaction director — BINDING) ━━━
+The primary interaction below was chosen specifically for this topic. Sliders may exist only in the role the slider_policy allows — a lab whose only interaction is sliders VIOLATES this contract.
+
+PRIMARY INTERACTION (this is the gameplay AND the learning):
+  STYLE: ${ic.primary_interaction.style}
+  CONTROLS: ${ic.primary_interaction.binding}
+  WHY: ${ic.primary_interaction.why_it_is_the_learning || ""}
+SECONDARY: ${ic.secondary_interaction ? `${ic.secondary_interaction.style} — ${ic.secondary_interaction.binding}` : "none"}
+SLIDER POLICY: ${ic.slider_policy || "sliders are secondary tuning knobs only"}
+EXPLORATION MOMENTS (implement all — each must produce a visible, honest consequence):
+${explore || "  • (none specified)"}
+SURPRISE VARIATION: ${ic.surprise_variation || ""}
+CONTROLS LEGEND (render verbatim in the HUD): "${ic.controls_legend || ""}"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+}
+
 // ── KIMI CONCURRENCY LOCK ─────────────────────────────────────────────────────
 // The NVIDIA Build FREE tier accepts ONE Kimi request at a time. When two lab
 // generations run concurrently, both queue on NVIDIA's side, both sit idle for
@@ -1384,7 +1516,7 @@ async function _runKimiStream(briefText, onProgress) {
   return html;
 }
 
-async function codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category = "General", onProgress = null, critiqueNotes = null) {
+async function codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category = "General", onProgress = null, critiqueNotes = null, interactionContract = null) {
   const cat = design.spec.course_category || category;
   const vars = (design.spec.variables || [])
     .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
@@ -1694,7 +1826,7 @@ The following analysis was written specifically for "${design.topic}" — use it
 
 ${pedagogy}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
+${interactionContractBlock(interactionContract)}
 You are building a single self-contained interactive learning lab. LAB ARCHETYPE: ${archetype.toUpperCase()}. You MUST output a complete, working HTML file right now — no summaries, no explanations. You must not redesign the harness; use its structure exactly and only replace the domain-specific contents.
 
 ${imageDataUrl ? `You are given two inputs:
@@ -2662,8 +2794,8 @@ function probeIssues(probe) {
 // Wraps codeFromImageBrief with a render → probe + vision-critique → regenerate
 // loop. Regenerates when EITHER the deterministic probe finds a dead/static lab
 // OR the vision critic finds a visual blocker. Capped retries bound cost/latency.
-async function codeFromImageBriefWithCritique(design, labThinking, pedagogy, imageDataUrl, category, onProgress, maxRetries = 2) {
-  let html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress);
+async function codeFromImageBriefWithCritique(design, labThinking, pedagogy, imageDataUrl, category, onProgress, interactionContract = null, maxRetries = 2) {
+  let html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress, null, interactionContract);
 
   // ── ALWAYS-ON static guardrail (cheap regex, no headless browser) ──────────
   // Catches the failure modes that ship blank/dead/truncated labs — truncated
@@ -2672,11 +2804,11 @@ async function codeFromImageBriefWithCritique(design, labThinking, pedagogy, ima
   // when the heavier (OOM-prone) visual critic below is disabled. This is the
   // primary defense against empty/weak labs in the default deployment.
   for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const check = validateLabHtml(html);
+    const check = validateLabHtml(html, interactionContract);
     if (check.ok) break;
     console.warn(`[labcheck] attempt ${attempt} blockers: ${check.issues.join(" | ")}`);
     if (onProgress) { try { onProgress(null, `Reviewing and fixing your lab… (${check.issues.length} issue${check.issues.length > 1 ? "s" : ""})`); } catch (_) {} }
-    html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress, labCheckNotes(check.issues));
+    html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress, labCheckNotes(check.issues), interactionContract);
   }
 
   // The render→critique loop launches headless Chromium (puppeteer). On a
@@ -2708,7 +2840,7 @@ async function codeFromImageBriefWithCritique(design, labThinking, pedagogy, ima
 
     if (onProgress) { try { onProgress(null, `Reviewing and improving your lab… (fixing ${blockers.length} issue${blockers.length > 1 ? "s" : ""})`); } catch (_) {} }
     const notes = issuesToNotes(allIssues);
-    html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress, notes);
+    html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress, notes, interactionContract);
   }
 
   return html;
@@ -3119,7 +3251,28 @@ Rules: lesson has exactly 3 slides (3-4 bullets each, ≤15 words per bullet). Q
           // Flush headers immediately so the browser opens the stream.
           if (typeof res.flushHeaders === "function") res.flushHeaders();
 
+          // ── STAGE TIMING (measure before optimizing) ─────────────────────
+          // Each send() marks a stage boundary; we record how long the PREVIOUS
+          // stage ran. The full breakdown is logged once per generation and
+          // attached to the final "done" payload (additive field — existing
+          // consumers ignore it). This is the ground truth for where the
+          // pipeline actually spends time — retries and validation included.
+          const stageTimings = {};
+          let _curStage = null, _curStageStart = Date.now(), _pipelineStart = Date.now();
+          const markStage = (stage) => {
+            if (_curStage && stage !== _curStage) {
+              stageTimings[_curStage] = (stageTimings[_curStage] || 0) + (Date.now() - _curStageStart);
+              _curStageStart = Date.now();
+            }
+            if (stage !== _curStage) _curStage = stage;
+          };
           const send = (stage, msg, data) => {
+            markStage(stage);
+            if (stage === "done" || stage === "error") {
+              stageTimings.total = Date.now() - _pipelineStart;
+              console.log(`[timing] ${JSON.stringify(stageTimings)}`);
+              data = { ...(data || {}), timings: stageTimings };
+            }
             res.write(`data: ${JSON.stringify({ stage, msg, data })}\n\n`);
             if (typeof res.flush === "function") res.flush();
           };
@@ -3218,9 +3371,13 @@ Rules: lesson has exactly 3 slides (3-4 bullets each, ≤15 words per bullet). Q
           // Fire lesson + quiz generation in parallel with labthink — they use the fast
           // mini model (~10s) while labthink + codegen takes minutes. Badges light up fast.
           let lessonResult = null, quizResult = null;
-          const [labThinking, pedagogy] = await Promise.all([
+          // Interaction director runs in the same parallel window as labthink —
+          // an extended-thinking call (gpt-oss, reasoning_effort=high) that picks
+          // the interaction language for this topic. Adds zero wall-clock.
+          const [labThinking, pedagogy, interactionContract] = await Promise.all([
             thinkAboutLab(design, category, courseContext),
             thinkAboutVisualPedagogy(design.topic, design.spec.lab_archetype || "physics-sim", category),
+            thinkAboutInteraction(design, category, courseContext),
             generateLesson(design).then(r => {
               lessonResult = r;
               if (r) send("lesson", "Lesson ready.", { lesson: r });
@@ -3239,7 +3396,8 @@ Rules: lesson has exactly 3 slides (3-4 bullets each, ≤15 words per bullet). Q
 
           send("code", "Writing your lab…");
           const html = await codeFromImageBriefWithCritique(design, labThinking, pedagogy, imageDataUrl, category,
-            (chars, msg) => send("code", msg || `Writing your lab… (${Math.round(chars / 1000)}k chars)`));
+            (chars, msg) => send("code", msg || `Writing your lab… (${Math.round(chars / 1000)}k chars)`),
+            interactionContract);
 
           // Final guard: never ship a blank/broken iframe. If codegen produced
           // empty or non-HTML output, surface a real error instead of a blank lab
