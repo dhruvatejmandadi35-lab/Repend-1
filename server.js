@@ -142,7 +142,16 @@ const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ?
 // the first failed attempt, openaiCreate/openaiCreateStreamed retry on this model
 // instead of re-queueing on the stalled one. gpt-oss-120b: verified in catalog,
 // comparable quality, and the pipeline already handles gpt-oss reasoning output.
-const REASON_FALLBACK_MODEL = process.env.REASON_FALLBACK_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-120b" : OPENAI_MINI_MODEL);
+// Fallback CHAIN, tried in order on successive retry attempts. 2026-07-05: seen a
+// cycle where BOTH 70b and gpt-oss-120b timed out (NVIDIA free-tier capacity crunch)
+// and the run errored — so we chain a third, lighter model (gpt-oss-20b, most likely
+// to have spare free-tier capacity) for one more shot before giving up. Attempts map:
+// 0 = REASON_MODEL, 1 = chain[0], 2 = chain[1], 3 = chain[1] (clamped). Override the
+// whole chain by setting REASON_FALLBACK_MODEL (single model) in env.
+const REASON_FALLBACK_CHAIN = process.env.REASON_FALLBACK_MODEL
+  ? [process.env.REASON_FALLBACK_MODEL]
+  : (useNvidiaReasoning ? ["openai/gpt-oss-120b", "openai/gpt-oss-20b"] : [OPENAI_MINI_MODEL]);
+const REASON_FALLBACK_MODEL = REASON_FALLBACK_CHAIN[0];
 // Idle timeout for reason-stage calls (spec, quiz, expand, pedagogy, interaction).
 // The openai-node client `timeout` acts as an idle timeout on streams — it resets
 // on every chunk, so it only fires when a stream is SILENT this long. 40s means a
@@ -153,7 +162,7 @@ const REASON_FALLBACK_MODEL = process.env.REASON_FALLBACK_MODEL || (useNvidiaRea
 const REASON_STAGE_TIMEOUT_MS = parseInt(process.env.REASON_STAGE_TIMEOUT_MS || "40000", 10);
 const visionClient = NVIDIA_API_KEY ? nvidia : openai;
 const VISION_MODEL = process.env.VISION_MODEL_ID || (NVIDIA_API_KEY ? "nvidia/nemotron-nano-12b-v2-vl" : OPENAI_MODEL);
-console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL}), mini: ${REASON_MINI_MODEL}, fallback: ${REASON_FALLBACK_MODEL}` : `OpenAI (${REASON_MODEL})`}`);
+console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL}), mini: ${REASON_MINI_MODEL}, fallback chain: ${REASON_FALLBACK_CHAIN.join(" → ")}` : `OpenAI (${REASON_MODEL})`}`);
 console.log(`[boot] vision provider: ${NVIDIA_API_KEY ? `NVIDIA Build (${VISION_MODEL})` : `OpenAI (${OPENAI_MODEL})`}`);
 console.log(`[boot] visual critic: ${process.env.ENABLE_VISUAL_CRITIC === "1" ? "ON (puppeteer headless Chrome — OOM risk on small containers)" : "OFF (static guardrail only)"}`);
 
@@ -181,9 +190,11 @@ function getSupabase() {
 // more attempts on it just burn 9 minutes before erroring. Mini/vision/codegen
 // models keep their own params (they have separate fallback paths).
 function retryParams(params, attempt, label) {
-  if (attempt === 0 || params.model !== REASON_MODEL || REASON_FALLBACK_MODEL === REASON_MODEL) return params;
-  console.warn(`[${label}] ${REASON_MODEL} unavailable — attempt ${attempt + 1} on fallback ${REASON_FALLBACK_MODEL}`);
-  return { ...params, model: REASON_FALLBACK_MODEL, ...reasonParams(REASON_FALLBACK_MODEL, params.max_tokens || 3000) };
+  if (attempt === 0 || params.model !== REASON_MODEL || REASON_FALLBACK_CHAIN.length === 0) return params;
+  const fb = REASON_FALLBACK_CHAIN[Math.min(attempt - 1, REASON_FALLBACK_CHAIN.length - 1)];
+  if (fb === REASON_MODEL) return params;
+  console.warn(`[${label}] ${REASON_MODEL} unavailable — attempt ${attempt + 1} on fallback ${fb}`);
+  return { ...params, model: fb, ...reasonParams(fb, params.max_tokens || 3000) };
 }
 
 async function openaiCreate(params, label = "reason", reqOpts = {}) {
