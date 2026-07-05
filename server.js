@@ -1742,814 +1742,270 @@ const reagents = [{ name, volume, color, temp }, ...]; let reactionState = 'idle
 // Win: achieve target product state (color, pH, gas bubbles) by tuning variables`,
   };
 
-  const briefText = `━━━ REPEND MISSION ━━━
-Repend is an exploration engine that teaches any topic through hands-on interaction. Before generating ANYTHING, ask: "What is the most engaging way to make this concept click — through a simulation, a game, a decision tree, a social experiment, or a visual puzzle?" Default to the format that lets the learner FEEL the concept, not just read about it. A good lab produces an "aha" moment the learner couldn't get from a textbook. Passive explanations, static charts, and reading-only interfaces are rejected — every element must respond to the learner's action.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const briefText = `━━━ REPEND CODEGEN — build ONE playable learning lab ━━━
+Repend teaches any topic through hands-on interaction. Before writing code, ask: "What is the most engaging way to make THIS concept click — a simulation, a game, a decision tree, a visual puzzle?" Build the format that lets the learner FEEL the concept. A good lab produces an "aha" a textbook can't. Passive explanations, static charts, read-only screens are REJECTED — every element responds to the learner's action.
 
-━━━ GOLD-STANDARD HARNESS — COPY THIS EXACT 11-SECTION STRUCTURE ━━━
-The file proof-lab.html is a HAND-WRITTEN gold standard. Every generated lab must follow its exact 11-section skeleton. DO NOT invent a different structure. Fill in the topic-specific objects/logic inside each section while keeping every section present and in order.
+━━━ OUTPUT — read this first ━━━
+Return ONE complete, self-contained, runnable HTML file. No prose, no summaries, no explanations, no "// ..." / TODO placeholders — and EVERY tag closed (ending </html>). Three.js r128 + GSAP from the exact CDNs below; zero console errors on first load; works from 360px wide up.
+Keep the code TIGHT: no dead code, no duplicated logic, terse names where clarity allows, minimal whitespace. A COMPLETE working file that fits the budget always beats an ambitious one that gets cut off mid-file. If you're running long, cut flourish — never cut correctness or a closing tag.
 
-SECTION 1 — Renderer + scene + camera
-  • THREE.WebGLRenderer with antialias, pixelRatio, ACESFilmicToneMapping, toneMappingExposure 1.15
-  • renderer.domElement appended to a position:fixed #app div (NOT body)
-  • CSS2DRenderer ALSO appended — same size, position:fixed, pointerEvents:'none'
-  • Camera positioned so ALL objects are in view on the first frame (never at origin)
+━━━ THE THREE PILLARS — judged before anything else; failing ANY one = a FAILED lab ━━━
+1. INTERACTIVITY — the learner DRIVES, never watches.
+   • Primary action is IN the play area: grab/drag, aim-and-release, or steer with held arrow keys (mirror with on-screen ◀▲▼▶ touch buttons). Sliders are secondary.
+   • Every control makes an immediate, visible, meaningful change (<100ms). No inert controls, no decorative motion, no "press play and watch."
+   • Within 3 seconds of load there's something obvious to grab and the learner knows what to do without reading. First action is hands-on BEFORE any explanation. The repeated core action IS the concept (drag the right anticodon = learning translation), never a quiz wrapper.
 
-SECTION 2 — Lighting (UNCONDITIONAL — add these three lights with no if-checks, no conditions)
+2. GAMIFIED — a GAME played to WIN, not a sandbox to poke.
+   • A concrete WIN GOAL drawn on the canvas (target ring / finish zone / threshold line) with LIVE progress toward it (meter fills, target glows, counter climbs).
+   • 2–4 LIVE CONSEQUENCE BARS (horizontal, 0→max, in Zone A) — each a metric a real operator in this domain tracks (Revenue, Reaction Rate, Carbon — never "score"/"progress"). Every action updates them immediately (<300ms CSS transition). Under each bar, a one-line string explaining WHY it moved ("Higher temp breaks more bonds → rate spikes") — this text is the pedagogical payload; the fast-animating bar makes the learner wait to see where it lands.
+   • NEAR-MISS feedback in the concept's own words on every failed attempt, then instant retry.
+   • A WIN winnable ONLY by using the concept's real mechanism → golden burst + S/A/B/C/D grade (from final metrics vs real-world thresholds) + labCheck postMessage. Auto-detect the win the instant it happens. The mission MUST be mathematically reachable — verify control values exist that drive it to 100%; a meter stuck at 0% is the #1 failure.
+
+3. REAL-WORLD — the concept visibly operates in the actual world.
+   • Open on a CONCRETE real instance (a real role/place/$amount/news moment). When quantitative, draw the real target (ghost curve / dotted trajectory / historical line, labeled with real name + units) the learner reverse-engineers, with a live MATCH% readout (gap between their model and the target) that doubles as the mission meter.
+   • The REVEAL lands real_world_payoff as ONE concrete sentence: "[What you just did] is why [real-world consequence]." — never a generic summary. It appears as a visible in-sim event (slides in, ~4s, then fades), not a paragraph.
+   • Real units on every quantitative readout (N, m/s², kg, m, %, $, °).
+
+━━━ GOLD-STANDARD HARNESS — copy this EXACT 11-section skeleton (fill the topic-specific parts, keep every section, in order) ━━━
+proof-lab.html is the hand-written gold standard. Do NOT invent a different structure.
+
+S1 Renderer + scene + camera — THREE.WebGLRenderer {antialias, pixelRatio≤2, ACESFilmicToneMapping, exposure 1.15}; renderer.domElement into a position:fixed #app (NOT body); a CSS2DRenderer appended too (same size, position:fixed, pointer-events:none). Camera positioned so ALL objects are in view on frame 1 — NEVER at origin looking at origin (e.g. camera.position.set(0,4,10); camera.lookAt(0,0,0)).
+
+S2 Lighting (UNCONDITIONAL — add all three, no if-checks; this is the ONE canonical light rig — a black scene is a broken lab):
   scene.add(new THREE.AmbientLight(0xffffff, 0.75));
   const key = new THREE.DirectionalLight(0xffffff, 1.25); key.position.set(5,10,7); scene.add(key);
   const rim = new THREE.PointLight(0x4CC9F0, 0.9, 60); rim.position.set(-6,4,-4); scene.add(rim);
-  Plus ambient dust particles (THREE.Points, ~240 pts, slow drift) for depth.
+  Plus ~240 THREE.Points dust (slow drift) for depth. Materials must read under this light — MeshStandardMaterial with emissive when in doubt ({color:0x9B59B6, emissive:0x4A1070, emissiveIntensity:0.4}); if a mesh looks black, raise emissiveIntensity.
 
-SECTION 3 — Palette + topic objects (FILL THIS IN for the topic — the meshes, geometries, labels)
-  • Use the spec's palette colors for all materials: purple #9B59B6, white #f2f2f2, orange #E85D04, ice #4CC9F0, green #22C55E
-  • Build the main topic-specific environment first (the stage/grid/court/lab-bench/vault) before placing interactive objects
-  • Every mesh has a meaningful name label via CSS2DObject (never an unlabeled shape)
-  • IDLE ANIMATION: key objects must bob, pulse, or rotate gently when the learner isn't interacting — the scene must feel alive on load, never frozen
+S3 Palette + topic objects (FILL IN) — build the main topic environment (stage/court/bench/vault) first, then interactive objects, all within camera view (x:0±3, y:0±2, z:0), never spawned inside another mesh or off-screen. Every mesh carries a meaningful one-word CSS2DObject label (never an unlabeled shape). IDLE LIFE: key objects bob/pulse/rotate gently and dust drifts when no one's interacting — the scene is alive on load, never frozen.
 
-SECTION 4 — HUD (position:fixed, glass-panel style, top-left)
-  #hud { position:fixed; top:18px; left:18px; padding:16px 20px; width:280px; max-width:280px;
-    background:rgba(10,15,30,.75); backdrop-filter:blur(10px);
-    border:1px solid rgba(232,93,4,.3); border-radius:14px; z-index:10; }
-  Contains: topic title, subtitle/goal, progress meter (bar + count), ratio/result line.
-  Legend fixed bottom-left (max-width:220px). Reset button fixed bottom-right. Hint strip fixed bottom-center.
-  CRITICAL: HUD is NOT inside the Three.js canvas. It is a plain HTML div with higher z-index.
+S4 HUD (position:fixed glass panels, NOT inside the canvas — plain HTML divs with higher z-index):
+  #hud{position:fixed;top:18px;left:18px;padding:16px 20px;width:280px;max-width:280px;background:rgba(10,15,30,.75);backdrop-filter:blur(10px);border:1px solid rgba(232,93,4,.3);border-radius:14px;z-index:10}
+  Contains: title, goal/subtitle, progress meter (bar + count), result line.
+  FIVE reserved corners, ONE panel each, NEVER two overlapping:
+    top-left = #hud (title+goal+progress, ALWAYS fully visible, never collapses)
+    top-right = controls/sliders OR score (pick one; stack extra panels vertically in this SAME column: display:flex;flex-direction:column;gap:8px)
+    bottom-left = legend (collapsible, ≤220px)
+    bottom-right = reset button only
+    bottom-center = hint strip (single line ≤40px tall)
+  Give every panel max-width ≤320px so text wraps INSIDE it; ≥16px gap between panels; stack text as normal block flow (line-height ≥1.4), never two absolutely-positioned lines at the same top. CSS2D labels: small font, opaque/blurred chip, offset ABOVE the mesh. Every secondary panel (Controls, Live Metrics, Formula, Legend) has a collapse toggle when panels exceed ~60% of viewport height:
+    <div class="panel"><div class="panel-header" onclick="this.parentElement.classList.toggle('collapsed')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center"><span>Controls</span><span class="chevron">▲</span></div><div class="panel-body">…</div></div>
+    .panel.collapsed .panel-body{display:none} .panel.collapsed .chevron{transform:rotate(180deg)}
+  SELF-TEST: at 1280×800, no two fixed panels may overlap by >4px.
 
-  PANEL LAYOUT — HARD RULES (the #1 source of overlapping UI):
-  The viewport has FIVE reserved corners. ONE panel per corner, NEVER two:
-    top-left(0,0)→(320,∞)   = #hud  (title + goal + progress)
-    top-right(∞,0)→(320,∞)  = controls/sliders panel OR score — pick ONE
-    bottom-left               = legend (collapsible, max 180px wide)
-    bottom-right              = reset button only (not a full panel)
-    bottom-center             = hint strip (single line, no taller than 40px)
-  If you have MORE than one secondary panel (e.g. Controls + Live Metrics + Formula),
-  STACK THEM VERTICALLY inside the SAME top-right column (display:flex; flex-direction:column; gap:8px)
-  rather than placing each in a different position. They must never overlap #hud.
+S5 Drag / interaction — 3D: Raycaster (pointerdown→intersect→pointerup snap/reject). 2D: addEventListener('input'/'click') on every control writing to a shared state object. CLICK-LAYERING (the #1 fatal "nothing is clickable" bug — a full-viewport canvas sits ON TOP of the HUD by default and swallows clicks): canvas/renderer.domElement = position:fixed;inset:0;z-index:0; every HUD/control container = z-index:10 AND pointer-events:auto. If the canvas needs no direct interaction, set canvas pointer-events:none. If it does (raycaster drag), keep pointer-events:auto but every HUD element gets a higher z-index.
 
-  COLLAPSIBLE SECONDARY PANELS — MANDATORY when total panel height > 60% of viewport:
-  Every secondary panel (Controls, Live Metrics, Formula, Legend) MUST have a collapse toggle:
-    <div class="panel">
-      <div class="panel-header" onclick="this.parentElement.classList.toggle('collapsed')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span>Controls</span><span class="chevron">▲</span>
-      </div>
-      <div class="panel-body">...sliders...</div>
-    </div>
-    .panel.collapsed .panel-body { display:none; }
-    .panel.collapsed .chevron { transform:rotate(180deg); }
-  The #hud (top-left goal/progress panel) is ALWAYS fully visible and cannot be collapsed.
-  All other panels start EXPANDED but collapse to their header bar on one click — giving the
-  learner a clear stage to work in.
+S6 Place / win logic (topic-specific) — correct drop/match → tweenTo snap + bloom + burst(x,y,color) + increment; wrong → red emissive flash 260ms + hint 1.8s then tweenTo home; complete → update result, setTimeout 500ms → #win overlay + 6 staggered bursts + postMessage.
 
-  SELF-TEST before returning: open the lab at 1280×800. Mentally drag every fixed panel's
-  bounding box onto the viewport grid. If ANY two boxes overlap by more than 4px, the layout
-  is BROKEN — move panels or collapse them until there is zero overlap.
-  NO TEXT OVERLAP — each fixed panel sits in its OWN screen corner and must not collide:
-    • top-left = #hud, bottom-left = legend, bottom-right = reset, bottom-center = hint strip, top-right = score/timer.
-    • Give each panel a max-width (≤320px) so long text wraps INSIDE its panel instead of spilling across the screen.
-    • Use normal block flow inside a panel (stacked divs / line-height ≥1.4) — never absolutely-position two text lines at the same top offset.
-    • CSS2D labels must use a small font and an opaque/blurred background chip so they stay readable when several overlap in 3D; offset labels above their mesh, never centered on it.
-    • Leave ≥16px gap between any two fixed panels; if two would touch on a narrow viewport, the lower-priority one collapses to an icon.
-
-SECTION 5 — Drag / interaction
-  • Raycaster for 3D drag: pointerdown → find intersected object → pointerup → snap/reject
-  • For 2D labs: addEventListener('input'/'click') on every control writing to a shared state object
-  • canvas pointer-events must NOT block HUD clicks — set CSS2DRenderer layer to pointer-events:none and confirm HUD divs are above the canvas in z-order.
-
-SECTION 6 — Place / win logic (topic-specific)
-  • Correct drop/match/target → tweenTo snap + offspring bloom + burst(x,y,color) + increment counter
-  • Wrong → flashWrong (red emissive flash 260ms + hint text 1.8s) then tweenTo back to home
-  • When complete: update ratio display, setTimeout 500ms then show #win overlay + 6 staggered bursts + postMessage
-
-SECTION 7 — Win overlay + postMessage (MANDATORY, copy verbatim)
-  <div id="win" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(5,5,8,.6);backdrop-filter:blur(3px);z-index:5">
-    <div class="grade">[grade]</div><div class="msg">[win message]</div><div class="sub2">[payoff sentence]</div>
-  </div>
+S7 Win overlay + postMessage (copy verbatim):
+  <div id="win" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(5,5,8,.6);backdrop-filter:blur(3px);z-index:5"><div class="grade">[grade]</div><div class="msg">[win message]</div><div class="sub2">[payoff sentence]</div></div>
   try { window.parent.postMessage({ type:'labCheck', result:{ ok:true, score:1, total:1 } }, '*'); } catch(_){}
 
-SECTION 8 — Tween system (copy verbatim — this is what makes motion smooth, not CSS transitions)
+S8 Tween system (copy verbatim — smooth motion, not CSS transitions):
   const tweens = [];
   function ease(t){ return t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
-  function tweenTo(obj, to, dur, done){ tweens.push({obj,kind:'pos',from:obj.position.clone(),to:to.clone(),t:0,dur,done}); }
-  function tweenScale(obj, to, dur, done){ tweens.push({obj,kind:'scale',from:obj.scale.x,to,t:0,dur,done}); }
-  function updateTweens(dt){ for(let i=tweens.length-1;i>=0;i--){ const tw=tweens[i]; tw.t+=dt/tw.dur;
-    const k=ease(Math.min(tw.t,1)); if(tw.kind==='pos') tw.obj.position.lerpVectors(tw.from,tw.to,k);
-    else tw.obj.scale.setScalar(tw.from+(tw.to-tw.from)*k); if(tw.t>=1){if(tw.done)tw.done();tweens.splice(i,1);} } }
+  function tweenTo(obj,to,dur,done){ tweens.push({obj,kind:'pos',from:obj.position.clone(),to:to.clone(),t:0,dur,done}); }
+  function tweenScale(obj,to,dur,done){ tweens.push({obj,kind:'scale',from:obj.scale.x,to,t:0,dur,done}); }
+  function updateTweens(dt){ for(let i=tweens.length-1;i>=0;i--){ const tw=tweens[i]; tw.t+=dt/tw.dur; const k=ease(Math.min(tw.t,1)); if(tw.kind==='pos') tw.obj.position.lerpVectors(tw.from,tw.to,k); else tw.obj.scale.setScalar(tw.from+(tw.to-tw.from)*k); if(tw.t>=1){if(tw.done)tw.done();tweens.splice(i,1);} } }
 
-SECTION 9 — Particle bursts (copy verbatim)
+S9 Particle bursts (copy verbatim):
   const bursts = [];
-  function burst(x,y,color){ const n=70,g=new THREE.BufferGeometry(),pos=new Float32Array(n*3),vel=[];
-    for(let i=0;i<n;i++){ pos[i*3]=x;pos[i*3+1]=y;pos[i*3+2]=0.8;
-      const a=Math.random()*Math.PI*2,s=2+Math.random()*4;
-      vel.push(new THREE.Vector3(Math.cos(a)*s,Math.sin(a)*s,(Math.random()-.5)*3)); }
-    g.setAttribute('position',new THREE.BufferAttribute(pos,3));
-    const p=new THREE.Points(g,new THREE.PointsMaterial({color,size:0.16,transparent:true,opacity:1,blending:THREE.AdditiveBlending}));
-    scene.add(p); bursts.push({p,vel,life:0}); }
-  function updateBursts(dt){ for(let i=bursts.length-1;i>=0;i--){ const b=bursts[i];b.life+=dt;
-    const arr=b.p.geometry.attributes.position.array;
-    for(let j=0;j<b.vel.length;j++){arr[j*3]+=b.vel[j].x*dt;arr[j*3+1]+=b.vel[j].y*dt-2*dt*b.life;arr[j*3+2]+=b.vel[j].z*dt;}
-    b.p.geometry.attributes.position.needsUpdate=true;b.p.material.opacity=Math.max(0,1-b.life/1.3);
-    if(b.life>1.3){scene.remove(b.p);bursts.splice(i,1);} } }
+  function burst(x,y,color){ const n=70,g=new THREE.BufferGeometry(),pos=new Float32Array(n*3),vel=[]; for(let i=0;i<n;i++){ pos[i*3]=x;pos[i*3+1]=y;pos[i*3+2]=0.8; const a=Math.random()*Math.PI*2,s=2+Math.random()*4; vel.push(new THREE.Vector3(Math.cos(a)*s,Math.sin(a)*s,(Math.random()-.5)*3)); } g.setAttribute('position',new THREE.BufferAttribute(pos,3)); const p=new THREE.Points(g,new THREE.PointsMaterial({color,size:0.16,transparent:true,opacity:1,blending:THREE.AdditiveBlending})); scene.add(p); bursts.push({p,vel,life:0}); }
+  function updateBursts(dt){ for(let i=bursts.length-1;i>=0;i--){ const b=bursts[i];b.life+=dt; const arr=b.p.geometry.attributes.position.array; for(let j=0;j<b.vel.length;j++){arr[j*3]+=b.vel[j].x*dt;arr[j*3+1]+=b.vel[j].y*dt-2*dt*b.life;arr[j*3+2]+=b.vel[j].z*dt;} b.p.geometry.attributes.position.needsUpdate=true;b.p.material.opacity=Math.max(0,1-b.life/1.3); if(b.life>1.3){scene.remove(b.p);bursts.splice(i,1);} } }
 
-SECTION 10 — THE ANIMATION LOOP (THE only place rendering ever happens — copy this structure verbatim)
+S10 THE ANIMATION LOOP — the ONLY place rendering happens (copy this ONE canonical structure verbatim):
+  const state = { /* positions, velocities, target, score, matchPct, won:false, …topic values */ };  // ONE shared mutable object holds everything that changes
   const clock = new THREE.Clock();
   function animate(){
-    requestAnimationFrame(animate);           // always reschedules itself
-    const dt = clock.getDelta();             // called EXACTLY ONCE per frame
+    requestAnimationFrame(animate);            // reschedules itself
+    const dt = clock.getDelta();               // getDelta called EXACTLY ONCE per frame
     const t  = clock.elapsedTime;
     updateTweens(dt);
     updateBursts(dt);
-    // [topic-specific per-frame updates here: move meshes, rotate objects, advance physics]
-    // CRITICAL: Every mesh/object accessed in animate() MUST be declared at the top scope
-    // and initialized BEFORE animate() is called. NEVER access .position/.x/.y/.z on
-    // a variable that could be null/undefined. Use: if (myMesh) myMesh.position.x = ...
-    // idle life: objects bob/rotate; dust drifts; camera.position.x = Math.sin(t*0.15)*0.5; camera.lookAt(0,0.3,0)
+    update(dt);                                // mutate meshes FROM state, scaled by dt — VISIBLE motion whenever input is non-neutral
+    if (controls) controls.update();           // damped OrbitControls are DEAD without this
+    checkWin();                                // auto-detect win every frame
     renderer.render(scene, camera);
-    labelRenderer.render(scene, camera);
+    if (labelRenderer) labelRenderer.render(scene, camera);
   }
-  animate(); // ← called ONCE to start the loop
+  animate();  // called ONCE to start
+  ⚠️ CONST vs LET — #1 crash "Assignment to constant variable": any counter/score/position/angle/velocity/flag that update() or a handler writes to MUST be a state.* property (state.score++) or declared let — NEVER const. Scan output for a const on the LHS of =,+=,-=,++,-- and fix it.
+  ⚠️ WIRING: every slider has addEventListener('input', e=>{ state.x = +e.target.value; }); every button addEventListener('click',…); handlers write ONLY to state, the loop moves the meshes. animate() is called once at the end. A slider with no listener, or an animate() never called, is the dead-screen bug. If moving a control changes no mesh, wire it or delete it.
 
-SECTION 11 — Resize + reset (copy verbatim structure)
-  addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth,innerHeight); labelRenderer.setSize(innerWidth,innerHeight); });
-  document.getElementById('reset').onclick = () => { /* restore all objects to home positions, clear placed/won state */ };
+S11 Resize + reset (copy verbatim structure):
+  addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); if(labelRenderer) labelRenderer.setSize(innerWidth,innerHeight); });
+  document.getElementById('reset').onclick = () => { /* restore objects to home, clear placed/won state */ };
 
-CDN URLS (use EXACTLY these — no other versions):
-  Three.js r128:  https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js
-  CSS2DRenderer:  https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js
-  GSAP 3.12.5:    https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js
-  D3 v7.9.0:      https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js
-  KaTeX 0.16.11:  https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js
-                  https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css
-  Google Fonts:   https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CDN URLs (use EXACTLY these — no other versions, never invent r165):
+  three r128: https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js
+  CSS2DRenderer: https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js
+  GSAP 3.12.5: https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js
+  D3 7.9.0: https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js
+  KaTeX 0.16.11: https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js + /katex.min.css
+  Google Fonts: https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap
 
-━━━ THE THREE PILLARS — judge the whole lab on these before anything else ━━━
-A lab that nails the visuals but misses any pillar below is a FAILED lab. These outrank every other instruction:
+━━━ HARD CONTRACTS — each stated once; all mandatory ━━━
+• TRUTH / NO FAKE VARIABLES: every control maps to a real term in a formula (or a real categorical outcome) and visibly changes a real output. Never invent a topical-sounding inert variable (the "Contact Surface" slider on F=-F affected nothing — that bug: if a variable drives no formula, DELETE it). Three honest controls beat four with one lie.
+• REAL UNITS, never pixels/bare numbers: declare a world scale (const PX_PER_M = 50) and show "Separation: 3.1 m" / "Acceleration: 3.2 m/s²" / "Balance: $4,820" — never "154 px" or "Resulting Motion: 7.12".
+• CONTROL BOUNDS: set min/max/step to the real domain (prob 0–1 step .01; pH 0–14 step .1; rate 0–20% step .25; angle 0–90° step 1) and clamp in the handler (state.x=Math.min(max,Math.max(min,+e.target.value))). Discrete choices (allele, element, phase) = a fixed button set, never a free slider. Physically impossible states (negative mass, >100%) must be unreachable. Disable inapplicable controls (opacity:.4;cursor:not-allowed), never leave them silently dead.
+• LABELS: every distinct object carries a one-word label ON/beside it ("Hand","Wall","Cart A","Buyer") — the learner never sees a shape and wonders what it is. Put each label/readout ADJACENT to the thing it names (Mayer spatial contiguity), never in a far-off list.
+• SOLID OBJECTS CANNOT OVERLAP (intertwining-circles bug): two solid bodies collide, never interpenetrate. Resolve every frame incl. during drag:
+    const dx=B.x-A.x,dy=B.y-A.y,dist=Math.hypot(dx,dy)||0.0001,minDist=A.r+B.r; if(dist<minDist){const nx=dx/dist,ny=dy/dist,ov=minDist-dist; A.x-=nx*ov/2;A.y-=ny*ov/2;B.x+=nx*ov/2;B.y+=ny*ov/2;}
+  A dragged body clamps to contact along the normal — they touch and exert force, never overlap.
+• AFFORDANCES: grabbable objects signal it — cursor grab→grabbing, subtle hover glow, hit radius ≥24px for touch, position updates synchronously with the pointer (no lag).
+• FRAME-RATE INDEPENDENCE: all motion scaled by dt (mesh.position.x += state.v*dt), never bare per-frame increments; camera moves via GSAP (gsap.to(camera.position,{…,ease:"power2.out"})) or a dt-scaled lerp, never a raw per-frame lerp.
+• COHERENCE: every element reacts to input or displays a result. No ornamental shapes/motion. If deleting it loses no understanding, delete it.
+• SIGNALING: when a control changes a value, briefly highlight the affected element/term (color flash/glow) so attention goes to what changed.
+• ANIMATION POLISH: UI transitions 150–200ms, full-stage 300–400ms, exits shorter than entrances; entrances ease-out, exits ease-in, else ease-in-out (never linear for discrete motion); stagger grouped entrances 20–50ms; CSS animates ONLY transform/opacity (never top/left/width/height).
 
-  1. SPECIFIED INTERACTIVITY — the learner DRIVES, never watches.
-     • The primary action happens IN the 3D play area: grab/drag, aim-and-release, or steer with held arrow keys (+ mirrored on-screen ◀▲▼▶ touch buttons). Sliders are secondary only.
-     • Every single control produces an immediate, visible, meaningful change (<100ms). No inert controls, no decorative motion, no "press play and watch."
-     • Within 3 seconds of the sim appearing, there is something obvious to grab and the learner already knows what to do without reading instructions.
+━━━ CONTROLS LEGEND — required, the #1 thing labs miss; build EXACTLY ━━━
+A persistent, always-visible panel (Zone A, titled "Controls"/"How to play"), a real DOM element. First line is the GOAL ("GOAL: sink 3 shots in a row"). Then ONE line per interactive element, format: <icon/swatch> <NAME> — <VERB> it → <exact effect>, ≤8 words after the verb, concrete effect ("steepens the growth curve", never "changes the graph"):
+    🎚️ Launch Angle — SLIDE → raises/lowers the shot arc
+    🟠 The Ball — DRAG on the court → sets where you shoot from
+The VERB must equal the wired interaction (DRAG=pointer on canvas, SLIDE=range input, CLICK/PLACE=discrete, TOGGLE=boolean, DECIDE=pick one). Each control sits next to a LIVE readout of its value + consequence ("Rate: 5% → doubles in ~14 yrs"). SELF-TEST: legend lines must be 1:1 with interactive elements — no control without a line, no line without a wired control. Legend may collapse to an icon but the GOAL line stays; never hide all instructions after load.
 
-  2. GAMIFIED EXPERIENCE — it is a GAME the learner plays to WIN, not a sandbox to poke.
-     • A concrete WIN GOAL drawn on the canvas (target ring / finish zone / threshold line) with LIVE progress toward it (meter fills, target glows brighter, counter counts up).
-     • Score / streak / attempts / match-% HUD that reacts to every action; 2–4 live consequence bars that animate fast so the learner waits to see where they land.
-     • NEAR-MISS FEEDBACK that teaches in the concept's own words on every failed attempt, then instant retry.
-     • A WIN STATE winnable ONLY by using the concept's real mechanism → golden-burst celebration + S/A/B/C/D grade + labCheck postMessage. Auto-detect the win the instant it happens.
+━━━ ONBOARDING — never a blank, unexplained lab ━━━
+• A "How this works" strip visible at load (≤2 lines: what it shows + first thing to try, from design.spec.first_move); may auto-dismiss after first interaction. PREFER this bottom-center hint strip over any intro overlay. If you DO use a "Begin" overlay: z-index≥100, pointer-events:auto, and wire dismissal with BOTH an inline onclick AND an addEventListener backup — never z-index alone.
+• 🎯 OBJECTIVES panel (collapsible, HUD corner): EXACTLY 2–3 outcome bullets, each ≤12 words, starting with an action verb (Predict/Compare/Explain/Derive/Identify/Trade off), tied to what the learner physically does here and to the aha ("Predict how nanoparticle size shifts emission color" — NOT "Learn about quantum dots"). Use design.spec.learning_goal + the key variables.
+• A legend names every distinct visual element (what each color/shape/mesh means) — no unexplained symbols. As the sim runs, ONE live line just below it narrates what's happening now ("Escape velocity not reached — orbit decaying").
+• SELF-TEST: within 3 seconds a first-time user knows (1) what they're looking at, (2) what to touch first, (3) what success looks like. If any is unclear, add the missing label/strip. NO modal/gate/prediction screen before the sim — it's fully interactive the moment it loads.
 
-  3. REAL-WORLD CONNECTION — the concept must visibly operate in the actual world.
-     • Open on a CONCRETE real instance (a real role/place/dollar amount/news moment) and, when quantitative, draw the real target (ghost curve / dotted trajectory / historical line, labeled with real name + units) the learner reverse-engineers.
-     • The REVEAL lands the real_world_payoff as one concrete sentence: "[What you just did] is why [real-world consequence]." — not a generic topic summary.
-     • Real units on every readout (N, m/s², $, %, °). The learner should leave seeing this concept in their savings account, the ISS overhead, the bridge they drive over — not just on a screen.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-━━━ TOPIC-SPECIFIC VISUAL PEDAGOGY (apply these rules above all generic patterns) ━━━
-The following analysis was written specifically for "${design.topic}" — use it to override any generic instruction that conflicts:
-
+━━━ TOPIC-SPECIFIC VISUAL PEDAGOGY (overrides any generic rule above that conflicts — written for "${design.topic}") ━━━
 ${pedagogy}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${interactionContractBlock(interactionContract)}
-You are building a single self-contained interactive learning lab. LAB ARCHETYPE: ${archetype.toUpperCase()}. You MUST output a complete, working HTML file right now — no summaries, no explanations. You must not redesign the harness; use its structure exactly and only replace the domain-specific contents.
+LAB ARCHETYPE: ${archetype.toUpperCase()} — use the harness structure exactly; only replace domain-specific contents.
+${imageDataUrl ? `Two inputs: a VISUAL MOCKUP (image) — use ONLY for layout/color/spatial arrangement; and the BEHAVIORAL BRIEF below — source of truth for what the lab DOES. Brief always wins; ignore garbled/fake text in the image.` : `The behavioral brief below is the source of truth for what the lab does.`}
 
-${imageDataUrl ? `You are given two inputs:
-1. A VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement.
-2. A BEHAVIORAL BRIEF (below) — source of truth for what the lab DOES. Brief wins over image always.
-` : `You are given a behavioral brief below — the source of truth for what the lab does.`}
-
-GOAL: the learner enters a cinematic 3D world, manipulates topic-specific variables, watches the mechanism unfold in real-time, and earns understanding through immersive interaction.
+━━━ SCENE = THE LITERAL TOPIC (overrides every aesthetic note) ━━━
+The 3D world DEPICTS "${design.topic}" literally. The cinematic/"NASA" references are RENDERING QUALITY ONLY (lighting, fog, glass HUD, smooth camera) — NOT a cue to build space. Do NOT add planets/orbits/spacecraft/starfields unless the topic is genuinely astronomy. Language lab = big legible 3D letters/words to drag & match, waveform ribbons, translation cards — not planets. History/art = timelines, 3D artifacts, document panels. If you catch yourself drawing an unlabeled "Body" sphere or generic orbit, STOP — build the real subject.
 
 COURSE CATEGORY: ${cat}
 CATEGORY AESTHETIC: ${categoryGuidance(cat)}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REPEND COLOR PALETTE — use EXACTLY these colors in ALL CSS and Three.js materials (matches platform UI):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Background/void: ${REPEND_THEME.void}
-• Scene fog: ${REPEND_THEME.fog}
-• Mars rust accent: ${REPEND_THEME.mars} (buttons, borders, emissive highlights)
-• Mars deep: ${REPEND_THEME.mars2}
-• Dust/secondary: ${REPEND_THEME.dust}
-• Copper/gold: ${REPEND_THEME.copper} (trails, celebration bursts)
-• Ice HUD: ${REPEND_THEME.ice} (readouts, labels, telemetry)
-• Muted text: ${REPEND_THEME.muted}
-• Success: ${REPEND_THEME.green}
-• HUD glass: ${REPEND_THEME.glass} with border ${REPEND_THEME.border}
-• Fonts: 'Inter' for UI, 'JetBrains Mono' for numbers/readouts
-
+REPEND PALETTE — use EXACTLY these in all CSS + Three.js materials: void ${REPEND_THEME.void}, fog ${REPEND_THEME.fog}, mars accent ${REPEND_THEME.mars} (buttons/borders/emissive), mars2 ${REPEND_THEME.mars2}, dust ${REPEND_THEME.dust}, copper/gold ${REPEND_THEME.copper} (trails/bursts), ice HUD ${REPEND_THEME.ice} (readouts/labels), muted ${REPEND_THEME.muted}, success ${REPEND_THEME.green}, glass ${REPEND_THEME.glass} border ${REPEND_THEME.border}. Fonts: Inter (UI), JetBrains Mono (numbers).
 ${cat === "Sports & Skills" || archetype === "sports-game" ? `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SPORTS VIDEO-GAME MODE (required for this category):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-This lab is a PLAYABLE SPORTS VIDEO GAME, not a passive sim:
-• Real venue: full 3D court/field/pool with accurate markings, stadium floodlights, crowd particle ambience
-• Scoreboard HUD: attempts, makes, streak counter, mission target
-• Controls: keyboard-steer (arrow keys/WASD) + on-screen touch buttons (◀ ▲ ▼ ▶) for mobile
-• Gameplay loop: aim → release/steer → watch physics → near-miss feedback → instant retry
-• Ghost replay: faded TubeGeometry trail of previous attempt for comparison
-• Win condition: hit mission target (make the shot, reach the zone, beat the par)
-• Celebration: golden particle burst + camera zoom on success
-` : ""}
-
-${archetypeArchitecture["physics-sim"] ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THREE.JS BASE ARCHITECTURE (implement this skeleton, then fill with topic-specific meshes):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x1a0800, 0.04);
-const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 800);
-const renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-document.body.appendChild(renderer.domElement);
-// Ambient + warm directional + rim point light; starfield Points; dust particles
-// Build topic-specific Group (court, planet, molecules, etc.)
-// HUD: position:fixed glass overlay for sliders/readouts
-// Physics loop in animate(): integrate projectile/orbit/etc., update TubeGeometry arc trail
-// GSAP: camera transitions on threshold crossings
-window.addEventListener('resize', () => { camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
-
+SPORTS VIDEO-GAME MODE (required here): a PLAYABLE sports game — full 3D venue with accurate markings + floodlights + crowd ambience; scoreboard HUD (attempts/makes/streak/target); keyboard-steer + on-screen ◀▲▼▶; loop aim→release/steer→physics→near-miss→instant retry; faded TubeGeometry ghost trail of the previous attempt; win = hit the mission target; golden burst + camera zoom on success.` : ""}
+${archetypeArchitecture["physics-sim"] ? `THREE.JS BASE (implement this skeleton, then fill topic meshes):
+const scene=new THREE.Scene(); scene.fog=new THREE.FogExp2(0x1a0800,0.04);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,800);
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(innerWidth,innerHeight); renderer.toneMapping=THREE.ACESFilmicToneMapping; document.body.appendChild(renderer.domElement);
+// lights per S2; topic Group (court/planet/molecules); physics in animate() (integrate projectile/orbit, update TubeGeometry trail); GSAP camera on threshold crossings.
 ARCHETYPE PATTERN (${archetype}):
 ${archetypeArchitecture[archetype] || archetypeArchitecture["physics-sim"]}
 ` : ""}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+━━━ CHOOSE THE MEDIUM — 3D is NOT always right ━━━
+Pick by what the topic IS, never default to 3D. 2D (D3/SVG as PRIMARY) for anything read on axes — compound interest, supply & demand, sampling distributions, growth curves, budgets, "value over time/inputs"; a 3D mesh over axes makes data unreadable. 3D (Three.js PRIMARY) for spatial/physical/object topics — projectile, orbit, molecules, anatomy, pendulums, vectors. Either for emergent/sequential — pick the most legible.
+If 2D: full-viewport SVG with unit-labeled axes; two distinct series when comparing (bright solid = learner's live result, faded/dotted = target); D3 transitions 150–300ms on every redraw (never a jump-cut); same dark theme; Three.js becomes optional low-z ambience only, NEVER touching/occluding the data.
+If 3D primary: cinematic WebGL of the LITERAL topic — geometry-rich world, FogExp2, dust Points, animated rim light, glass HUD, emissive accents, CanvasTexture where needed (wood grain, pebbled ball, grass); recognizable meshes for every element, never gray placeholder boxes, never a generic empty grid.
+LAYOUT ZONES (2D or 3D): title bar (top: topic + one-line goal); Zone B main stage (center, largest — the only place complex visuals live); Zone A controls/HUD (docked left/right, fixed width, never floating over Zone B); readout/formula strip. HARD: Zone A never covers Zone B — no panel/mesh occludes an axis, curve, mesh, or label; a win-card may overlay only momentarily then dismiss.
 
-LABEL EVERYTHING, ONE WORD (PhET: one-word labels are read correctly without over-guiding):
-• Every distinct object on the canvas carries a one-word label drawn ON or beside it — "Box A", "Earth", "Buyer". The learner must never see a shape and wonder what it is. In your Newton's-third-law example the two circles were unlabeled — that is the failure to fix: label them ("Hand", "Wall" / "Cart A", "Cart B") and draw the force arrow pointing FROM each onto the other.
-• Provide a small legend (top of play area) only for color/encoding meaning ("● red = negative charge"). Keep it to encodings, not instructions.
-
-SPATIAL CONTIGUITY (Mayer, effect size d≈1.09 — strongest in the literature): put each label/readout immediately ADJACENT to the thing it describes, never in a far-off panel. A value that names an object's state is drawn next to that object, not in a side list.
-
-COHERENCE — STRIP THE EXTRANEOUS (Mayer d≈0.97; PhET removes wire colors etc.): every element either reacts to input or displays a result. No decorative motion, no ornamental shapes, no element that doesn't encode meaning. If deleting it loses no understanding, delete it.
-
-SIGNALING (Mayer d≈0.38): when a control changes a value, briefly highlight the affected element/term (color flash or glow) so attention goes to what changed.
-
-PHYSICAL TRUTH — NO FAKE VARIABLES: every control must map to a real term in a formula and visibly change a real output. Never invent a topical-sounding-but-inert variable (the "Contact Surface" slider on Newton's third law was exactly this bug — it affects nothing in F = -F and must not exist). If a variable drives no formula, delete it. Three honest controls beat four with one lie — the learner WILL move it and learn something false.
-
-REAL UNITS ONLY — NEVER PIXELS, NEVER BARE NUMBERS: every readout is a named quantity with a real unit (N, m/s², kg, m, %, $, °). Declare a world scale (e.g. const PX_PER_M = 50) and convert: show "Separation: 3.1 m", never "154 px"; show "Acceleration: 3.2 m/s²", never "Resulting Motion: 7.12".
-
-SOLID OBJECTS CANNOT OVERLAP (the intertwining-circles bug): if two bodies are drawn as solid, they must collide, not pass through each other. Use circle-circle resolution every frame, including during drag:
-  const dx=B.x-A.x, dy=B.y-A.y, dist=Math.hypot(dx,dy)||0.0001, minDist=A.r+B.r;
-  if (dist < minDist) {
-    const nx=dx/dist, ny=dy/dist, overlap=(minDist-dist);
-    // push each out by half the overlap (or push only the non-dragged one if one is grabbed)
-    A.x-=nx*overlap/2; A.y-=ny*overlap/2; B.x+=nx*overlap/2; B.y+=ny*overlap/2;
-  }
-  When the learner drags one body into another, the dragged one stops at contact (clamp it to minDist along the normal) — they touch and exert force, they never interpenetrate.
-
-DRAGGABLE AFFORDANCES (Norman/Shneiderman): every grabbable object signals it — cursor 'grab' on hover, 'grabbing' while dragging, plus a subtle hover glow/shadow. Hit radius ≥ 24px for touch. Position updates synchronously with the pointer (no lag).
-
-━━━ SCENE CONTENT = THE LITERAL TOPIC (this overrides every aesthetic note below) ━━━
-The 3D world must DEPICT "${design.topic}" literally. The "NASA / cinematic" references below describe RENDERING QUALITY ONLY (good lighting, fog, glass HUD, smooth camera) — they are NOT instructions to build a space scene. Do NOT add planets, orbits, spacecraft, "Voyager", rovers, or starfields unless the topic is GENUINELY about astronomy/space.
-• Language lab (e.g. Telugu, Spanish): the scene is built from large legible 3D LETTERS/CHARACTERS/WORDS the learner drags and matches, audio-waveform ribbons, translation cards that snap together — NOT planets.
-• History/literature/art lab: timelines, 3D artifacts, document panels, scenes — NOT planets.
-• If you catch yourself drawing an unlabeled sphere called "Body" or a generic orbit, STOP — that means you defaulted to space instead of depicting the real topic. Build the real subject instead.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-CHOOSE THE RIGHT MEDIUM — 3D IS NOT ALWAYS CORRECT:
-
-Pick 2D (D3/SVG/canvas) or 3D (Three.js) based on what the topic actually IS — never default to 3D out of habit:
-- Use 2D (D3 chart/SVG as the PRIMARY visual) when the concept is fundamentally a chart, curve, distribution, or dataset the learner reads on axes: compound interest, supply & demand, sampling distributions, population growth curves, budget tradeoffs, any "value over time/inputs" topic. A 3D mesh sitting on top of axes makes data unreadable — never let geometry occlude a chart.
-- Use 3D (Three.js as the PRIMARY visual) when the concept is spatial, physical, or about objects in space: projectile motion, orbital mechanics, molecular structure, anatomy, pendulums, vectors, anything the learner manipulates as a literal 3D object.
-- Either is fine for emergent/agent-based or sequential-process topics — pick whichever depicts the literal topic most legibly; Three.js may render flat/orthographic if that reads better than perspective.
-- If you chose 2D, Three.js becomes OPTIONAL decorative chrome only (subtle particles, ambient glow) — it must NEVER block, underlap z-order, or compete with the chart/data layer. When in doubt, leave Three.js out entirely; a clean D3/SVG lab beats a cluttered hybrid.
-
-WHEN 3D IS THE PRIMARY VISUAL (cinematic WebGL production quality: geometry-rich worlds, atmospheric fog, smooth camera motion, glass HUD overlays, particle dust, emissive accents — applied to the LITERAL TOPIC, never a space scene unless the topic is space):
-
-- Load: <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-- Also load GSAP for cinematic camera/object transitions; OrbitControls (from three/examples) for optional orbit
-- Scene fills the viewport — dark UI palette: bg #050508, fog #1a0800, accent #E85D04, copper #D4A574, ice HUD #4CC9F0 (these are the app's THEME COLORS, not a space setting)
-- Environment: fog (FogExp2), particle dust (Points), animated rim light, and a backdrop that FITS THE TOPIC (a classroom, a board, a map, a stage — a starfield ONLY for space topics)
-- Camera: cinematic — slow idle drift, smooth lerp on changes, dramatic zoom on aha moments
-- HUD: floating glass panels (backdrop-filter blur) for controls/readouts — NASA mission-control aesthetic
-- TOPIC FIDELITY: 3D world MUST match the topic literally. Basketball = court, hoop, ball arc (TubeGeometry trail), release angle°, power, distance m. Waves = 3D ripple surface. NEVER generic empty grid.
-- VISUAL REFERENCE — cinematic production quality (Pablo Coronel craft level): MeshStandardMaterial with emissive accents, FogExp2 atmosphere, dust particles, warm directional + cool rim PointLight, ACESFilmicToneMapping, toneMappingExposure 1.2. Labs must feel like a real, polished place built FROM THE TOPIC — NOT flat UI mockups, NOT placeholder cubes, and NOT a generic space scene.
-- REAL OBJECTS: build recognizable 3D meshes for EVERY topic element. Use procedural textures via CanvasTexture where needed (wood court grain, pebbled basketball, grass field). Never use untextured gray boxes as stand-ins.
-- Sports/projectile: show optimal arc as ghost reference line; learner adjusts angle/power/distance; ball flies in real-time physics
-- Interaction: raycasting, 3D aim handles, HUD sliders updating meshes/materials live
-
-WHEN 2D IS THE PRIMARY VISUAL (D3/SVG production quality — this is NOT a fallback, it is the correct choice for chart-shaped topics):
-
-- Full-viewport SVG with clearly labeled axes (units in the axis label, not just numbers).
-- Two visually distinct curves/series when comparing (target vs learner's model): bright solid for the learner's live result, faded/dotted for a reference/target.
-- Smooth D3 transitions (150-300ms ease) on every redraw — never a hard jump-cut when a slider moves.
-- Same dark theme/accent colors as the 3D path (bg #050508, accent #E85D04, ice HUD #4CC9F0) so the lab still feels like one product.
-- Optional: a thin decorative Three.js/CSS particle layer BEHIND the SVG (lower z-index, low opacity) for ambience — never in front of, or touching, the data.
-
-FIXED LAYOUT SKELETON — every lab (2D or 3D) uses the same zones so nothing is ad-hoc or confusing:
-- Title bar (top): topic name + one-line goal.
-- Zone B — main stage (center, largest area): the primary visual (3D scene OR D3 chart). This is the only place complex visuals live.
-- Zone A — controls/HUD (docked left or right, fixed width): sliders/buttons/toggles, never floating loose over Zone B.
-- Readout panel (pinned within Zone A or a thin strip under the title): live numeric/categorical results, formula/principle panel.
-- HARD RULE — NO OVERLAP: Zone A must never visually cover Zone B. No control, panel, or decorative mesh may sit on top of the chart/3D stage such that any axis, curve, mesh, or label becomes hard to read. If a panel must float over the stage (e.g. a modal win-card), it appears only momentarily and dismisses, never persists during normal interaction.
-
-CLICK-LAYERING CONTRACT — "nothing is clickable" is the #1 fatal bug; prevent it EXACTLY like this:
-A full-viewport Three.js/canvas renderer sits ON TOP of your HUD in the stacking order by default and SILENTLY SWALLOWS every click meant for a slider/button — the controls look fine but do nothing. You MUST layer explicitly:
-  • Canvas/renderer.domElement: position:fixed; inset:0; z-index:0;  (the bottom layer)
-  • Every HUD/control container (Zone A, readouts, mission bar, buttons): position:relative or fixed with z-index:10 AND pointer-events:auto.
-  • If the canvas itself needs NO direct interaction (all input comes from DOM sliders/buttons), set the canvas pointer-events:none so clicks pass straight to the HUD.
-  • If the canvas DOES need interaction (dragging a 3D object via raycaster), keep canvas pointer-events:auto but ensure every HUD element has a HIGHER z-index so it still receives its own clicks.
-SELF-TEST before returning: mentally click each slider and button — does a DOM element with pointer-events:auto and a z-index above the canvas sit under the cursor? If the canvas is on top with pointer-events:auto and no HUD layer above it, the lab is BROKEN.
-
-WIRING CONTRACT — "it's static / nothing happens" is just as fatal:
-Every control MUST have an event listener that writes to state, and the animate() loop MUST read state every frame (see ANIMATION-LOOP CONTRACT below). A slider with no 'input' listener, or a sim whose animate() never started (animate() not called once at the end), produces exactly this dead screen. Before returning: every slider has addEventListener('input',...), every button has addEventListener('click',...), and animate() is invoked once to start the loop.
-
-ANIMATION POLISH — motion must read as professional, not janky:
-- Durations: small UI transitions 150-200ms, larger/full-stage transitions 300-400ms. Exits are shorter than entrances.
-- Easing: entrances use ease-out (fast start, gentle settle); exits use ease-in; everything else uses ease-in-out. Never linear easing for discrete UI motion (linear is fine only for continuous idle motion like a slow ambient rotation).
-- Stagger related elements entering together by ~20-50ms each — never move a whole group in perfect unison, it looks cheap.
-- CSS animations: animate ONLY transform and opacity (never top/left/width/height — those cause layout reflow/jank).
-- Three.js camera moves: use GSAP tweens (gsap.to(camera.position, {...duration, ease:"power2.out"})) or a damped lerp scaled by dt — never an instant snap cut and never a raw per-frame lerp that ignores dt (that runs at different speeds on different frame rates).
-
-CONTROL-BOUNDS CONTRACT — controls must obey the physics of the topic, not be wide-open:
-"A slider that goes anywhere / a button that does anything" makes the lab feel broken and lets the learner reach nonsense states. Every control MUST be constrained to values that are MEANINGFUL for THIS topic:
-  • Sliders: set min, max AND step to the real domain. e.g. probability 0–1 step 0.01; pH 0–14 step 0.1; interest rate 0–20(%) step 0.25; an angle 0–90° step 1. Never leave a slider at the default 0–100 if the concept's real range is different.
-  • Clamp in code too: in the 'input' handler, clamp state to the valid range so keyboard/edge cases can't escape it (state.x = Math.min(max, Math.max(min, +e.target.value))).
-  • Disable controls that don't apply in the current mode: btn.disabled = true and visually dim them (opacity:.4; cursor:not-allowed) rather than letting them do nothing silently. Re-enable when they become relevant.
-  • Discrete choices (an allele, an element, a phase) must be a fixed set of buttons/options — never a free slider that can land between valid values.
-  • If a value is physically impossible (negative mass, >100% efficiency), the control must not be able to produce it — bound it.
-
-AFFORDANCE & ROLE CONTRACT — the learner must instantly know WHAT each control does and HOW it impacts the system:
-Every interactive element carries an explicit, visible role. Unlabeled sliders/objects are rejected.
-  • Each control gets a text label naming (a) the action verb, (b) the thing acted on, and (c) the effect. Format: "<verb> <noun> → <what changes>". e.g. "Drag the ball → changes launch angle", "Slide Rate → faster growth", "Click an allele → place it in the Punnett square".
-  • Draggable canvas objects show a grab cursor (cursor:grab → grabbing) AND a small floating CSS2D hint ("drag me") on first load that fades after the first interaction.
-  • Every control sits next to a LIVE readout of its current value and its consequence, so cause→effect is never a mystery (e.g. "Rate: 5% → doubles in ~14 yrs").
-  • Use the verb set deliberately and match the implementation: DRAG (pointer move on canvas), MOVE/SLIDE (range input), CLICK/PLACE (discrete action), TOGGLE (boolean), DECIDE/CHOOSE (pick one of a set). The label's verb MUST equal the actual interaction wired up.
-
-MANDATORY CONTROLS LEGEND — this is REQUIRED and is the #1 thing labs keep missing; build it EXACTLY:
-A persistent, always-visible panel (docked in Zone A, titled "Controls" or "How to play") that ENUMERATES every interactive element as its own line. This is a structural DOM element, not optional inline hints. Each line is:
-    <icon/swatch>  <NAME> — <VERB> it → <the exact effect on the sim>
-e.g.
-    🎚️  Launch Angle — SLIDE → raises/lowers the arc of the shot
-    🟠  The Ball — DRAG on the court → sets where you shoot from
-    🔘  Slow-Mo — TOGGLE → replays the last shot frame-by-frame
-RULES for the legend:
-  • There must be exactly ONE legend line per interactive element in interaction_palette — no control may exist on screen without a corresponding legend line, and no legend line may describe a control that isn't wired.
-  • State the GOAL as the first line of this panel ("GOAL: sink 3 shots in a row"), then list the controls.
-  • Keep each line ≤ 8 words after the verb. Concrete effect, not vague ("changes the graph" is BANNED — say "steepens the growth curve").
-  • The legend stays visible during play (it may collapse to an icon the learner can re-open, but the goal line stays). Never hide all instructions after load.
-SELF-TEST: count the interactive elements on screen, then count the legend lines. If they don't match 1:1, the lab is INCOMPLETE — add the missing lines.
-
-ONBOARDING CONTRACT — the learner must never face a blank, unexplained lab:
-  • A short "How this works" strip is visible on load (max 2 lines): what the lab shows + the very first thing to try (use design.spec.first_move). It may auto-dismiss after the first interaction or sit pinned in the title area — but it is ALWAYS present at t=0.
-  • The GOAL is stated in one line at the top ("Match the offspring ratio to 3:1") and a progress/mission meter shows how close they are — so there is always a clear objective, never aimless poking.
-  • LEARNING OBJECTIVES — render a small "🎯 Objectives" panel (collapsible, in a HUD corner) with EXACTLY 2-3 outcome-based bullets describing what the learner will be able to DO after this lab, phrased as observable skills, not topics. Start each with an action verb (Predict, Compare, Explain, Derive, Identify, Trade off) and tie it to the actual manipulation, e.g. "Predict how nanoparticle size shifts emission color" — NOT "Learn about quantum dots". Each objective must map to something the learner physically does in THIS lab and to the aha_trigger. Use design.spec.learning_goal + the key variables to write them. Keep each bullet under 12 words. These objectives are the contract for what the lab teaches — make them sharp, specific, and measurable.
-  • A legend names every distinct visual element on the stage (what each color/shape/mesh represents). No unexplained symbols.
-  • INTRO OVERLAY RULE — if you use a full-screen "Start Exploring" or "Begin" overlay, its dismiss button MUST be wired: use a plain inline onclick on the element itself (e.g. <button onclick="document.getElementById('intro').style.display='none'">Start Exploring</button>) AND add a separate addEventListener('click',...) as a backup — never rely on z-index alone. The overlay div must have z-index≥100 AND pointer-events:auto so it can receive the click. PREFERRED pattern (no JS wiring issues): skip the overlay entirely and use the 2-line hint strip pinned at the bottom-center of the HUD instead — it is always visible and never blocks interaction.
-  • SELF-TEST before returning: a first-time user with zero instructions from you should know, within 3 seconds, (1) what they're looking at, (2) what to touch first, and (3) what success looks like. If any of the three is unclear, add the missing label/strip.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VISIBILITY CONTRACT — a black scene is a broken lab
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The most common Three.js failure is a scene that renders nothing because lighting is missing or objects spawn off-camera. Prevent it with this mandatory setup:
-
-LIGHTING — always include ALL THREE, copy exactly:
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);   // bright ambient so nothing is pitch black
-  scene.add(ambientLight);
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-  dirLight.position.set(5, 10, 7);
-  scene.add(dirLight);
-  const rimLight = new THREE.PointLight(0x4CC9F0, 0.8, 30);    // ice-blue rim
-  rimLight.position.set(-5, 3, -5);
-  scene.add(rimLight);
-
-CAMERA — position it so objects at the origin are visible:
-  camera.position.set(0, 4, 10);   // or topic-appropriate, but NEVER at origin looking at origin
-  camera.lookAt(0, 0, 0);
-
-MATERIALS — never use MeshStandardMaterial without emissive when in doubt; use MeshLambertMaterial or add emissive:
-  new THREE.MeshStandardMaterial({ color: 0x9B59B6, emissive: 0x4A1070, emissiveIntensity: 0.4 })
-  Every mesh must be visible under the ambient light above — if it's black, increase emissiveIntensity.
-
-STARTUP CHECK — the very first frame must show something the learner can grab. Place all interactive objects within camera view at (x:0±3, y:0±2, z:0) by default. Never spawn objects at (0,0,0) if that's inside another mesh, and never off-screen.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THE ANIMATION-LOOP CONTRACT (this is why labs feel dead — follow it EXACTLY)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-A Three.js scene only moves when state is mutated inside a self-rescheduling per-frame loop. Most broken labs render once and freeze, or wire a slider straight to a render call. Build it like this, with NO exceptions:
-
-1. ONE shared mutable state object holds everything that can change:
-     const state = { /* positions, velocities, target, score, matchPct, won:false, ...topic values */ };
-   ⚠️ CONST vs LET — THE #1 CAUSE OF "Assignment to constant variable" CRASHES:
-   • const means the binding cannot change — NEVER use it for values you mutate in update() or event handlers.
-   • All numeric counters, scores, positions, angles, velocities, and flags that animate() or update() writes to
-     MUST be either (a) properties on the shared state object (state.score += 1 is correct) or (b) declared with let.
-   • NEVER do:  const score = 0; ... score++;   — this throws "Assignment to constant variable" every frame.
-   • ALWAYS do: let score = 0;   or put it in state:   const state = { score: 0 }; ... state.score++;
-   SELF-TEST: scan your output for any const variable that appears on the LEFT-HAND side of =, +=, -=,
-   ++, --, or inside a for-loop body that reassigns it. If you find one, change it to let or move it into state.
-2. ONE animation function is the ONLY place rendering happens:
-     const clock = new THREE.Clock();
-     function animate(){
-       requestAnimationFrame(animate);
-       const dt = clock.getDelta();              // call getDelta EXACTLY ONCE per frame
-       update(dt);                                // mutate meshes FROM state, scaled by dt
-       if (controls) controls.update();           // damped OrbitControls are DEAD without this
-       checkWin();                                // auto-detect win every frame
-       renderer.render(scene, camera);
-       if (labelRenderer) labelRenderer.render(scene, camera);
-     }
-     animate();
-3. EVERY UI control writes ONLY to state — it must NEVER render directly:
-     slider.addEventListener('input', e => { state.velocity = +e.target.value; });   // loop reacts next frame
-     Drag/keyboard handlers also only set state.* . The loop is what moves the meshes.
-4. update(dt) must produce VISIBLE motion every frame the input is non-neutral: move a mesh.position, rotate, scale, lerp a material color, advance a progress meter. If moving a control changes no mesh on screen, the lab is BROKEN — wire it or delete it.
-5. checkWin(): when state hits the target (e.g. state.matchPct >= 95), set state.won=true ONCE, fire a particle burst + gsap.to(camera) zoom + show a grade + postMessage labCheck. The mission meter must be REACHABLE: verify there exist control values that drive it to 100%. A mission stuck at 0% no matter what the learner does is the #1 failure — make the win mathematically achievable and show progress climbing as they get closer.
-6. LABEL every interactive/important mesh with CSS2DRenderer + CSS2DObject (or a Sprite) showing its real name/value ("Codon", "tRNA", "$4,820") — NEVER an unnamed "Body" sphere. Import: CSS2DRenderer from the three addons; new CSS2DObject(div); mesh.add(label).
-7. Frame-rate independence: all motion uses dt (e.g. mesh.position.x += state.v * dt). Never bare per-frame increments.
-8. Output ONE complete, runnable HTML file — no "// ..." placeholders, no TODO. Use Three.js r128 from the CDN exactly as given (do NOT invent version strings like r165).
-
-CONCRETE-FIRST (PhET + Nicky Case, proven): the learner's FIRST action is hands-on within 3 seconds — drag/aim/place something — BEFORE any explanation. Don't describe the system; let them run it and watch it react. The core action they repeat must BE the concept itself (intrinsic integration — drag the right anticodon = IS learning translation), not a points wrapper around a quiz.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
+━━━ REQUIRED INTERACTIONS — implement every one ━━━
 TOPIC: ${design.topic}
 CONCEPT TYPE: ${archetype}
 ENTRY MISCONCEPTION: "${design.spec.entry_misconception || ""}"
-FIRST MOVE (what to try first — it should surprise them): "${design.spec.first_move || ""}"
+FIRST MOVE (try first; should surprise): "${design.spec.first_move || ""}"
 LEARNING GOAL: ${design.spec.learning_goal}
 VISUAL METAPHOR: "${design.spec.visualMetaphor}"
-${design.spec.direct_manipulation ? `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PRIMARY DIRECT MANIPULATION (NOT a slider — the learner grabs this on the canvas):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${design.spec.direct_manipulation}
-` : ""}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REQUIRED INTERACTIONS — implement every one of these:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${(design.spec.interaction_palette || []).map(p => `  [${p.type}] ${p.element} → ${p.effect}`).join("\n") || `  [draggable] at least one canvas object the learner grabs and drags
+${design.spec.direct_manipulation ? `PRIMARY DIRECT MANIPULATION (not a slider — grabbed on the canvas): ${design.spec.direct_manipulation}` : ""}
+${(design.spec.interaction_palette || []).map(p => `  [${p.type}] ${p.element} → ${p.effect}`).join("\n") || `  [draggable] at least one canvas object to grab and drag
   [click-spawn] clicking the canvas creates a visible effect
   [toggle-button] at least one toggle that flips a boolean and changes the visual`}
 
-INTERACTION CODE PATTERNS — copy these exact patterns for each type:
+INTERACTION CODE PATTERNS — copy exactly:
+[draggable] grab + drag with grab/grabbing cursor + solid-collision clamp:
+  let drag=null; const HIT=Math.max(28,state.obj.r);
+  canvas.addEventListener('pointerdown',e=>{ const{mx,my}=canvasPt(e); if(Math.hypot(mx-state.obj.x,my-state.obj.y)<HIT){ drag={ox:state.obj.x-mx,oy:state.obj.y-my}; canvas.style.cursor='grabbing'; canvas.setPointerCapture(e.pointerId);} });
+  canvas.addEventListener('pointermove',e=>{ const{mx,my}=canvasPt(e); if(drag){ state.obj.x=mx+drag.ox; state.obj.y=my+drag.oy; for(const other of state.solids){ if(other===state.obj)continue; const dx=state.obj.x-other.x,dy=state.obj.y-other.y,d=Math.hypot(dx,dy)||0.0001,min=state.obj.r+other.r; if(d<min){const nx=dx/d,ny=dy/d; state.obj.x=other.x+nx*min; state.obj.y=other.y+ny*min;} } } else { canvas.style.cursor=Math.hypot(mx-state.obj.x,my-state.obj.y)<HIT?'grab':'default'; } });
+  canvas.addEventListener('pointerup',()=>{ drag=null; canvas.style.cursor='default'; });
+  function canvasPt(e){ const r=canvas.getBoundingClientRect(); return{mx:(e.clientX-r.left)*(canvas.width/r.width),my:(e.clientY-r.top)*(canvas.height/r.height)}; }
+  // set CSS touch-action:none on the canvas so dragging doesn't scroll.
+[keyboard-steer] arrow/WASD steer (required whenever there's a movable object — rocket, particle, organism). Track HELD keys so holding acts every frame:
+  const held=new Set();
+  window.addEventListener('keydown',e=>{ if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyA','KeyS','KeyD'].includes(e.code)){ held.add(e.code); e.preventDefault(); } });
+  window.addEventListener('keyup',e=>held.delete(e.code));
+  // in update(dt): if(held.has('ArrowUp')||held.has('KeyW')) applyThrust(dt); etc.
+  Hint chip: "← → ↑ ↓ to steer (click the play area first)" (iframe needs focus). ALWAYS mirror with on-screen ◀▲▼▶ (pointerdown=press/pointerup=release feeding the same held Set) so phones get the same game.
 
-[draggable] Grab and drag a canvas object (with grab/grabbing cursor + solid-collision clamp):
-  let drag = null;
-  const HIT = Math.max(28, state.obj.r); // ≥24px touch target
-  canvas.addEventListener('pointerdown', e => {
-    const {mx, my} = canvasPt(e);
-    if (Math.hypot(mx - state.obj.x, my - state.obj.y) < HIT) {
-      drag = { ox: state.obj.x - mx, oy: state.obj.y - my };
-      canvas.style.cursor = 'grabbing';
-      canvas.setPointerCapture(e.pointerId);
-    }
-  });
-  canvas.addEventListener('pointermove', e => {
-    const {mx,my}=canvasPt(e);
-    if (drag) {
-      state.obj.x = mx + drag.ox; state.obj.y = my + drag.oy;
-      // SOLID COLLISION: if obj would overlap another solid body, clamp it to contact (no interpenetration)
-      for (const other of state.solids) {
-        if (other === state.obj) continue;
-        const dx=state.obj.x-other.x, dy=state.obj.y-other.y, d=Math.hypot(dx,dy)||0.0001, min=state.obj.r+other.r;
-        if (d < min) { const nx=dx/d, ny=dy/d; state.obj.x=other.x+nx*min; state.obj.y=other.y+ny*min; }
-      }
-    } else {
-      canvas.style.cursor = Math.hypot(mx-state.obj.x,my-state.obj.y)<HIT ? 'grab' : 'default'; // hover affordance
-    }
-  });
-  canvas.addEventListener('pointerup', () => { drag=null; canvas.style.cursor='default'; });
-  function canvasPt(e) { const r=canvas.getBoundingClientRect(); return { mx:(e.clientX-r.left)*(canvas.width/r.width), my:(e.clientY-r.top)*(canvas.height/r.height) }; }
-  // Touch: set CSS touch-action:none on the canvas so dragging doesn't scroll the page.
+CONCEPT-TYPE → INTERACTION (classify "${design.topic}", then build the matching form):
+  Quantitative/functional → slider(s) + live linked chart + a concrete real referent (money stacks growing, not just a curve).
+  Dynamic physical → learner-controlled rAF animation + live graph; draggable starting conditions.
+  Emergent/agent-based → MANY visible individual entities on local rules + controls to perturb; macro pattern emerges. NEVER one slider on an aggregate curve.
+  Sequential process → learner-paced step-through ("next"), each step highlighting the one change. NEVER autoplay-only.
+  Spatial/geometric → draggable objects with live measurements exposing the invariant.
+  Probabilistic → animate individual trials accumulating into a building histogram; learner sets sample size, runs many.
+  Abstract/relational → sort-into-bins with feedback, or side-by-side contrasts; tradeoffs = a slider that visibly gives up one thing for another.
+  Network/feedback → stocks that visibly fill/drain + flows the learner adjusts + a linked time graph.
 
-STEP 0 — Classify the concept. Decide which type "${design.topic}" is:
-
-- Quantitative/functional (output varies with continuous inputs — e.g. compound interest, supply & demand)
-- Dynamic physical system (evolves over time by physical law — pendulum, orbit)
-- Emergent/agent-based (macro pattern from many interacting entities — natural selection, diffusion, traffic)
-- Sequential process/mechanism (ordered causal chain — photosynthesis, cell division)
-- Spatial/geometric (invariants in space — vectors, transformations)
-- Probabilistic/statistical (variation over many trials — sampling distributions, CLT)
-- Abstract/relational (relations with no spatial form — logical fallacies, tradeoffs)
-- Network/feedback (loops, accumulation, delay — climate feedback, market equilibrium)
-
-[keyboard-steer] Arrow keys / WASD steer the main object like a game — REQUIRED whenever the concept has a movable object (rocket, particle, organism, cursor). Track HELD keys in a Set so holding a key produces continuous action every frame:
-  const held = new Set();
-  window.addEventListener('keydown', e => {
-    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyA','KeyS','KeyD'].includes(e.code)) {
-      held.add(e.code); e.preventDefault();
-    }
-  });
-  window.addEventListener('keyup', e => held.delete(e.code));
-  // Inside update(dt), every frame:
-  //   if (held.has('ArrowUp')||held.has('KeyW'))    applyThrust(dt);   // continuous while held
-  //   if (held.has('ArrowLeft')||held.has('KeyA'))  steerLeft(dt);
-  //   if (held.has('Space')) controls.paused is toggled on keydown only, not here
-  Show a small hint chip on the canvas: "← → ↑ ↓ to steer (click the play area first)" — the iframe needs focus before keys register.
-  ALWAYS mirror every keyboard action with on-screen touch buttons (◀ ▲ ▼ ▶ in a corner of Zone B, pointerdown=press, pointerup=release, feeding the same held Set) so phones get the identical game.
-
-- Quantitative/functional → slider(s) + a live linked chart AND a concrete real-world referent (money stacks growing, not just a curve)
-- Dynamic physical → learner-controlled canvas animation (requestAnimationFrame) + a live linked graph; draggable starting conditions
-- Emergent/agent-based → a canvas with MANY visible individual entities following local rules + controls to perturb the environment; show the macro pattern emerging from the entities. NEVER a single slider on an aggregate curve.
-- Sequential process → a learner-paced step-through ("next" button), each step highlighting the one thing that changes. NEVER autoplay-only.
-- Spatial/geometric → draggable objects with live measurements that expose what stays invariant
-- Probabilistic → animate individual trials accumulating into a building histogram; learner sets sample size and runs many trials
-- Abstract/relational → sort-into-bins with feedback, or side-by-side contrasting cases; for tradeoffs, a slider that visibly gives up one thing to gain another
-- Network/feedback → stocks that visibly fill/drain and flows the learner adjusts + a linked time graph
-
-STEP 2 — Open straight into the interactive sim. The learner's first action is hands-on within 3 seconds — no gate, no modal, no question before they can touch it.
-- Manipulate: the full interactive visual is live immediately on load. Every control produces immediate, visible, meaningful change.
-- Reveal: an explanation of what happened and why — landing as a visible event in the sim, not a paragraph.
-
-STEP 3 — Make it transfer to real life. Tie the concept to a concrete real-world instance the learner can picture (the money in their savings account; the actual orbit of the ISS; a real population of animals). The "aha" should make them see the concept operating in the world, not just on screen.
-
-HARD RULES:
-- The visual must externalize the core mechanism. If you could delete it and lose no understanding, it's decoration — remove it.
-- Strip everything that doesn't encode meaning. No ornamental images, no decorative motion. Color and motion must carry the concept.
-- Any continuous animation gets play/pause/step + speed controls. Open in a near-still state with one obviously-grabbable element.
-- Max ~3 groups of ~3 controls. Labels 1–3 words. Play area visually separate from controls.
-- Single self-contained HTML file, Three.js + GSAP required, zero console errors on first load, works from 360px wide up.
-
-${imageDataUrl ? `You are also given a VISUAL MOCKUP (image) — use ONLY for layout, color, spatial arrangement, overall feel. The behavioral brief below is the source of truth for what the lab DOES. If the image and brief conflict, the brief wins. If the image contains garbled text, fake labels, or nonsensical UI fragments, IGNORE them — implement real, working controls with real labels derived from the brief.
-` : ``}
-TOPIC: ${design.topic}
-LEARNING GOAL: ${design.spec.learning_goal}
-VISUAL METAPHOR: "${design.spec.visualMetaphor}"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BEHAVIORAL BRIEF (build exactly this behavior):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ BEHAVIORAL BRIEF — build exactly this ━━━
 ${labThinking}
 
 VARIABLES THE LEARNER CONTROLS:
 ${vars}
-
-${formulas ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FORMULAS — implement these EXACTLY in JS (no approximations):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${formulas ? `
+FORMULAS — implement EXACTLY in JS (no approximations); every live readout is computed from these and shown as a changing real number:
 ${formulas}
 
-Every live readout in the play area MUST be computed from these formulas. The learner must see the output value changing as a real number.
-` : ""}
-${rules ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-THRESHOLD RULES — trigger these exact visual events:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${rules}
-
-When a rule triggers: animate a golden glow burst on the key canvas element AND show the message text prominently in the play area for 2-3 seconds.
-` : ""}
+FORMULA PANEL (pinned in Zone A or top of Zone B): show the governing equation symbolically; map each control to a symbol ("θ → angle slider"); on input, highlight the corresponding term AND update the computed result live beside it — animation, equation, result all change together. Render with the renderFormula helper (KaTeX + plain-text fallback), never as code.
+HIGHLIGHTABLE TERMS — copy this exact pattern (raw "<span…" text on screen is the #1 formula bug): KaTeX can't highlight a sub-part, so wrap EACH highlightable variable in its OWN renderFormula call with plain HTML around it:
+  <div id="formula-row"><span id="term-v"></span><span> · sin(2</span><span id="term-theta"></span><span>) / </span><span id="term-g"></span></div>
+  <script>renderFormula(document.getElementById('term-v'),'v^2','v²'); renderFormula(document.getElementById('term-theta'),'\\\\theta','θ'); renderFormula(document.getElementById('term-g'),'g','g'); function highlightTerm(id){const el=document.getElementById(id);el.classList.add('flash');setTimeout(()=>el.classList.remove('flash'),400);}</script>
+  Use .innerHTML when the string has tags, .textContent only for plain numbers/strings — never assign a "<span…>" string with .textContent (that prints literal tags).` : `
+PRINCIPLE PANEL (NON-QUANTITATIVE topic — do NOT invent a formula, units, or numeric "score"; forcing math onto language/history/art/ethics/music is a FAILURE): render the governing rule in plain words ("Spanish adjectives agree with the noun's gender and number"). Each control maps to a clause — highlight it the moment the learner engages it. Readouts are CATEGORICAL ("Tense: past", "Match: correct ✓", "Mood: minor"), never fake units. The "result" they watch is the conjugated word / assembled argument / resolved chord / matched translation — a concrete outcome, not a curve.`}
+${rules ? `
+THRESHOLD RULES — trigger these exact visual events (golden glow burst on the key element + message shown prominently 2–3s):
+${rules}` : ""}
 SUCCESS CONDITION: ${design.spec.success_condition}
 REAL-WORLD PAYOFF: "${design.spec.real_world_payoff || ""}"
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TRUTH — nothing on screen may be false or meaningless:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${formulas ? `• Every readout shows a NAMED quantity with a REAL unit: "Acceleration: 3.2 m/s²", "Balance: $4,820". NEVER a bare number ("Resulting Motion: 7.12") and NEVER pixels ("Separation: 154 px") — define a world scale (e.g. 50 px = 1 m) and always display converted physical values.
-• Every control must visibly change an output through one of the formulas. If moving a control changes nothing the learner can see, DELETE the control — a dead or fake control teaches something false.
-• Only implement variables that appear in the formulas. If the brief or spec includes a variable that drives no formula, drop it.` : `• This is a NON-QUANTITATIVE topic — do NOT fabricate units (m/s², kg), a numeric "score", or a fake formula. Readouts are CATEGORICAL/qualitative and meaningful: "Tense: past", "Register: formal", "Argument: valid ✓", "Key: A minor".
-• Every control must visibly change a real, observable OUTCOME (the word changes, the argument reassembles, the chord resolves, the translation matches). If moving a control changes nothing the learner can see, DELETE it — a dead control teaches something false.
-• Every label must be true to the domain. Never show a meaningless number; if a value isn't a real quantity in this subject, express it as a category, state, or correctness mark instead.`}
+REAL SCENARIO MATCHING (if the brief's section J gives a real scenario — it usually does): draw the real instance as a fixed TARGET from the first frame (ghost curve/dotted trajectory/faded historical line, real name + units; D3 for data on axes); the learner's controls drive THEIR model on the same axes, visually distinct (target faded/dotted, model bright); a live MATCH% readout = the mission meter; crossing threshold: the equation reveal with their discovered values IS the celebration ("You found it: A = 1000·(1.07)^t") + win + labCheck postMessage. The learner reverse-engineers reality; the formula arrives as the answer they earned. If section J was skipped (non-quantitative topic), the mission from the brief's section G carries the lab instead — never force a fake dataset.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXPLAIN EVERYTHING ON SCREEN (non-negotiable):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Every entity, dot, shape, color, or symbol MUST be explained with a visible legend or inline label BEFORE or AS the learner first sees it.
-• Show a compact legend at the top of the play area before the sim starts — e.g. "● = one organism  |  color = trait  |  size = fitness"
-• As the sim runs, show ONE live mechanic line just below the legend that narrates what's happening RIGHT NOW — e.g. "High-fitness organisms reproducing faster…" or "Escape velocity not yet reached — orbit decaying"
-• The learner must never see a moving element without knowing what it represents.
+━━━ PURPOSE MANDATE — the soul of the lab; every element must serve these five ━━━
+ENTRY MISCONCEPTION: "${design.spec.entry_misconception || ""}" → the DEFAULT STATE must INVITE this misconception (a glance-only learner should be tempted to believe it), and within ~10s of the first move it starts to crack.
+FIRST MOVE: "${design.spec.first_move || ""}" → instantly obvious from the UI (highlighted draggable / blinking prompt / on-screen arrow) and doing it produces a SURPRISING result that challenges the misconception.
+AHA TRIGGER: "${design.spec.aha_trigger || ""}" → an unmissable VISUAL EVENT (curve bending, phase flip, collision, threshold crossed with a burst/color-shift/jump) the learner SEES without being told to look — not merely a number changing.
+LEARNING GOAL: "${design.spec.learning_goal || ""}" → stated EXPLICITLY on screen: a goal line in the controls panel AND the reveal text when the aha fires / win is met.
+REAL-WORLD PAYOFF: "${design.spec.real_world_payoff || ""}" → verbatim on the win/reveal card, format "[What you just saw] is why [real-world consequence]", naming something in the learner's world. A vague "now you understand X" fails.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-IMMEDIATE INTERACTION → REVEAL (non-negotiable):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DO NOT show any modal, gate, prediction screen, or "Commit & Start" before the sim. The lab is fully interactive the moment it loads. No blocking UI of any kind before the learner can touch it.
+━━━ PLATFORM CONSTRAINTS — the lab runs in a sandboxed iframe; non-negotiable ━━━
+• ONE self-contained HTML file, inline CSS/JS. Start with <!doctype html>. No localStorage/sessionStorage, no fetch(). Works in sandbox="allow-scripts". Responsive 360px→desktop. Zero console errors on first load.
+• Load a CDN lib ONLY if the concept needs it (don't load what you don't use); each with an inline fallback check. Google Fonts is the one always-on item (system fonts take over if it fails):
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">  // Inter for UI, JetBrains Mono for every number/readout/match%/formula-fallback (tabular numbers feel precise)
+• THREE.JS — only if 3D is primary or a thin decorative layer; always include CSS2DRenderer + OrbitControls addons. REQUIRED WebGL fallback (never a silent black screen) — detect BEFORE creating the renderer and wrap creation in try/catch:
+  function webglOK(){try{const c=document.createElement('canvas');return !!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')));}catch(e){return false;}}
+  if(!webglOK()){document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#120800;color:#E85D04;font:16px system-ui;text-align:center;padding:2rem">This 3D lab needs WebGL. Enable hardware acceleration or try another browser/device.</div>';} else { try{ /* create renderer + run lab */ }catch(e){ document.body.innerHTML='…friendly dark-panel message…'; } }
+• GSAP — always required for cinematic transitions; include a no-op fallback so the lab still runs if it fails: <script>if(typeof gsap==='undefined'){window.gsap={to:(el,o)=>{if(o.onComplete)setTimeout(o.onComplete,(o.duration||0.5)*1000);}};}</script>
+• D3 for data on axes; p5.js only for many-entity 2D overlays on a Three.js scene; Matter.js for collision/gravity physics — each with a fallback check.
+• KaTeX for the formula panel (never raw ASCII math like v^2*sin(2*theta)/g). ⚠️ BACKSLASH ESCAPING — #1 cause of broken equations (a normal JS string EATS backslashes: "\\lambda"→"lambda", and throwOnError:false fails SILENTLY): write EVERY TeX command with String.raw OR doubled backslashes:
+  renderFormula(el, String.raw\`E = \\\\frac{hc}{\\\\lambda}\`, 'E = hc/λ');   // PREFERRED raw template literal
+  renderFormula(el, "E = \\\\\\\\frac{hc}{\\\\\\\\lambda}", 'E = hc/λ');       // or double every backslash in a "…" string
+  NEVER single backslashes in a "…"/'…' string passed to renderFormula. Plain-text fallback uses real Unicode (λ η ² ·). SELF-TEST: any TeX command with a single backslash inside a normal string is BROKEN.
+• CANVAS SIZING (prevents a stretched/blank canvas): set width/height from the element's actual rendered size, never hardcoded —
+  function resizeCanvas(){ canvas.width=canvas.offsetWidth; canvas.height=canvas.offsetHeight; } resizeCanvas(); addEventListener('resize',resizeCanvas);
+  Something meaningful must be drawn within 100ms of load. Use pointer events (pointerdown/move/up) for all dragging (mouse+touch).
+• SELF-IDENTIFYING CHOICE OBJECTS: if the learner must pick/drag/match the CORRECT object among candidates, EACH candidate visibly displays its decision-relevant identity (anticodon, value, name, charge, payload) as a label anchored to it (Sprite/CSS2D for 3D, HTML overlay tracking screen position for 2D), AND the target it matches against is labeled too ("Current codon: AUG"). A pile of identical unlabeled blobs to guess between is a FAILED lab.
+• Include a Reset button. SUCCESS REPORTING (a visible "Check Answer" button evaluates the same condition as the auto-detect, as a fallback):
+  window.parent.postMessage({type:"labCheck",result:{ok:true,score:1,total:1}},"*")   // on success (also show the payoff card)
+  window.parent.postMessage({type:"labCheck",result:{ok:false,score:0,total:1}},"*")  // on failure
+• DO NOT render any multiple-choice quiz, prediction modal, "Commit & Start" gate, or "verify understanding" section — the platform shows its own quiz after the lab.
 
-MANIPULATE:
-• The full interactive visual is live immediately — no intro screen, no prediction step.
-• Every control produces immediate, visible, meaningful change.
-
-REVEAL (triggered by hitting the aha moment or success condition):
-• Flash a card explaining what happened and why — the real concept stated plainly.
-• State the REAL-WORLD PAYOFF as one concrete sentence: "[What you just saw] is why [real-world consequence]."
-• This card appears as a visible event in the sim (slides in, overlays briefly), not as a paragraph below the canvas.
-• After 4 seconds the card fades and the learner can keep exploring.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LIVE CONSEQUENCE BARS — make cause→effect visceral (non-negotiable):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Every lab must show 2–4 live metric bars as horizontal progress bars (0→max) in a panel in Zone A.
-Each metric must be something a real operator in this domain actually tracks (e.g. Revenue, Customer Trust, Carbon Emissions, Reaction Rate — NOT "score" or "progress").
-Every user action (slider move, drag, click) must update the bars IMMEDIATELY with smooth CSS transitions (<300ms).
-Under each bar, show a one-line consequence string that updates to explain WHY the bar moved (e.g. "Higher temperature breaks more molecular bonds → rate spikes"). This text is the pedagogical payload.
-At success/win: compute a verdict tier (S/A/B/C/D) from the final metric values vs real-world thresholds and show it prominently — "Grade: A — You optimized for both growth and sustainability."
-This is the most important engagement mechanism: the bar animating fast makes the learner wait to see where it lands. Do not skip it.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${formulas ? `FORMULA PANEL — teach the rule, not just the animation (QUANTITATIVE topic):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The formulas below are the governing equations. The learner must see them, not just watch the result.
-Render a formula panel (pinned inside Zone A or at the top of Zone B):
-• Show the governing equation symbolically (e.g. R = v²·sin(2θ) / g).
-• Each slider/control maps to a symbol in the equation — label that mapping clearly (e.g. "θ → angle slider").
-• When the learner moves a control, HIGHLIGHT the corresponding term in the equation (color flash or bold) AND update the computed result live beside the equation.
-• The learner sees: the animation, the equation, and the result number — all changing together as linked representations of the same thing.
-• Render equations with the renderFormula helper (KaTeX + plain-text fallback) so they look like a textbook, never like code.
-
-HIGHLIGHTABLE TERMS — copy this exact pattern (this is the #1 source of broken labs showing raw "<span..." text instead of a rendered formula):
-  KaTeX cannot highlight a piece of an equation by itself, so wrap EACH highlightable variable in its OWN renderFormula call placed inline with plain text/HTML around it — never hand-build a span tag as a string and dump it into the same element KaTeX renders into.
-  <div id="formula-row">
-    <span id="term-v"></span><span> · sin(2</span><span id="term-theta"></span><span>) / </span><span id="term-g"></span>
-  </div>
-  <script>
-    renderFormula(document.getElementById('term-v'), 'v^2', 'v²');
-    renderFormula(document.getElementById('term-theta'), '\\\\theta', 'θ');
-    renderFormula(document.getElementById('term-g'), 'g', 'g');
-    function highlightTerm(id){ const el=document.getElementById(id); el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'), 400); }
-    // on slider input: highlightTerm('term-v');
-  </script>
-  CRITICAL: set HTML content with .innerHTML, never .textContent, when the string contains tags — .textContent prints the literal tag characters on screen instead of rendering them. If you are not inserting any tags (just a plain number/string), use .textContent. Never hand-assemble a template string containing "<span...>" and assign it with .textContent — that is exactly the bug that produces visible raw tag text.
-FORMULAS (implement exactly, highlight live):
-${formulas}` : `PRINCIPLE PANEL — teach the rule, not just the animation (NON-QUANTITATIVE / humanities topic):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-This topic has NO formula — do NOT invent a fake equation, fake units, or fake numeric "score". Forcing math onto a language, history, art, ethics, music, or literature topic is a FAILURE. Instead:
-• Render a PRINCIPLE panel stating the governing rule in plain words (e.g. "Spanish adjectives agree with the noun's gender and number", "A counterargument concedes a point, then refutes it", "Minor keys are built on the natural minor scale: W-H-W-W-H-W-W").
-• Each control/choice the learner makes maps to a part of that rule — HIGHLIGHT the relevant clause of the principle (color flash/bold) the moment their action engages it, so they see WHICH part of the rule they just exercised.
-• Readouts are CATEGORICAL or qualitative, not numeric units: "Tense: past", "Tone: formal", "Match: correct ✓", "Mood: minor". Never "3.2 m/s²" for a humanities topic, and never a bare number with no meaning.
-• The "result" the learner watches change is the conjugated word, the assembled argument, the resolved chord, the matched translation — a concrete linguistic/historical/artistic OUTCOME, not a plotted curve.`}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REAL SCENARIO MATCHING — reality first, equation earned:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-If the brief's section J provides a real scenario (it almost always does), build the lab around matching it:
-• Draw the real instance as a fixed TARGET on the canvas from the moment the sim appears — a ghost curve, dotted trajectory, or faded historical line, labeled with its real name and units. D3 is the right tool when this is data on axes.
-• The learner's controls drive THEIR model, drawn live on the same axes/space as the target. Both visible at once, visually distinct (target = faded/dotted, model = bright).
-• Show a live MATCH readout (e.g. "Match: 84%") computed from the gap between model and target. The match readout can double as the mission progress meter.
-• When the match crosses the threshold: the equation reveal IS the celebration — highlight the formula with the learner's discovered values plugged in ("You found it: A = 1000·(1.07)^t"), fire the win state and labCheck postMessage.
-• This replaces "equation first, animation second" — the learner reverse-engineers reality, and the formula arrives as the answer they earned.
-If section J was skipped (non-quantitative topic), the mission from the brief's section G carries the lab instead — do not force a fake dataset.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-MISSION GAMEPLAY — the lab is a game the learner plays to WIN, not a sandbox to poke at:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Implement the mission from section G of the brief exactly. Requirements:
-• THE TARGET IS DRAWN IN ZONE B: a visible goal state on the canvas itself — a glowing target ring, a finish zone, a threshold line the learner must reach or stay inside. Not just text in the banner.
-• LIVE PROGRESS toward the goal: the target glows brighter / a progress meter fills as the learner gets close. A timer or counter where the mission requires holding a state ("hold the orbit for 3 s" → show 0.0/3.0 s counting).
-• STEER OR GRAB, don't just slide: the learner's primary action is IN the play area — dragging the object, aiming and releasing, or steering with arrow keys via the [keyboard-steer] pattern. Panel sliders are for secondary quantities only.
-• NEAR-MISS FEEDBACK: when an attempt fails, the canvas shows WHY in the concept's own terms ("too fast — escaped gravity", "not enough current — bulb stayed dark") for 2 s, then lets them retry instantly. Failing must teach.
-• WIN STATE = SUCCESS CONDITION: completing the mission triggers the celebration (golden burst, "MISSION COMPLETE"), the real-world payoff card, and the labCheck postMessage with ok:true. The mission must be winnable ONLY by actually using the concept's mechanism — never by random fiddling or waiting.
-• AUTO-DETECT the win — the moment the mission is achieved, celebrate immediately. The "Check Answer" button is a fallback that evaluates the same condition on demand.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PLATFORM CONSTRAINTS (the lab runs inside a sandboxed iframe — these are non-negotiable):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• ONE complete self-contained HTML file. Inline CSS and JS.
-• CDN libraries (load from jsDelivr; include inline fallback check):
-  - Three.js r128 — load ONLY if you chose 3D as the primary visual, or want a thin decorative chrome layer behind a 2D chart. Chart-shaped topics (compound interest, supply/demand, sampling distributions, etc.) should skip Three.js and use D3 as the primary engine instead — see "CHOOSE THE RIGHT MEDIUM" above. ALWAYS include the addons if using Three.js:
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <script>if(typeof THREE==='undefined'){document.body.innerHTML='<p style="color:#E85D04;padding:2rem">Three.js failed to load</p>';}</script>
-  • WEBGL FALLBACK (REQUIRED when using Three.js): the user's device may not support WebGL (old phones, disabled hardware acceleration, locked-down machines). NEVER let the lab show a silent black screen. Detect support BEFORE creating the renderer and wrap renderer creation in try/catch. On failure, render a centered, friendly message on a dark panel — not a blank canvas — e.g.:
-    function webglOK(){try{const c=document.createElement('canvas');return !!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')));}catch(e){return false;}}
-    if(!webglOK()){document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#120800;color:#E85D04;font:16px system-ui;text-align:center;padding:2rem">This 3D lab needs WebGL. Try enabling hardware acceleration in your browser settings, or open it on a different device/browser.</div>';}
-    else{ try{ /* create WebGLRenderer + run the lab here */ }catch(e){ document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#120800;color:#E85D04;font:16px system-ui;text-align:center;padding:2rem">Couldn\\'t start the 3D view on this device. Try another browser or enable hardware acceleration.</div>'; } }
-  - GSAP — ALWAYS REQUIRED for cinematic transitions:
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
-  - p5.js for animated many-entity sims ONLY if layering 2D overlay on Three.js scene:
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
-    <script>if(typeof p5==='undefined'){document.write('<p style="color:red">p5.js failed to load — check network</p>');}</script>
-  - GSAP for smooth polished transitions (things glide, not snap):
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
-    <script>if(typeof gsap==='undefined'){/* fallback: define gsap.to as a no-op so the lab still runs */ window.gsap={to:(el,opts)=>{if(opts.onComplete)setTimeout(opts.onComplete,(opts.duration||0.5)*1000);}}; }</script>
-  - Matter.js for physics with collisions, gravity, forces:
-    <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
-    <script>if(typeof Matter==='undefined'){document.write('<p style="color:red">Matter.js failed to load — check network</p>');}</script>
-  - D3.js for data-bound visuals: real datasets, labeled axes with meaningful units, scales, smooth curve transitions. Use it whenever the lab plots real-world data the learner must match:
-    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-    <script>if(typeof d3==='undefined'){document.write('<p style="color:red">D3 failed to load — check network</p>');}</script>
-  - KaTeX for textbook-quality math notation in the formula panel (real fractions, Greek letters, superscripts — never ASCII math like v^2*sin(2*theta)/g):
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
-    <script>function renderFormula(el, tex, plain){ if(typeof katex!=='undefined'){ katex.render(tex, el, {throwOnError:false}); } else { el.textContent = plain; } }</script>
-    Always call renderFormula with BOTH the TeX string and a plain-text fallback — if KaTeX fails to load, the formula still shows as readable text and the lab keeps working.
-    ⚠️ BACKSLASH ESCAPING — THE #1 CAUSE OF BROKEN EQUATIONS (missing Greek letters / "= 1/( · ²)" garbage):
-      A normal JS string EATS backslashes: "\frac" becomes a formfeed+"rac", "\lambda" becomes "lambda", "\eta" becomes "eta". KaTeX then renders nonsense, and because throwOnError:false it does so SILENTLY.
-      RULE: write EVERY TeX command with String.raw OR a doubled backslash. Use ONE of:
-        renderFormula(el, String.raw\`E = \\frac{hc}{\\lambda}\`, 'E = hc/λ');   // ← PREFERRED: raw template literal (backtick-quoted, no extra escaping needed)
-        renderFormula(el, "E = \\\\frac{hc}{\\\\lambda}", 'E = hc/λ');           // ← or double every backslash in a normal "..." string
-      NEVER write renderFormula(el, "\\frac{hc}{\\lambda}", ...) with SINGLE backslashes — they are gone before KaTeX ever sees them.
-      The plain-text fallback should use real Unicode symbols (λ η E ² ·) so it's still readable if KaTeX is unavailable.
-      SELF-TEST: scan your output for any TeX command (\\frac, \\lambda, \\eta, \\sqrt, \\cdot, etc.) sitting inside a normal "..." or '...' string passed to renderFormula. If you find one with a single backslash, it is BROKEN — convert that string to a String.raw template literal or double every backslash.
-  - Google Fonts — ALWAYS include this one (typography is the cheapest polish; if it fails to load, system fonts take over automatically — zero risk):
-    <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-    Use: body { font-family: 'Inter', -apple-system, sans-serif; } for all UI text; font-family: 'JetBrains Mono', monospace; for every number, readout, match %, and formula fallback text — tabular numbers make live values feel precise and stable.
-  - Plain vanilla JS is fine for simple cases — don't load a library you don't use (Google Fonts is the only always-on item).
-• No localStorage / sessionStorage. No fetch().
-• Works in sandbox="allow-scripts".
-• Zero console errors on first load.
-• Responsive: usable from 360px wide to full desktop.
-• Dark cinematic THEME COLORS (the app's palette — NOT a space setting; the scene content is the literal topic): bg #050508, scene fog #1a0800, HUD glass rgba(10,15,30,0.75), border rgba(232,93,4,0.25). Accents: rust #E85D04, copper #D4A574, ice blue #4CC9F0, success #22C55E, muted #8899BB.
-• CANVAS SIZING — mandatory pattern to prevent a stretched/blank canvas:
-  const canvas = document.getElementById('mainCanvas');
-  const ctx = canvas.getContext('2d');
-  function resizeCanvas() {
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
-  }
-  resizeCanvas();
-  window.addEventListener('resize', resizeCanvas);
-  Set canvas.width/height from the element's actual rendered size (offsetWidth/offsetHeight or ResizeObserver) — never hardcode values that differ from the CSS size. Something meaningful must be drawn within 100ms of load; a blank canvas on load means the lab has failed.
-• If the lab animates over time, use requestAnimationFrame with delta-time (never hardcoded pixel offsets like x += 2), read control values inside the update loop every frame, and include play/pause/step + speed controls per the hard rules above.
-• Pointer events (pointerdown/move/up) for any dragging — works for both mouse and touch.
-• INTERACTIVE CHOICE OBJECTS MUST BE SELF-IDENTIFYING. If the learner must pick, drag, or match the CORRECT object among several candidates (e.g. "drag the correct tRNA", "select the right resistor", "match the codon"), EACH candidate must visibly display the decision-relevant attribute that makes the choice informed — its anticodon, value, name, charge, or carried payload — as a persistent text label anchored to that object (a Three.js Sprite/CSS2D billboard for 3D objects, or an HTML overlay tracking the object's screen position). Also label the TARGET the learner is matching against (e.g. the ribosome's "Current codon: AUG" → which anticodon fits). A pile of identical unlabeled blobs the learner must guess between is a FAILED lab — the learner must always be able to read what each object IS and why one is correct before they act.
-• Implement the formulas above EXACTLY in JS. Live readouts must name the EFFECT ("Earthquake Magnitude: 7.2"), not echo the input ("Friction: 0.9").
-• Include a Reset button.
-• SUCCESS REPORTING — when the learner reaches the success condition (use a visible "Check Answer" button to evaluate it):
-  window.parent.postMessage({ type:"labCheck", result:{ ok:true,  score:1, total:1 } }, "*") on success
-  window.parent.postMessage({ type:"labCheck", result:{ ok:false, score:0, total:1 } }, "*") on failure
-  On success also show the real-world payoff card.
-• DO NOT render any multiple-choice quiz, prediction modal, "Commit & Start" gate, or "verify your understanding" section — the platform shows its own quiz after the lab. The lab opens fully interactive with zero blocking UI.
-
-Before returning, verify ALL of these — fix any that fail before responding:
-1. Does Zone B contain actual drawn SHAPES that represent the concept — NOT just text on a grid?
-2. Is there a legend or key visible BEFORE the sim runs, labeling every entity/color/symbol?
-3. Is there a live ONE-LINE mechanic narrator updating as the sim runs?
-4. Does the lab open FULLY INTERACTIVE with zero blocking UI — no prediction modal, no "Commit & Start" gate, no intro screen? The learner must be able to grab/drag/steer within 3 seconds of load.
-5. QUANTITATIVE topics: is the formula panel present, each control mapped to a symbol, terms highlighted on change, result live? NON-QUANTITATIVE topics: is a plain-words PRINCIPLE panel present instead (NO fake equation/units), with the relevant clause highlighted as the learner acts?
-6. Does the REVEAL card (triggered on win) state what happened and why, plus the real_world_payoff as one concrete sentence?
-7. Is Zone B in motion on load, with the central visual LARGE (not a small dot in empty space)?
-8. Does canvas.width/height match the element's actual rendered pixel size?
-9. Is there a persistent trail/trace + hidden vectors/force arrows drawn?
-10. Are there at least 2 interactive controls plus preset + reset buttons?
-11. Is the mission's TARGET drawn on the canvas with live progress, and does achieving it auto-trigger the win celebration + labCheck postMessage?
-12. If the concept has a movable object: can the learner steer it with held arrow keys + mirrored touch buttons?
-13. Did you load a CDN library only if the concept genuinely needs it (p5/GSAP/Matter/D3/KaTeX — don't load what you don't use)?
-14. Does the canvas use gradients and glow — polished simulation, not a flat grey box?
-15. If the brief gave a real scenario: is the real target drawn from the start (labeled, with units), is there a live match % readout, and does crossing the match threshold reveal the equation with the learner's values plugged in?
-16. QUANTITATIVE topics: are formulas rendered via renderFormula (KaTeX with plain-text fallback) — never raw ASCII math? NON-QUANTITATIVE topics: is there NO invented formula/units (a plain-words principle panel instead)?
-17. Does EVERY object on the canvas have a one-word label drawn on/beside it, with labels/readouts placed adjacent to what they describe (not in a far panel)?
-18. Does EVERY control visibly change a real output — a formula term (quantitative) or a real domain outcome like a conjugated word / reassembled argument / resolved chord (non-quantitative)? (No inert, topical-sounding fake variables.)
-19. Are readouts truthful — real units with a declared world scale for quantitative topics, OR categorical/qualitative labels ("Tense: past", "valid ✓") for non-quantitative topics? Zero pixel or meaningless bare-number readouts either way; zero fabricated units on humanities topics.
-20. If two objects are drawn as solid, do they collide instead of overlapping/intertwining — including while being dragged?
-21. Do draggable objects show grab/grabbing cursors + a hover affordance, with hit radius ≥24px and touch-action:none?
-21b. If the learner must choose/drag/match the CORRECT object among several candidates, does EACH candidate display its decision-relevant identity (anticodon, value, name, payload) as a label anchored to it, AND is the target it matches against labeled too — so the choice is never a blind guess?
-22. If 3D was the right medium for this topic: is it a full Three.js WebGL scene with fog, particles, cinematic camera, and topic-specific environment? If 2D was the right medium (chart-shaped topic): is the D3/SVG chart the unobstructed primary visual, with Three.js (if used at all) only decorative chrome that never occludes the data?
-23. (branching-decision only) Does the tree render visually as a graph? Can the learner backtrack and explore alternate paths? Does each leaf reveal a concrete consequence?
-24. (bias-trap only) Does the learner complete trials WITHOUT knowing the bias first? Is the reveal shown as a distribution plot with the learner's own data highlighted?
-25. (budget-allocation only) Is the total always constrained (sum=TOTAL)? Does each allocation show live consequences, not just a number change?
-26. (agent-social-sim only) Do agents follow LOCAL rules only — no hard-coded macro pattern? Is there a live D3 aggregate chart showing the emergent trend over time?
-27. (sports-game only) Is there a scoreboard, ghost replay trail, keyboard + touch controls, and a winnable mission target in a real sport venue?
-28. (wave-interference only) Are two+ wave sources superposed visibly with constructive/destructive regions color-coded? Does phase/frequency control the pattern live?
-29. (molecular-builder only) Can atoms be dragged and snapped into bonds? Does evaluate() check the structure against a target?
-30. (data-sampling only) Can the learner run many trials and watch a histogram build? Does sample size visibly affect the distribution shape (CLT)?
-31. (experiment-bench only) Is there a 3D lab bench with pourable beakers, live readouts (pH/temp/color), and a threshold reaction the learner must trigger?
-
-━━━ PURPOSE MANDATE — the lab must teach THIS specific insight, not just look nice ━━━
-These five fields are the soul of the lab. Every structural element must serve them. Check each before returning:
-
-  ENTRY MISCONCEPTION: "${design.spec.entry_misconception || ""}"
-  → The lab's DEFAULT STATE must INVITE this misconception (so fixing it is meaningful).
-    The starting visual should make the wrong belief feel plausible — a learner who just glances and doesn't interact should be tempted to think the misconception is true.
-    Within 10 seconds of their first move, the misconception should start to crack.
-
-  FIRST MOVE: "${design.spec.first_move || ""}"
-  → This is the FIRST THING the learner does. It must be instantly obvious from the UI
-    (a highlighted draggable, a blinking prompt, or an on-screen arrow pointing to it).
-    Doing it must produce a SURPRISING result that challenges the entry misconception.
-    A lab where the first move isn't obvious, or doesn't surprise, fails this mandate.
-
-  AHA TRIGGER: "${design.spec.aha_trigger || ""}"
-  → This is a SPECIFIC VISUAL EVENT — not a number changing, not text appearing.
-    It must be unmissable: a curve suddenly bending, a phase changing, a collision,
-    a threshold crossed with a visual jump (particle burst, color shift, sudden motion).
-    The learner must SEE it happen without being told to look — it should be impossible to miss.
-    If the only "aha" is a number in a readout changing, this mandate fails.
-
-  LEARNING GOAL: "${design.spec.learning_goal || ""}"
-  → This exact insight must be STATED EXPLICITLY in the lab (not just implied):
-    as a goal line in the controls panel ("GOAL: discover why X causes Y"),
-    and as the reveal text when the aha trigger fires or the win condition is met.
-    The learner should be able to read the learning goal back from the screen.
-
-  REAL-WORLD PAYOFF: "${design.spec.real_world_payoff || ""}"
-  → This MUST appear as visible text on the win screen / reveal card.
-    Format: "[What you just saw] is why [real-world consequence]."
-    It must name something in the learner's world (their savings account, the ISS, a bridge).
-    A vague "now you understand X" does not count — it must be THIS specific sentence.
-
-PURPOSE SELF-TEST (answer YES to all before returning):
-□ Default state invites the entry misconception?
-□ First move is instantly obvious AND produces a surprising result?
-□ Aha trigger fires as an unmissable VISUAL EVENT (not just a number change)?
-□ Learning goal stated as text on screen (goal line + reveal)?
-□ Real-world payoff appears verbatim on the win screen?
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-━━━ FINAL PILLAR GATE — if any answer is NO, fix it before returning ━━━
-P1. INTERACTIVITY: Is the learner's PRIMARY action a direct grab/aim/steer in the play area (not just sliders), with every control producing an immediate visible change?
-P2. GAMIFICATION: Is there a win goal drawn on the canvas, live progress toward it, near-miss feedback, a score/streak/match HUD, and an auto-detected win → celebration + grade + labCheck?
-P3. REAL-WORLD: Does the lab open on a concrete real instance and close with the real_world_payoff sentence, with real units throughout?
+━━━ ARCHETYPE-SPECIFIC CHECK (only if it applies to ${archetype}) ━━━
+  branching-decision → tree renders as a visual graph; learner can backtrack/explore alternates; each leaf reveals a concrete consequence.
+  bias-trap → learner completes trials WITHOUT knowing the bias first; reveal is a distribution plot with their own data highlighted.
+  budget-allocation → total always constrained (sum=TOTAL); each allocation shows live consequences, not just a number.
+  agent-social-sim → agents follow LOCAL rules only (no hard-coded macro pattern); live D3 aggregate chart shows the emergent trend.
+  sports-game → scoreboard + ghost-replay trail + keyboard&touch controls + winnable mission target in a real venue.
+  wave-interference → 2+ sources superposed with color-coded constructive/destructive regions; phase/frequency controls the pattern live.
+  molecular-builder → atoms drag & snap into bonds; evaluate() checks structure vs a target.
+  data-sampling → run many trials, watch a histogram build; sample size visibly changes the distribution shape (CLT).
+  experiment-bench → 3D bench with pourable beakers, live pH/temp/color readouts, a threshold reaction to trigger.
 ${critiqueNotes ? `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-A PREVIOUS ATTEMPT AT THIS LAB WAS RENDERED AND REVIEWED — FIX THESE EXACT PROBLEMS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-A reviewer looked at a screenshot of the lab you (or a previous attempt) generated and found real problems. Regenerate the FULL lab from scratch, keeping everything that already works, but make sure every issue below is actually fixed in the new output — these are not suggestions, they are required corrections:
+━━━ A PREVIOUS ATTEMPT WAS REVIEWED — FIX THESE EXACT PROBLEMS ━━━
+A reviewer looked at a screenshot and found real problems. Regenerate the FULL lab from scratch, keep what works, and make sure every issue below is actually fixed — these are required corrections, not suggestions:
 ${critiqueNotes}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ` : ""}
-OUTPUT BUDGET — you have a hard ~16000-token output limit and the file MUST be COMPLETE and end with </script></body></html>. Write efficiently: no verbose comments, no repeated boilerplate, reuse helper functions, keep CSS/JS concise. Target 600–900 lines total. A complete, working, smaller lab beats a richer one that gets cut off mid-script. Prioritize finishing over adding extra flourish. If you are approaching the limit, skip optional polish and close all tags.
-
-Output only the HTML file. Start with <!doctype html>. No markdown. No explanation. No code fences.`;
+━━━ OUTPUT BUDGET — hard ~16000-token limit; the file MUST be COMPLETE and end with </script></body></html> ━━━
+Write efficiently: no verbose comments, no repeated boilerplate, reuse helpers, concise CSS/JS. Target 600–900 lines. A complete working smaller lab beats a richer one cut off mid-script — if you approach the limit, drop optional polish and CLOSE ALL TAGS.
+Output ONLY the HTML file. Start with <!doctype html>. No markdown, no explanation, no code fences.`;
 
   // ── CODEGEN DISPATCH ──────────────────────────────────────────────────────
   // CODEGEN_MODEL=nvidia → CODEGEN_MODEL_ID on NVIDIA Build (Kimi K2.6, etc.)
