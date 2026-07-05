@@ -143,6 +143,14 @@ const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ?
 // instead of re-queueing on the stalled one. gpt-oss-120b: verified in catalog,
 // comparable quality, and the pipeline already handles gpt-oss reasoning output.
 const REASON_FALLBACK_MODEL = process.env.REASON_FALLBACK_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-120b" : OPENAI_MINI_MODEL);
+// Idle timeout for reason-stage calls (spec, quiz, expand, pedagogy, interaction).
+// The openai-node client `timeout` acts as an idle timeout on streams — it resets
+// on every chunk, so it only fires when a stream is SILENT this long. 40s means a
+// stalled llama-70b aborts fast and swaps to REASON_FALLBACK_MODEL instead of
+// dead-waiting the client's 180s default (measured: design+quiz burned 180s each
+// before falling back). Healthy 8b/gpt-oss calls emit within seconds, so unaffected.
+// Codegen is exempt — it passes its own CODEGEN_TIMEOUT_MS at the call site.
+const REASON_STAGE_TIMEOUT_MS = parseInt(process.env.REASON_STAGE_TIMEOUT_MS || "40000", 10);
 const visionClient = NVIDIA_API_KEY ? nvidia : openai;
 const VISION_MODEL = process.env.VISION_MODEL_ID || (NVIDIA_API_KEY ? "nvidia/nemotron-nano-12b-v2-vl" : OPENAI_MODEL);
 console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL}), mini: ${REASON_MINI_MODEL}, fallback: ${REASON_FALLBACK_MODEL}` : `OpenAI (${REASON_MODEL})`}`);
@@ -178,11 +186,12 @@ function retryParams(params, attempt, label) {
   return { ...params, model: REASON_FALLBACK_MODEL, ...reasonParams(REASON_FALLBACK_MODEL, params.max_tokens || 3000) };
 }
 
-async function openaiCreate(params, label = "reason") {
+async function openaiCreate(params, label = "reason", reqOpts = {}) {
+  const opts = { timeout: REASON_STAGE_TIMEOUT_MS, ...reqOpts };
   let lastErr;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      return await reason.chat.completions.create(retryParams(params, attempt, label));
+      return await reason.chat.completions.create(retryParams(params, attempt, label), opts);
     } catch (err) {
       lastErr = err;
       if (!isOverloadError(err)) throw err;
@@ -199,11 +208,12 @@ async function openaiCreate(params, label = "reason") {
 // Streaming variant — keeps the NVIDIA connection alive so a slow gpt-oss-20b
 // response doesn't trigger APIConnectionTimeoutError before text arrives.
 // Collects both delta.content and delta.reasoning_content (gpt-oss uses the latter).
-async function openaiCreateStreamed(params, label = "reason-stream") {
+async function openaiCreateStreamed(params, label = "reason-stream", reqOpts = {}) {
+  const opts = { timeout: REASON_STAGE_TIMEOUT_MS, ...reqOpts };
   let lastErr;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const stream = await reason.chat.completions.create({ ...retryParams(params, attempt, label), stream: true });
+      const stream = await reason.chat.completions.create({ ...retryParams(params, attempt, label), stream: true }, opts);
       let content = "";
       let reasoning = "";
       for await (const chunk of stream) {
@@ -2567,7 +2577,7 @@ Output only the HTML file. Start with <!doctype html>. No markdown. No explanati
         temperature: 0.7,
         stream: true,
         messages,
-      }, "codegen/fallback");
+      }, "codegen/fallback", { timeout: CODEGEN_TIMEOUT_MS });
       let raw = "";
       let reasoning = "";
       let lastReport = 0;
