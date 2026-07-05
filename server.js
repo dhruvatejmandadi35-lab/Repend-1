@@ -51,10 +51,12 @@ const nvidia = new OpenAI({
 const CODEGEN_MODEL = process.env.CODEGEN_MODEL || "nvidia";
 // The exact NVIDIA Build model id to call. Swap this (env var, no code change)
 // to switch NVIDIA Build models:
-//   moonshotai/kimi-k2.6              (default — current pick)
-//   nvidia/nemotron-3-ultra-550b-a55b (previous pick)
-// The id must match exactly what the NVIDIA Build model card's code snippet shows.
-const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "z-ai/glm-5.1";
+//   z-ai/glm-5.2         (default — z-ai/glm-5.1 was DELISTED from NVIDIA Build)
+//   moonshotai/kimi-k2.6 (previous pick — returned empty streams on free tier)
+// The id must match exactly what the NVIDIA Build model card's code snippet
+// shows; confirm it exists via GET https://integrate.api.nvidia.com/v1/models
+// (no auth needed) before deploying — a delisted id 404s every codegen call.
+const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "z-ai/glm-5.2";
 
 // Output token cap for codegen. The NVIDIA Build FREE endpoint rejects requests
 // above ~16384 and returns an EMPTY stream (0 chars in content AND
@@ -67,7 +69,7 @@ const CODEGEN_MAX_TOKENS = parseInt(process.env.CODEGEN_MAX_TOKENS || "16384", 1
 // Kimi call; CODEGEN_IDLE_MS = max gap between streamed chunks before we treat
 // the stream as stalled. Both abort into a retryable fallback so a hung thinking
 // model never leaves the request silently dangling (the Iter 6/7 failure mode).
-const CODEGEN_TIMEOUT_MS = parseInt(process.env.CODEGEN_TIMEOUT_MS || "300000", 10); // 5 min (GLM-5.1 is slower than Kimi)
+const CODEGEN_TIMEOUT_MS = parseInt(process.env.CODEGEN_TIMEOUT_MS || "300000", 10); // 5 min (GLM is slower than Kimi)
 const CODEGEN_IDLE_MS = parseInt(process.env.CODEGEN_IDLE_MS || "45000", 10);        // 45 s
 
 // GLM-5.1 is a hybrid reasoning model: by default it emits a long internal
@@ -93,11 +95,13 @@ const CODEGEN_THINKING = (process.env.CODEGEN_THINKING || "off").toLowerCase() =
 //   ENABLE_INTERACTION_DIRECTOR=off  → skip entirely (pipeline identical to before)
 //   INTERACTION_MODEL_ID=<id>        → any NVIDIA Build / OpenAI-compatible model
 const ENABLE_INTERACTION_DIRECTOR = (process.env.ENABLE_INTERACTION_DIRECTOR || "on").toLowerCase() !== "off";
-// DeepSeek-R1 on NVIDIA Build: a native thinking model (reasons by default, no
-// reasoning_effort param needed; openaiCreateStreamed already collects its
-// reasoning_content). If it's unreachable, thinkAboutInteraction falls back to
+// DeepSeek V4 Flash on NVIDIA Build: a native thinking model (reasons by default,
+// no reasoning_effort param needed; openaiCreateStreamed already collects its
+// reasoning_content). NOTE: deepseek-r1 was DELISTED from NVIDIA Build (404
+// "page not found") — verify any override against GET /v1/models first.
+// If the primary is unreachable, thinkAboutInteraction retries once with
 // REASON_MODEL (llama-70b) — a non-thinking contract beats no contract.
-const INTERACTION_MODEL_ID = process.env.INTERACTION_MODEL_ID || "deepseek-ai/deepseek-r1";
+const INTERACTION_MODEL_ID = process.env.INTERACTION_MODEL_ID || "deepseek-ai/deepseek-v4-flash";
 
 // OpenAI model selectors — centralized so you can swap models from env (Railway
 // variable, no code change). Two tiers:
@@ -1312,7 +1316,11 @@ function isOverloadError(err) {
   // issue" is a transient server-side crash that usually clears on retry. Also
   // catch generic connection/timeout blips so a single network hiccup doesn't
   // abort the whole pipeline.
-  return /\b(503|429|500|overloaded|high demand|Service Unavailable|rate limit|EngineCore|ECONNRESET|ETIMEDOUT|socket hang up|Connection error)\b/i.test(msg);
+  // "Request timed out." is the OpenAI SDK's APIConnectionTimeoutError message
+  // (client-side timeout, not the ETIMEDOUT socket code) — without it a single
+  // slow NVIDIA response threw straight through Promise.all and killed the
+  // whole generation instead of retrying.
+  return /\b(503|429|500|overloaded|high demand|Service Unavailable|rate limit|EngineCore|ECONNRESET|ETIMEDOUT|socket hang up|Connection error|Request timed out|APIConnectionTimeout)\b/i.test(msg);
 }
 
 // True when a usable OpenAI key is configured (not the boot placeholder). Used
@@ -1408,26 +1416,34 @@ Then return ONLY a JSON object (no markdown, no prose) with exactly this shape:
   "controls_legend": "<one line shown in the HUD, e.g. 'DRAG planet · SCROLL zoom · SPACE pause · R reset'>"
 }`;
 
-  try {
-    const raw = await openaiCreateStreamed({
-      model: INTERACTION_MODEL_ID,
-      max_tokens: 4000,
-      // Extended thinking: gpt-oss reasoning models take reasoning_effort; high =
-      // real deliberation. Non-reasoning models simply ignore the field.
-      ...(isReasoningModel(INTERACTION_MODEL_ID) ? { reasoning_effort: "high" } : {}),
-      messages: [{ role: "user", content: prompt }],
-    }, "interaction-director");
-    const contract = parseLooseJSON(raw);
-    if (!contract || !contract.primary_interaction || !contract.primary_interaction.style) {
-      console.warn("[interaction] director returned unusable JSON — continuing without contract");
-      return null;
+  // Primary model first, then REASON_MODEL (known-good llama-70b) — so a
+  // delisted/unreachable INTERACTION_MODEL_ID degrades to a non-thinking
+  // contract instead of no contract at all.
+  const candidates = [INTERACTION_MODEL_ID];
+  if (REASON_MODEL !== INTERACTION_MODEL_ID) candidates.push(REASON_MODEL);
+  for (const model of candidates) {
+    try {
+      const raw = await openaiCreateStreamed({
+        model,
+        max_tokens: 4000,
+        // Extended thinking: gpt-oss reasoning models take reasoning_effort; high =
+        // real deliberation. Non-reasoning models simply ignore the field.
+        ...(isReasoningModel(model) ? { reasoning_effort: "high" } : {}),
+        messages: [{ role: "user", content: prompt }],
+      }, "interaction-director");
+      const contract = parseLooseJSON(raw);
+      if (!contract || !contract.primary_interaction || !contract.primary_interaction.style) {
+        console.warn(`[interaction] director (${model}) returned unusable JSON`);
+        continue;
+      }
+      console.log(`[interaction] primary=${contract.primary_interaction.style} (via ${model})`);
+      return contract;
+    } catch (err) {
+      console.warn(`[interaction] director (${model}) failed:`, err.message);
     }
-    console.log(`[interaction] primary=${contract.primary_interaction.style}`);
-    return contract;
-  } catch (err) {
-    console.warn("[interaction] director failed, continuing without contract:", err.message);
-    return null;
   }
+  console.warn("[interaction] all director models failed — continuing without contract");
+  return null;
 }
 
 // Render the interaction contract as a codegen prompt section. Empty string when
