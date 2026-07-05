@@ -136,9 +136,16 @@ const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "meta/lla
 // Mini calls (expand, think-topic, pedagogy) use a fast 8B instruct model on NVIDIA path —
 // no null-content risk and much lower latency than the reasoning model.
 const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ? "meta/llama-3.1-8b-instruct" : OPENAI_MINI_MODEL);
+// Emergency fallback for heavy REASON_MODEL stages. 2026-07-03: llama-3.3-70b on
+// NVIDIA Build queued with no first byte for 180s+ per attempt while 8b calls
+// answered in seconds — every generation died at think/spec after 4×180s. After
+// the first failed attempt, openaiCreate/openaiCreateStreamed retry on this model
+// instead of re-queueing on the stalled one. gpt-oss-120b: verified in catalog,
+// comparable quality, and the pipeline already handles gpt-oss reasoning output.
+const REASON_FALLBACK_MODEL = process.env.REASON_FALLBACK_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-120b" : OPENAI_MINI_MODEL);
 const visionClient = NVIDIA_API_KEY ? nvidia : openai;
 const VISION_MODEL = process.env.VISION_MODEL_ID || (NVIDIA_API_KEY ? "nvidia/nemotron-nano-12b-v2-vl" : OPENAI_MODEL);
-console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL}), mini: ${REASON_MINI_MODEL}` : `OpenAI (${REASON_MODEL})`}`);
+console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL}), mini: ${REASON_MINI_MODEL}, fallback: ${REASON_FALLBACK_MODEL}` : `OpenAI (${REASON_MODEL})`}`);
 console.log(`[boot] vision provider: ${NVIDIA_API_KEY ? `NVIDIA Build (${VISION_MODEL})` : `OpenAI (${OPENAI_MODEL})`}`);
 console.log(`[boot] visual critic: ${process.env.ENABLE_VISUAL_CRITIC === "1" ? "ON (puppeteer headless Chrome — OOM risk on small containers)" : "OFF (static guardrail only)"}`);
 
@@ -161,11 +168,21 @@ function getSupabase() {
 // Reasoning calls route through the configured provider (NVIDIA Build by default
 // for cheap testing; OpenAI when REASONING_PROVIDER=openai). Both expose the same
 // OpenAI-compatible chat.completions API. Retries on transient 429/503 only.
+// On retry attempts, heavy REASON_MODEL calls swap to REASON_FALLBACK_MODEL —
+// a 180s no-first-byte timeout means the primary's queue is stalled, and three
+// more attempts on it just burn 9 minutes before erroring. Mini/vision/codegen
+// models keep their own params (they have separate fallback paths).
+function retryParams(params, attempt, label) {
+  if (attempt === 0 || params.model !== REASON_MODEL || REASON_FALLBACK_MODEL === REASON_MODEL) return params;
+  console.warn(`[${label}] ${REASON_MODEL} unavailable — attempt ${attempt + 1} on fallback ${REASON_FALLBACK_MODEL}`);
+  return { ...params, model: REASON_FALLBACK_MODEL, ...reasonParams(REASON_FALLBACK_MODEL, params.max_tokens || 3000) };
+}
+
 async function openaiCreate(params, label = "reason") {
   let lastErr;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      return await reason.chat.completions.create(params);
+      return await reason.chat.completions.create(retryParams(params, attempt, label));
     } catch (err) {
       lastErr = err;
       if (!isOverloadError(err)) throw err;
@@ -186,7 +203,7 @@ async function openaiCreateStreamed(params, label = "reason-stream") {
   let lastErr;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const stream = await reason.chat.completions.create({ ...params, stream: true });
+      const stream = await reason.chat.completions.create({ ...retryParams(params, attempt, label), stream: true });
       let content = "";
       let reasoning = "";
       for await (const chunk of stream) {
