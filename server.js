@@ -2620,7 +2620,7 @@ Return ONLY valid JSON (no markdown):
     ]
   }
 }
-Rules: lesson has exactly 3 slides (3-4 bullets each, ≤15 words per bullet). Quiz has exactly 4 questions (1 correct, 3 plausible distractors). Be concrete, not vague.`;
+Rules: lesson has exactly 3 slides (3-4 bullets each, ≤15 words per bullet). Quiz has exactly 4 questions (1 correct, 3 plausible distractors). Be concrete, not vague. Write ALL text in plain English — no LaTeX, no backslashes, no code escapes (write "x squared", not "\\(x^2\\)").`;
 
         const resp = await reason.chat.completions.create({
           model: REASON_MINI_MODEL,
@@ -2628,10 +2628,12 @@ Rules: lesson has exactly 3 slides (3-4 bullets each, ≤15 words per bullet). Q
           temperature: 0.4,
           messages: [{ role: "user", content: prompt }],
         });
-        const raw = resp.choices?.[0]?.message?.content || "";
-        const m = raw.match(/\{[\s\S]*\}/);
-        if (!m) throw new Error("no JSON");
-        const result = JSON.parse(m[0]);
+        const raw = safeContent(resp);
+        // Use the tolerant parser: strips fences/preamble AND repairs invalid
+        // backslash escapes (\frac, regex, Windows paths) that a raw JSON.parse
+        // chokes on with "Bad escaped character in JSON". Cybersecurity/math
+        // modules hit this constantly.
+        const result = parseLooseJSON(raw);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result));
       } catch (e) {
