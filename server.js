@@ -103,6 +103,14 @@ const ENABLE_INTERACTION_DIRECTOR = (process.env.ENABLE_INTERACTION_DIRECTOR || 
 // REASON_MODEL (llama-70b) — a non-thinking contract beats no contract.
 const INTERACTION_MODEL_ID = process.env.INTERACTION_MODEL_ID || "deepseek-ai/deepseek-v4-flash";
 
+// labthink ("Thinking about how to build it") runs in the SAME parallel window as
+// the interaction director. Both used to lean on llama-3.3-70b, and concurrent
+// heavy calls to the ONE flaky model are exactly where the free tier burns out.
+// Route labthink to a DIFFERENT DeepSeek model (v4-pro) so the two parallel heavy
+// stages hit separate endpoints and neither depends on the stalling 70b. Falls
+// back down the gpt-oss chain (never back to 70b). Override with THINK_MODEL_ID.
+const THINK_MODEL_ID = process.env.THINK_MODEL_ID || (NVIDIA_API_KEY ? "deepseek-ai/deepseek-v4-pro" : (process.env.OPENAI_MODEL || "gpt-4o"));
+
 // OpenAI model selectors — centralized so you can swap models from env (Railway
 // variable, no code change). Two tiers:
 //   OPENAI_MODEL      → heavy/quality stages: spec, visual critic, codegen fallback
@@ -162,7 +170,7 @@ const REASON_FALLBACK_MODEL = REASON_FALLBACK_CHAIN[0];
 const REASON_STAGE_TIMEOUT_MS = parseInt(process.env.REASON_STAGE_TIMEOUT_MS || "40000", 10);
 const visionClient = NVIDIA_API_KEY ? nvidia : openai;
 const VISION_MODEL = process.env.VISION_MODEL_ID || (NVIDIA_API_KEY ? "nvidia/nemotron-nano-12b-v2-vl" : OPENAI_MODEL);
-console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL}), mini: ${REASON_MINI_MODEL}, fallback chain: ${REASON_FALLBACK_CHAIN.join(" → ")}` : `OpenAI (${REASON_MODEL})`}`);
+console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL}), mini: ${REASON_MINI_MODEL}, think: ${THINK_MODEL_ID}, fallback chain: ${REASON_FALLBACK_CHAIN.join(" → ")}` : `OpenAI (${REASON_MODEL})`}`);
 console.log(`[boot] vision provider: ${NVIDIA_API_KEY ? `NVIDIA Build (${VISION_MODEL})` : `OpenAI (${OPENAI_MODEL})`}`);
 console.log(`[boot] visual critic: ${process.env.ENABLE_VISUAL_CRITIC === "1" ? "ON (puppeteer headless Chrome — OOM risk on small containers)" : "OFF (static guardrail only)"}`);
 
@@ -190,11 +198,15 @@ function getSupabase() {
 // more attempts on it just burn 9 minutes before erroring. Mini/vision/codegen
 // models keep their own params (they have separate fallback paths).
 function retryParams(params, attempt, label) {
-  if (attempt === 0 || params.model !== REASON_MODEL || REASON_FALLBACK_CHAIN.length === 0) return params;
-  const fb = REASON_FALLBACK_CHAIN[Math.min(attempt - 1, REASON_FALLBACK_CHAIN.length - 1)];
-  if (fb === REASON_MODEL) return params;
-  console.warn(`[${label}] ${REASON_MODEL} unavailable — attempt ${attempt + 1} on fallback ${fb}`);
-  return { ...params, model: fb, ...reasonParams(fb, params.max_tokens || 3000) };
+  // A call can carry its own _fallbackChain (e.g. labthink: v4-pro → gpt-oss…);
+  // otherwise REASON_MODEL calls default to the shared REASON_FALLBACK_CHAIN.
+  const { _fallbackChain, ...clean } = params;
+  const chain = _fallbackChain || (clean.model === REASON_MODEL ? REASON_FALLBACK_CHAIN : null);
+  if (attempt === 0 || !chain || chain.length === 0) return clean;
+  const fb = chain[Math.min(attempt - 1, chain.length - 1)];
+  if (fb === clean.model) return clean;
+  console.warn(`[${label}] ${clean.model} unavailable — attempt ${attempt + 1} on fallback ${fb}`);
+  return { ...clean, model: fb, ...reasonParams(fb, clean.max_tokens || 3000) };
 }
 
 async function openaiCreate(params, label = "reason", reqOpts = {}) {
@@ -1284,11 +1296,14 @@ RULES:
 - For experiment-bench: describe each beaker, reagent, pour gesture, and reaction threshold visuals`;
 
   const text = await openaiCreateStreamed({
-    model: REASON_MODEL,
+    model: THINK_MODEL_ID,
     max_tokens: 1200,
+    ...(isReasoningModel(THINK_MODEL_ID) ? { reasoning_effort: "low" } : {}),
+    // Never fall back to the flaky 70b for labthink — walk the gpt-oss chain.
+    _fallbackChain: REASON_FALLBACK_CHAIN,
     messages: [{ role: "user", content: prompt }],
   }, "labthink");
-  if (!text) throw new Error(`${REASON_MODEL} returned empty content`);
+  if (!text) throw new Error(`labthink (${THINK_MODEL_ID}) returned empty content`);
   return text.trim();
 }
 
