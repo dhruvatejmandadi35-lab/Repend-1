@@ -140,7 +140,13 @@ const OPENAI_MINI_MODEL = process.env.OPENAI_MINI_MODEL || "gpt-4o-mini";
 const REASONING_PROVIDER = (process.env.REASONING_PROVIDER || (NVIDIA_API_KEY ? "nvidia" : "openai")).toLowerCase();
 const useNvidiaReasoning = REASONING_PROVIDER === "nvidia" && !!NVIDIA_API_KEY;
 const reason = useNvidiaReasoning ? nvidia : openai;
-const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "meta/llama-3.3-70b-instruct" : OPENAI_MODEL);
+// 2026-07-05: primary flipped off meta/llama-3.3-70b-instruct. It stalled with no
+// first byte for 40s+ on the NVIDIA free tier, so EVERY heavy stage (spec, reason,
+// codegen fallback, interaction backup) ate a ~40s dead-timeout before falling back —
+// a guaranteed per-lab latency tax on top of the reliability hit. gpt-oss-120b is the
+// fallback that has actually been producing these specs successfully, so it's now the
+// primary; 70b drops to last-resort in the chain in case free-tier capacity recovers.
+const REASON_MODEL = process.env.REASON_MODEL || (useNvidiaReasoning ? "openai/gpt-oss-120b" : OPENAI_MODEL);
 // Mini calls (expand, think-topic, pedagogy) use a fast 8B instruct model on NVIDIA path —
 // no null-content risk and much lower latency than the reasoning model.
 const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ? "meta/llama-3.1-8b-instruct" : OPENAI_MINI_MODEL);
@@ -158,7 +164,7 @@ const REASON_MINI_MODEL = process.env.REASON_MINI_MODEL || (useNvidiaReasoning ?
 // whole chain by setting REASON_FALLBACK_MODEL (single model) in env.
 const REASON_FALLBACK_CHAIN = process.env.REASON_FALLBACK_MODEL
   ? [process.env.REASON_FALLBACK_MODEL]
-  : (useNvidiaReasoning ? ["openai/gpt-oss-120b", "openai/gpt-oss-20b"] : [OPENAI_MINI_MODEL]);
+  : (useNvidiaReasoning ? ["openai/gpt-oss-20b", "meta/llama-3.3-70b-instruct"] : [OPENAI_MINI_MODEL]);
 const REASON_FALLBACK_MODEL = REASON_FALLBACK_CHAIN[0];
 // Idle timeout for reason-stage calls (spec, quiz, expand, pedagogy, interaction).
 // The openai-node client `timeout` acts as an idle timeout on streams — it resets
