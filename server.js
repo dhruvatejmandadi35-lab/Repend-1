@@ -288,7 +288,7 @@ function validateLabHtml(html, interactionContract = null) {
   const s = String(html || "");
   const issues = [];
   if (!/<\/html\s*>/i.test(s))
-    issues.push("HTML is truncated (no closing </html>) — it likely hit the output token cap; output the COMPLETE file.");
+    issues.push("HTML is truncated (no closing </html>) — your previous output EXCEEDED the ~16K output-token budget and was cut off. You CANNOT fix this by writing more; you must fit a COMPLETE, working file INTO the budget: strip ALL comments, remove redundant/duplicate code, use terse variable names, collapse whitespace, and cut any non-essential flourish. Same core simulation, tighter code, every tag closed.");
   else if (!/<\/script\s*>/i.test(s))
     issues.push("The script is cut off (no closing </script>) — finish the JavaScript and close every tag.");
   if (!/THREE\s*\.\s*(WebGLRenderer|Scene)/.test(s))
@@ -318,8 +318,15 @@ function validateLabHtml(html, interactionContract = null) {
 // call (reuses codeFromImageBrief's existing critiqueNotes input — no new model,
 // no new flow, no extra dependency).
 function labCheckNotes(issues) {
+  // If the previous output truncated, the retry MUST be more compact, not longer —
+  // the free endpoint's ~16K cap is hard, so "write more" just truncates again.
+  const truncated = issues.some(i => /truncat|token|cut off/i.test(i));
+  const budgetNote = truncated
+    ? "\nCRITICAL: your last attempt ran past the ~16K output-token limit and was cut off mid-file. You CANNOT fix this by writing more — you must write LESS to fit a COMPLETE file in budget: no comments, no dead code, terse names, minimal whitespace, drop any non-essential flourish. Correctness and closed tags come first."
+    : "";
   return "AUTOMATED QA FOUND BLOCKERS IN YOUR PREVIOUS OUTPUT. Regenerate the COMPLETE corrected HTML file and fix ALL of these:\n"
     + issues.map(i => `- ${i}`).join("\n")
+    + budgetNote
     + "\nThe file MUST end with </script></body></html>.";
 }
 
