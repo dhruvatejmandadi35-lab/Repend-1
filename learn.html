@@ -1562,9 +1562,7 @@
     <button class="btn-publish-course" id="publishCourseBtn">🌐 Publish</button>
   </div>
   <div class="course-flow">
-    <button class="course-step" id="courseStepLessons"><span class="course-step-n">1</span><span class="course-step-t">📖 Lessons</span><span class="course-step-s">Learn the concepts</span></button>
-    <button class="course-step" id="courseStepLab"><span class="course-step-n">2</span><span class="course-step-t">🚀 Lab</span><span class="course-step-s">Practice hands-on</span></button>
-    <button class="course-step" id="courseStepQuiz"><span class="course-step-n">3</span><span class="course-step-t">📝 Quiz</span><span class="course-step-s">Test yourself</span></button>
+    <button class="course-step" id="courseStepStart" style="grid-column:1 / -1"><span class="course-step-n">🚀</span><span class="course-step-t">Start course</span><span class="course-step-s">Builds the lab, lessons &amp; quiz together</span></button>
   </div>
   <div class="course-modules-label">Modules in this course</div>
   <div class="course-modules" id="courseModules"></div>
@@ -2034,23 +2032,19 @@
         </div>`;
       list.appendChild(card);
     });
-    const stepLessons = document.getElementById("courseStepLessons");
-    const stepLab = document.getElementById("courseStepLab");
-    const stepQuiz = document.getElementById("courseStepQuiz");
-    stepLessons.classList.toggle("done", !!prog.lessonsDone);
-    stepLab.classList.toggle("done", !!prog.labDone);
-    stepQuiz.classList.toggle("done", !!prog.quizDone);
-    // Show resume hint on the lesson step if they've started but not finished
-    const resumeSlide = prog.lastSlideIdx || 0;
-    const stepLessonsLabel = stepLessons.querySelector(".course-step-s");
-    if (stepLessonsLabel) {
-      stepLessonsLabel.textContent = prog.lessonsDone ? "Complete ✓"
-        : resumeSlide > 0 ? `Resume (slide ${resumeSlide + 1})`
-        : "Learn the concepts";
+    // Single action: one generation builds the lab, lessons, and quiz together
+    // (the /plan-lab stream already emits all three; the lab view shows them as tabs).
+    const stepStart = document.getElementById("courseStepStart");
+    const anyStarted = prog.lessonsDone || prog.labDone || prog.quizDone;
+    const allDone = prog.lessonsDone && prog.labDone && prog.quizDone;
+    stepStart.classList.toggle("done", !!allDone);
+    const stepStartLabel = stepStart.querySelector(".course-step-s");
+    if (stepStartLabel) {
+      stepStartLabel.textContent = allDone ? "Completed ✓ — open it again"
+        : anyStarted ? "Resume — lab, lessons & quiz"
+        : "Builds the lab, lessons & quiz together";
     }
-    stepLessons.onclick = () => openLessons(course);
-    stepLab.onclick = () => startCourseLab(course);
-    stepQuiz.onclick = () => openQuiz(course);
+    stepStart.onclick = () => startCourseLab(course);
     const addInput = document.getElementById("addModuleInput");
     const addBtn = document.getElementById("addModuleBtn");
     if (addInput && addBtn) {
@@ -2913,6 +2907,7 @@
       window._courseContext = null;
       window._activeCourseTitle = null;
       window._activeCourseModuleOrder = null;
+      window._bundleCourseTitle = null;
     }
     topicInput.value = topic;
     generate();
@@ -2922,6 +2917,9 @@
   // topic + key_concepts as course context so the lab thinking covers all of them.
   function startCourseLab(course) {
     window._activeCourseTitle = course.title;
+    // Persistent ref for the bundled Lesson/Quiz tabs to mark their section done.
+    // (_activeCourseTitle is cleared when the lab completes; this one isn't.)
+    window._bundleCourseTitle = course.title;
     window._activeCourseModuleOrder = null; // whole-course lab, not a single module
     const courseContext = {
       title: course.title,
@@ -3454,7 +3452,10 @@
   document.getElementById('tabLessonPrev').onclick = () => { if (_tabLessonIdx > 0) { _tabLessonIdx--; renderTabLessonSlide(); } };
   document.getElementById('tabLessonNext').onclick = () => {
     if (_tabLessonIdx < _tabLessonSlides.length - 1) { _tabLessonIdx++; renderTabLessonSlide(); }
-    else switchModuleTab('lab');
+    else {
+      if (window._bundleCourseTitle) setCourseProgress(window._bundleCourseTitle, { lessonsDone: true });
+      switchModuleTab('lab');
+    }
   };
 
   function populateQuizTab(quiz) {
@@ -3529,6 +3530,7 @@
     const correct = qs.filter((q, i) => _tabQuizPicks[i] === q.answer).length;
     const pct = Math.round(correct / qs.length * 100);
     const pass = pct >= 70;
+    if (pass && window._bundleCourseTitle) setCourseProgress(window._bundleCourseTitle, { quizDone: true });
     const r = document.getElementById('tabQuizResult');
     if (r) {
       r.style.display = 'block';
