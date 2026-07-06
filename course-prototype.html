@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Repend — Course Workbench (prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700;900&family=JetBrains+Mono:wght@400;500;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0A0B10; --bg2:#0E1019; --nav:#0C0E16; --panel:#141726; --panel2:#1B1F30;
+    --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.12);
+    --mars:#F26419; --mars-hot:#FF8A3D; --mars-deep:#C24A0A;
+    --ice:#4CC9F0; --copper:#D4A574;
+    --green:#34D399; --text:#EAF0FA; --muted:#8A97AD; --dim:#5A6478;
+    --appnav:220px; --rail:264px; --bar:52px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"Chivo",system-ui,sans-serif; font-size:15px; line-height:1.5;
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  .mono{font-family:"JetBrains Mono",monospace}
+  button{font-family:inherit;cursor:pointer;color:inherit;border:none;background:none}
+  :focus-visible{outline:2px solid var(--mars);outline-offset:2px;border-radius:4px}
+
+  .app{display:flex; height:100vh}
+
+  /* ── APP NAV RAIL (your existing nav, kept) ─────────── */
+  .appnav{
+    width:var(--appnav); flex-shrink:0; background:var(--nav);
+    border-right:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden;
+  }
+  .brand{display:flex; align-items:center; gap:10px; padding:20px 20px 22px}
+  .brand svg{flex-shrink:0}
+  .brand-name{font-weight:900; font-size:1.12rem; letter-spacing:-.02em}
+  .brand-name b{color:var(--mars)}
+  .nav-groups{flex:1; overflow-y:auto; padding:4px 12px}
+  .nav-cap{font-family:"JetBrains Mono",monospace; font-size:.6rem; font-weight:700;
+    letter-spacing:.22em; color:var(--dim); text-transform:uppercase; padding:16px 10px 8px}
+  .nav-item{display:flex; align-items:center; gap:13px; width:100%; text-align:left;
+    padding:10px 12px; border-radius:10px; color:var(--muted); font-size:.92rem;
+    font-weight:600; transition:.14s; border:1px solid transparent}
+  .nav-item svg{flex-shrink:0; opacity:.8}
+  .nav-item:hover{background:var(--panel); color:var(--text)}
+  .nav-item.on{color:var(--text); background:linear-gradient(90deg,rgba(242,100,25,.14),rgba(242,100,25,.03));
+    border-color:rgba(242,100,25,.28)}
+  .nav-item.on svg{opacity:1; color:var(--mars-hot)}
+  .nav-foot{padding:12px; border-top:1px solid var(--line)}
+  .nav-foot .nav-item.up{color:var(--mars-hot)}
+  .nav-foot .nav-item.up svg{opacity:1;color:var(--mars-hot)}
+
+  /* ── WORKBENCH (top bar + shell) ────────────────────── */
+  .workbench{flex:1; display:flex; flex-direction:column; min-width:0}
+  .bar{
+    height:var(--bar); display:flex; align-items:center; gap:16px; padding:0 22px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,var(--bg2),var(--bg)); flex-shrink:0;
+  }
+  .crumb{display:flex; align-items:center; gap:9px; font-size:.9rem}
+  .crumb .home{color:var(--dim)} .crumb .sep{color:var(--dim)}
+  .crumb b{font-weight:600; letter-spacing:-.01em}
+  .bar-right{margin-left:auto; display:flex; align-items:center; gap:12px}
+  .livechip{display:flex; align-items:center; gap:8px;
+    font-family:"JetBrains Mono",monospace; font-size:.66rem; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--mars-hot); padding:5px 11px;
+    border:1px solid rgba(242,100,25,.3); border-radius:99px; background:rgba(242,100,25,.06)}
+  .livedot{width:6px;height:6px;border-radius:50%;background:var(--mars-hot);
+    box-shadow:0 0 8px var(--mars-hot); animation:blink 1.4s ease-in-out infinite}
+  @keyframes blink{50%{opacity:.25}}
+  .barbtn{font-size:.82rem;color:var(--muted);padding:6px 12px;border-radius:8px;border:1px solid var(--line);transition:.15s}
+  .barbtn:hover{color:var(--text);border-color:var(--line2)}
+
+  .shell{display:flex; flex:1; min-height:0}
+
+  /* ── MODULE RAIL ────────────────────────────────────── */
+  .rail{width:var(--rail); flex-shrink:0; background:var(--bg2);
+    border-right:1px solid var(--line); display:flex; flex-direction:column}
+  .rail-head{padding:16px 18px 10px; font-family:"JetBrains Mono",monospace;
+    font-size:.64rem; font-weight:700; letter-spacing:.24em; color:var(--dim);
+    text-transform:uppercase; display:flex; justify-content:space-between; align-items:baseline}
+  .rail-head b{color:var(--muted); font-weight:500}
+  .modules{flex:1; overflow-y:auto; padding:4px 10px 12px}
+  .modules::-webkit-scrollbar{width:8px}
+  .modules::-webkit-scrollbar-thumb{background:var(--panel2);border-radius:99px}
+  .mod{border-radius:12px; margin-bottom:3px; border:1px solid transparent; overflow:hidden; transition:.18s}
+  .mod-head{display:flex; align-items:center; gap:11px; padding:11px 12px; width:100%; text-align:left; transition:.15s}
+  .mod-head:hover{background:var(--panel)}
+  .mod.active{background:var(--panel); border-color:var(--line2)}
+  .mod-num{font-family:"JetBrains Mono",monospace; font-size:.64rem; font-weight:700; color:var(--dim); width:18px; flex-shrink:0}
+  .mod.active .mod-num{color:var(--mars-hot)}
+  .mod.done .mod-num{color:var(--green)}
+  .mod-title{flex:1; font-size:.86rem; font-weight:600; letter-spacing:-.01em; line-height:1.25}
+  .mod-state{width:16px;height:16px;flex-shrink:0}
+  .ring{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--dim)}
+  .mod.active .ring{border-color:var(--mars)}
+
+  .sub{max-height:0; overflow:hidden; transition:max-height .32s cubic-bezier(.22,1,.36,1)}
+  .mod.active .sub{max-height:200px}
+  .sub-inner{padding:2px 12px 12px}
+  .subrow{display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+    padding:8px 10px 8px 20px; border-radius:9px; position:relative; color:var(--muted);
+    font-size:.82rem; transition:.14s}
+  .subrow:hover{background:var(--panel2); color:var(--text)}
+  .subrow.on{background:var(--panel2); color:var(--text)}
+  .subrow.on::before{content:""; position:absolute; left:8px; top:50%; transform:translateY(-50%);
+    width:3px; height:16px; border-radius:99px; background:var(--ice)}
+  .subrow.lab.on::before{background:var(--mars)}
+  .sub-ico{width:15px;text-align:center;opacity:.85;flex-shrink:0}
+  .sub-label{flex:1}
+  .sub-tag{font-family:"JetBrains Mono",monospace; font-size:.58rem; letter-spacing:.06em; color:var(--dim); text-transform:uppercase}
+  .sub-tag.done{color:var(--green)}
+  /* SIGNATURE: live telemetry fill on a generating lab row */
+  .subrow.gen{color:var(--text); background:rgba(242,100,25,.05)}
+  .subrow.gen .fill{position:absolute; inset:0; border-radius:9px; z-index:-1;
+    background:linear-gradient(90deg,rgba(242,100,25,.24),rgba(242,100,25,.06)); width:var(--p,0%); transition:width .5s ease}
+  .subrow.gen .sub-ico{color:var(--mars-hot);animation:blink 1.2s infinite}
+  .genpct{font-family:"JetBrains Mono",monospace;font-size:.62rem;color:var(--mars-hot);font-weight:500}
+
+  .rail-foot{padding:14px 18px 16px; border-top:1px solid var(--line)}
+  .rail-foot .lbl{display:flex;justify-content:space-between;font-family:"JetBrains Mono",monospace;
+    font-size:.6rem;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;margin-bottom:8px}
+  .track{height:4px;background:var(--panel2);border-radius:99px;overflow:hidden}
+  .track-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--mars),var(--green));transition:width .6s}
+
+  /* ── STAGE ──────────────────────────────────────────── */
+  .stage{flex:1; display:flex; flex-direction:column; min-width:0; background:var(--bg)}
+  .tabs{display:flex; gap:2px; padding:14px 24px 0; border-bottom:1px solid var(--line); flex-shrink:0}
+  .tab{display:flex; align-items:center; gap:8px; padding:10px 16px 13px; font-size:.86rem;
+    font-weight:600; color:var(--muted); border-bottom:2px solid transparent; margin-bottom:-1px; transition:.15s}
+  .tab:hover{color:var(--text)}
+  .tab.on{color:var(--text); border-bottom-color:var(--mars)}
+  .tab.lesson.on{border-bottom-color:var(--ice)}
+  .tab.quiz.on{border-bottom-color:var(--copper)}
+  .tab-ico{font-size:.95rem}
+  .tab .mini{font-family:"JetBrains Mono",monospace;font-size:.56rem;padding:2px 6px;border-radius:99px;
+    background:var(--panel2);color:var(--dim);letter-spacing:.06em}
+  .tab.lab .mini.live{color:var(--mars-hot);background:rgba(242,100,25,.12)}
+  .pane{flex:1; overflow-y:auto; padding:32px 40px 60px}
+  .pane[hidden]{display:none}
+  .pane-w{max-width:820px;margin:0 auto}
+  .eyebrow{font-family:"JetBrains Mono",monospace;font-size:.62rem;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--dim);margin-bottom:14px}
+  .eyebrow b{color:var(--ice);font-weight:500}
+
+  /* ── LAB VIEWPORT (hero) ────────────────────────────── */
+  .viewport{position:relative; border-radius:16px; overflow:hidden; border:1px solid var(--line2);
+    background:radial-gradient(120% 120% at 50% 0%,#160f0a,#080910); aspect-ratio:16/10;
+    box-shadow:0 30px 80px -30px rgba(0,0,0,.8), inset 0 0 0 1px rgba(255,255,255,.02)}
+  .viewport canvas{display:block;width:100%;height:100%}
+  .tick{position:absolute;width:16px;height:16px;border:2px solid rgba(242,100,25,.4);z-index:3}
+  .tick.tl{top:12px;left:12px;border-right:0;border-bottom:0}
+  .tick.tr{top:12px;right:12px;border-left:0;border-bottom:0}
+  .tick.bl{bottom:12px;left:12px;border-right:0;border-top:0}
+  .tick.br{bottom:12px;right:12px;border-left:0;border-top:0}
+  .vp-label{position:absolute;top:16px;left:36px;z-index:3;font-family:"JetBrains Mono",monospace;
+    font-size:.62rem;letter-spacing:.14em;color:var(--muted);text-transform:uppercase}
+  .vp-label .dot{color:var(--mars-hot)}
+  .boot{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:20px;text-align:center;
+    background:radial-gradient(100% 100% at 50% 40%,rgba(242,100,25,.07),#080910 70%);transition:opacity .6s}
+  .boot.gone{opacity:0;pointer-events:none}
+  .reactor{width:64px;height:64px;position:relative}
+  .reactor::before,.reactor::after{content:"";position:absolute;inset:0;border-radius:50%;
+    border:2px solid transparent;border-top-color:var(--mars);animation:spin 1s linear infinite}
+  .reactor::after{inset:10px;border-top-color:var(--mars-hot);animation-duration:1.5s;animation-direction:reverse}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .boot-title{font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
+  .boot-sub{font-family:"JetBrains Mono",monospace;font-size:.72rem;color:var(--muted);max-width:340px;min-height:18px}
+  .boot-bar{width:220px;height:3px;background:var(--panel2);border-radius:99px;overflow:hidden}
+  .boot-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--mars),var(--mars-hot));
+    box-shadow:0 0 10px var(--mars);transition:width .5s}
+  .vp-caption{display:flex;gap:16px;align-items:flex-start;margin-top:18px}
+  .vp-caption .n{font-family:"JetBrains Mono",monospace;color:var(--mars);font-size:.8rem;font-weight:700;padding-top:2px}
+  .vp-caption p{color:var(--muted);font-size:.9rem;line-height:1.55}
+  .vp-caption strong{color:var(--text);font-weight:600}
+  .prompt{margin-top:26px;border:1px solid var(--line);border-radius:14px;padding:20px 22px;background:var(--panel)}
+  .prompt h4{font-size:.95rem;margin-bottom:8px}
+  .prompt p{color:var(--muted);font-size:.88rem;margin-bottom:16px}
+  .field{display:flex;gap:10px}
+  .field input{flex:1;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:11px 14px;
+    color:var(--text);font-family:inherit;font-size:.9rem}
+  .field input:focus{outline:none;border-color:var(--mars)}
+  .btn-primary{background:var(--mars);color:#fff;font-weight:600;font-size:.88rem;padding:11px 20px;border-radius:10px;transition:.15s;white-space:nowrap}
+  .btn-primary:hover{background:var(--mars-hot)}
+
+  /* ── LESSON (serif reading) ─────────────────────────── */
+  .lesson{font-family:"Newsreader",Georgia,serif}
+  .lesson h1{font-family:"Chivo",sans-serif;font-size:1.9rem;font-weight:900;letter-spacing:-.02em;line-height:1.1;margin-bottom:6px}
+  .lesson .hook{font-size:1.15rem;color:var(--copper);font-style:italic;margin-bottom:28px;line-height:1.5}
+  .lesson h2{font-family:"Chivo",sans-serif;font-size:1.05rem;font-weight:700;letter-spacing:.01em;margin:30px 0 10px;color:var(--text)}
+  .lesson p{font-size:1.08rem;line-height:1.7;color:#C7D0E0;margin-bottom:14px}
+  .lesson .key{border-left:2px solid var(--ice);padding:4px 0 4px 18px;margin:22px 0;color:var(--text);font-size:1.06rem}
+  .slidenav{display:flex;align-items:center;gap:16px;margin-top:36px;font-family:"Chivo",sans-serif;padding-top:20px;border-top:1px solid var(--line)}
+  .slidenav .dots{display:flex;gap:6px;flex:1}
+  .slidenav .d{width:7px;height:7px;border-radius:50%;background:var(--panel2)}
+  .slidenav .d.on{background:var(--ice);width:20px;border-radius:99px}
+  .ghost{border:1px solid var(--line2);color:var(--muted);font-size:.85rem;padding:9px 16px;border-radius:9px;transition:.15s}
+  .ghost:hover{color:var(--text);border-color:var(--ice)}
+
+  /* ── QUIZ ───────────────────────────────────────────── */
+  .qcard{border:1px solid var(--line);border-radius:14px;padding:24px 26px;background:var(--panel);margin-bottom:14px}
+  .qcard .qn{font-family:"JetBrains Mono",monospace;font-size:.64rem;letter-spacing:.16em;color:var(--copper);text-transform:uppercase;margin-bottom:10px}
+  .qcard h3{font-size:1.05rem;font-weight:600;margin-bottom:18px;line-height:1.4}
+  .opt{display:flex;align-items:center;gap:13px;width:100%;text-align:left;padding:13px 16px;
+    border:1px solid var(--line2);border-radius:11px;margin-bottom:9px;color:var(--muted);transition:.14s;font-size:.92rem}
+  .opt:hover{border-color:var(--copper);color:var(--text)}
+  .opt.pick{border-color:var(--copper);background:rgba(212,165,116,.08);color:var(--text)}
+  .opt .k{font-family:"JetBrains Mono",monospace;font-size:.72rem;color:var(--dim);width:20px;flex-shrink:0}
+  .opt.pick .k{color:var(--text)}
+
+  @media (max-width:980px){
+    :root{--appnav:64px}
+    .brand-name,.nav-item span,.nav-cap{display:none}
+    .brand{justify-content:center;padding:18px 0}
+    .nav-item{justify-content:center;padding:11px 0}
+    .nav-groups{padding:4px 8px}
+  }
+  @media (max-width:760px){
+    :root{--rail:0px}
+    .rail{position:fixed;left:64px;top:0;bottom:0;width:250px;z-index:20;transform:translateX(-110%);transition:transform .25s}
+    .rail.open{transform:none}
+    .pane{padding:22px 18px 60px}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ══ APP NAV RAIL (your existing nav, kept + rebranded orange) ══ -->
+  <aside class="appnav">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+        <path d="M2 13 h4 l2 -6 3 12 2 -9 2 5 h6" stroke="#F26419" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand-name">Re<b>pend</b></span>
+    </div>
+    <nav class="nav-groups">
+      <div class="nav-cap">Navigation</div>
+      <button class="nav-item on"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 5a2 2 0 0 1 2-2h5a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H2z"/><path d="M22 5a2 2 0 0 0-2-2h-5a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z"/></svg><span>Courses</span></button>
+      <button class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M6 3h12v6a6 6 0 0 1-12 0z"/><path d="M9 19h6M10 15v4M14 15v4M8 21h8"/></svg><span>Challenges</span></button>
+      <div class="nav-cap">Admin</div>
+      <button class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Admin</span></button>
+      <div class="nav-cap">Personal</div>
+      <button class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17l6-6 4 4 7-7"/><path d="M17 8h4v4"/></svg><span>Progress</span></button>
+      <button class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Profile</span></button>
+    </nav>
+    <div class="nav-foot">
+      <button class="nav-item up"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.5 5.5L20 11l-5.5 2.5L12 19l-2.5-5.5L4 11l5.5-2.5z"/></svg><span>Upgrade</span></button>
+      <button class="nav-item"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign Out</span></button>
+    </div>
+  </aside>
+
+  <!-- ══ WORKBENCH ══ -->
+  <div class="workbench">
+    <div class="bar">
+      <div class="crumb"><span class="home">Courses</span><span class="sep">/</span><b>Introduction to Cybersecurity</b></div>
+      <div class="bar-right">
+        <div class="livechip" id="livechip"><span class="livedot"></span> Lab building · 0%</div>
+        <button class="barbtn">Publish</button>
+      </div>
+    </div>
+
+    <div class="shell">
+      <!-- MODULE RAIL — stays visible even during lab generation -->
+      <aside class="rail">
+        <div class="rail-head">Modules <b class="mono" id="modCount">1 / 5</b></div>
+        <nav class="modules" id="modules"></nav>
+        <div class="rail-foot">
+          <div class="lbl">Course progress <span id="progPct">18%</span></div>
+          <div class="track"><div class="track-fill" id="progFill" style="width:18%"></div></div>
+        </div>
+      </aside>
+
+      <!-- STAGE -->
+      <main class="stage">
+        <div class="tabs">
+          <button class="tab lesson" data-tab="lesson"><span class="tab-ico">📖</span> Lesson <span class="mini done">read</span></button>
+          <button class="tab lab on" data-tab="lab"><span class="tab-ico">🔬</span> Lab <span class="mini live" id="labMini">building</span></button>
+          <button class="tab quiz" data-tab="quiz"><span class="tab-ico">⚡</span> Quiz <span class="mini">4 q</span></button>
+        </div>
+
+        <section class="pane" data-pane="lesson" hidden>
+          <div class="pane-w lesson">
+            <div class="eyebrow" style="font-family:'JetBrains Mono'">Module 01 · <b>Lesson</b></div>
+            <h1>What are we actually defending?</h1>
+            <p class="hook">Before firewalls and passwords, one question: what does an attacker want, and what stands between them and it?</p>
+            <p>Every system holds something worth taking — data, access, or attention. Security isn't a wall; it's a set of trade-offs about how hard you make each of those to reach.</p>
+            <div class="key">The CIA triad — Confidentiality, Integrity, Availability — is the lens every defense decision passes through.</div>
+            <h2>Why it breaks</h2>
+            <p>Most breaches aren't clever. They're a default password, an unpatched service, or a person clicking a link. The interesting part is the chain: one small gap becomes a foothold, a foothold becomes control.</p>
+            <p>In the lab, you'll watch a single packet try to reach a protected host — and see exactly where a firewall decides to let it through or drop it.</p>
+            <div class="slidenav">
+              <button class="ghost">← Prev</button>
+              <div class="dots"><span class="d on"></span><span class="d"></span><span class="d"></span></div>
+              <button class="ghost" style="border-color:var(--ice);color:var(--text)">Next →</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="pane" data-pane="lab">
+          <div class="pane-w">
+            <div class="eyebrow">Module 01 · <b style="color:var(--mars)">Lab</b> · interactive simulation</div>
+            <div class="viewport">
+              <span class="tick tl"></span><span class="tick tr"></span><span class="tick bl"></span><span class="tick br"></span>
+              <div class="vp-label"><span class="dot">●</span> PACKET·FLOW / FIREWALL</div>
+              <canvas id="sim"></canvas>
+              <div class="boot" id="boot">
+                <div class="reactor"></div>
+                <div class="boot-title">Building your lab</div>
+                <div class="boot-sub mono" id="bootSub">Designing the simulation…</div>
+                <div class="boot-bar"><i id="bootBar"></i></div>
+              </div>
+            </div>
+            <div class="vp-caption">
+              <span class="n">01</span>
+              <p><strong>Drag the firewall rule</strong> onto a port and watch packets get dropped or forwarded in real time. Find the rule that blocks the attacker without cutting off legitimate traffic.</p>
+            </div>
+            <div class="prompt">
+              <h4>Show what you discovered</h4>
+              <p>Which single rule stopped the intrusion while keeping the web server reachable?</p>
+              <div class="field">
+                <input type="text" placeholder="Describe the rule you found…">
+                <button class="btn-primary">Check answer</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="pane" data-pane="quiz" hidden>
+          <div class="pane-w">
+            <div class="eyebrow" style="font-family:'JetBrains Mono'">Module 01 · <b style="color:var(--copper)">Quiz</b> · 4 questions</div>
+            <div class="qcard">
+              <div class="qn">Question 01</div>
+              <h3>Which part of the CIA triad is violated when an attacker <em>reads</em> data they shouldn't?</h3>
+              <button class="opt"><span class="k">A</span> Integrity</button>
+              <button class="opt"><span class="k">B</span> Confidentiality</button>
+              <button class="opt"><span class="k">C</span> Availability</button>
+              <button class="opt"><span class="k">D</span> Authenticity</button>
+            </div>
+            <div class="qcard">
+              <div class="qn">Question 02</div>
+              <h3>A firewall's default-deny rule means…</h3>
+              <button class="opt"><span class="k">A</span> Everything is allowed unless blocked</button>
+              <button class="opt"><span class="k">B</span> Nothing passes unless explicitly allowed</button>
+              <button class="opt"><span class="k">C</span> Only encrypted traffic passes</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</div>
+
+<script>
+const MODS = [
+  {n:"01", t:"Introduction to Cybersecurity", state:"active",
+   sub:[{k:"lesson",l:"Lesson",tag:"read",done:true},{k:"lab",l:"Lab",gen:true},{k:"quiz",l:"Quiz",tag:"4 q"}]},
+  {n:"02", t:"Network Security Essentials", state:"queued"},
+  {n:"03", t:"Understanding Malware", state:"queued"},
+  {n:"04", t:"Cryptography Basics", state:"queued"},
+  {n:"05", t:"Social Engineering & You", state:"queued"},
+];
+const railEl = document.getElementById("modules");
+railEl.innerHTML = MODS.map((m,i)=>{
+  const cls = m.state==="active" ? "active" : "";
+  let sub = "";
+  if(m.sub){
+    sub = `<div class="sub"><div class="sub-inner">` + m.sub.map(s=>{
+      if(s.gen) return `<button class="subrow lab gen" data-go="lab"><span class="fill"></span>
+        <span class="sub-ico">🔬</span><span class="sub-label">${s.l}</span><span class="genpct" data-pct>0%</span></button>`;
+      const on = s.k==="lab" ? "on lab" : "";
+      const ico = s.k==="lesson"?"📖":s.k==="lab"?"🔬":"⚡";
+      const tag = s.done ? `<span class="sub-tag done">✓ done</span>` : `<span class="sub-tag">${s.tag||""}</span>`;
+      return `<button class="subrow ${on}" data-go="${s.k}"><span class="sub-ico">${ico}</span>
+        <span class="sub-label">${s.l}</span>${tag}</button>`;
+    }).join("") + `</div></div>`;
+  }
+  return `<div class="mod ${cls}" data-mod="${i}">
+    <button class="mod-head"><span class="mod-num">${m.n}</span>
+    <span class="mod-title">${m.t}</span><span class="mod-state"><span class="ring"></span></span></button>${sub}</div>`;
+}).join("");
+
+function show(tab){
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.tab===tab));
+  document.querySelectorAll(".pane").forEach(p=>p.hidden = p.dataset.pane!==tab);
+  document.querySelectorAll(".subrow").forEach(s=>s.classList.toggle("on",s.dataset.go===tab));
+}
+document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>show(t.dataset.tab)));
+document.addEventListener("click",e=>{
+  const row=e.target.closest(".subrow"); if(row&&row.dataset.go) show(row.dataset.go);
+  const nav=e.target.closest(".nav-item");
+  if(nav){document.querySelectorAll(".nav-item").forEach(n=>n.classList.remove("on")); if(!nav.classList.contains("up"))nav.classList.add("on");}
+});
+document.querySelectorAll(".opt").forEach(o=>o.addEventListener("click",function(){
+  this.parentElement.querySelectorAll(".opt").forEach(x=>x.classList.remove("pick")); this.classList.add("pick");
+}));
+
+// ── SIGNATURE: live lab generation → rail telemetry + boot → sim ──
+const boot=document.getElementById("boot"), bootBar=document.getElementById("bootBar"),
+      bootSub=document.getElementById("bootSub"), pctEl=document.querySelector("[data-pct]"),
+      genRow=document.querySelector(".subrow.gen"), livechip=document.getElementById("livechip"),
+      labMini=document.getElementById("labMini");
+const stages=["Designing the simulation…","Planning the interactions…","Rendering the 3-D scene…","Wiring the controls…","Reviewing & polishing…"];
+let p=0, si=0;
+const reduce = matchMedia("(prefers-reduced-motion:reduce)").matches;
+function tick(){
+  p += reduce?100:(Math.random()*7+2); if(p>=100)p=100;
+  const pv=Math.round(p);
+  bootBar.style.width=pv+"%";
+  if(pctEl) pctEl.textContent=pv+"%";
+  if(genRow) genRow.style.setProperty("--p",pv+"%");
+  livechip.innerHTML=`<span class="livedot"></span> Lab building · ${pv}%`;
+  const ns=Math.min(stages.length-1,Math.floor(p/20));
+  if(ns!==si){si=ns; bootSub.textContent=stages[si];}
+  if(p<100) setTimeout(tick, reduce?0:420); else ready();
+}
+function ready(){
+  bootSub.textContent="Lab ready.";
+  livechip.innerHTML=`<span class="livedot" style="background:var(--green);box-shadow:0 0 8px var(--green);animation:none"></span> Lab ready`;
+  livechip.style.color="var(--green)"; livechip.style.borderColor="rgba(52,211,153,.3)"; livechip.style.background="rgba(52,211,153,.06)";
+  labMini.textContent="ready"; labMini.classList.remove("live");
+  if(genRow){genRow.classList.remove("gen");
+    genRow.innerHTML=`<span class="sub-ico">🔬</span><span class="sub-label">Lab</span><span class="sub-tag done">✓ ready</span>`;
+    genRow.classList.add("on");}
+  setTimeout(()=>boot.classList.add("gone"),400);
+}
+setTimeout(tick, 700);
+
+// ── lab sim: packet-flow through a firewall ──
+const cv=document.getElementById("sim"), ctx=cv.getContext("2d");
+let W,H,dpr;
+function size(){dpr=Math.min(2,devicePixelRatio||1);const r=cv.getBoundingClientRect();W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);}
+size(); addEventListener("resize",size);
+const nodes=[{x:.12,y:.5,l:"SRC"},{x:.5,y:.5,l:"FW"},{x:.88,y:.32,l:"WEB"},{x:.88,y:.72,l:"DB"}];
+const edges=[[0,1],[1,2],[1,3]];
+let packets=[]; let t0=performance.now();
+function spawn(){packets.push({seg:0,p:0,bad:Math.random()<.4,drop:false});}
+function draw(now){
+  const dt=(now-t0)/1000;t0=now; ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle="rgba(242,100,25,.05)";ctx.lineWidth=1;
+  for(let i=0;i<W;i+=34){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,H);ctx.stroke();}
+  for(let j=0;j<H;j+=34){ctx.beginPath();ctx.moveTo(0,j);ctx.lineTo(W,j);ctx.stroke();}
+  edges.forEach(([a,b])=>{const A=nodes[a],B=nodes[b];ctx.strokeStyle="rgba(138,151,173,.35)";ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(A.x*W,A.y*H);ctx.lineTo(B.x*W,B.y*H);ctx.stroke();});
+  const fw=nodes[1];ctx.fillStyle="rgba(242,100,25,.12)";ctx.beginPath();ctx.arc(fw.x*W,fw.y*H,26,0,7);ctx.fill();
+  nodes.forEach((n,i)=>{const x=n.x*W,y=n.y*H;
+    ctx.fillStyle=i===1?"#F26419":"#141726";ctx.strokeStyle=i===1?"#FF8A3D":"rgba(242,100,25,.5)";ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.roundRect(x-22,y-14,44,28,7);ctx.fill();ctx.stroke();
+    ctx.fillStyle=i===1?"#fff":"#8A97AD";ctx.font="600 10px 'JetBrains Mono',monospace";
+    ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(n.l,x,y);});
+  packets.forEach(pk=>{
+    let route = pk.bad?[0,1,3]:[0,1,2];
+    const a=nodes[route[pk.seg]],b=nodes[route[pk.seg+1]]; if(!a||!b){pk.dead=true;return;}
+    pk.p+=dt*.6;
+    if(pk.seg===1 && pk.bad && !pk.decided){pk.decided=true; pk.drop=true;}
+    const x=(a.x+(b.x-a.x)*pk.p)*W, y=(a.y+(b.y-a.y)*pk.p)*H;
+    if(pk.drop && pk.p>.15){
+      const fx=nodes[1].x*W,fy=nodes[1].y*H;
+      ctx.strokeStyle="rgba(255,90,90,.75)";ctx.lineWidth=1.5;
+      ctx.beginPath();ctx.moveTo(fx-6,fy-6);ctx.lineTo(fx+6,fy+6);ctx.moveTo(fx+6,fy-6);ctx.lineTo(fx-6,fy+6);ctx.stroke();
+      pk.dead=true;return;}
+    ctx.fillStyle=pk.bad?"#FF5A5A":"#34D399";ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=10;
+    ctx.beginPath();ctx.arc(x,y,4,0,7);ctx.fill();ctx.shadowBlur=0;
+    if(pk.p>=1){pk.seg++;pk.p=0;pk.decided=false;if(pk.seg>=route.length-1)pk.dead=true;}
+  });
+  packets=packets.filter(pk=>!pk.dead);
+  if(!reduce) requestAnimationFrame(draw);
+}
+if(!reduce){setInterval(spawn,900);requestAnimationFrame(draw);}
+</script>
+</body>
+</html>
