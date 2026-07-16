@@ -1,7 +1,7 @@
 // courses.js — course generation backend (lesson → lab → quiz contract).
 //
-// SCOPE GUARD: this module does NOT touch the 3D lab generator. Labs are
-// produced by server.js (codeFromImageBrief & friends) and stay exactly as-is.
+// SCOPE GUARD: this module does NOT touch the lab generator. Labs are
+// produced by server.js (2-stage pipeline: blueprint → GLM codegen) and stay as-is.
 // Courses wrap labs with lessons + quizzes and a hard constraint:
 //   the LESSON is the source of truth; the lab and quiz may not introduce any
 //   concept the lesson didn't teach.
@@ -34,10 +34,11 @@ const useNvidiaCourses = COURSE_PROVIDER === "nvidia" && !!NVIDIA_API_KEY;
 const courseClient = useNvidiaCourses
   ? new OpenAI({ apiKey: NVIDIA_API_KEY, baseURL: "https://integrate.api.nvidia.com/v1", maxRetries: 0 })
   : openai;
-// Phase-1 reasoning model. Defaults to gpt-oss-20b on NVIDIA, gpt-4o on OpenAI.
-// Override with REASON_MODEL (shared with server.js) or COURSE_MODEL_ID (course-only).
-const COURSE_MODEL_ID = process.env.COURSE_MODEL_ID || process.env.REASON_MODEL
-  || (useNvidiaCourses ? "openai/gpt-oss-20b" : "gpt-4o");
+// Phase-1 reasoning model. Defaults to DeepSeek V4 Flash on NVIDIA (same model
+// the lab pipeline uses for lesson/quiz — fast, native thinking, solid JSON),
+// gpt-4o on OpenAI. Override with COURSE_MODEL_ID (course-only).
+const COURSE_MODEL_ID = process.env.COURSE_MODEL_ID
+  || (useNvidiaCourses ? "deepseek-ai/deepseek-v4-flash" : "gpt-4o");
 
 // The slide-type taxonomy is the guardrail that forces the model to TEACH
 // instead of summarize. Keep in sync with the UI badge colors.
@@ -83,19 +84,31 @@ function parseLooseJSON(text) {
   throw new Error("Unbalanced JSON in model response");
 }
 
+// Hard per-call ceiling. Without this the OpenAI SDK default (10 min) lets a slow
+// free-tier reasoning call hang until the browser gives up first — the buffered
+// /plan-course request then dies as net::ERR_TIMED_OUT (status 0) with no error
+// the client can show. 45s × up to 4 attempts stays under Chrome's ~5min cap and
+// turns a silent hang into a clean, retryable 500.
+const COURSE_STAGE_TIMEOUT_MS = parseInt(process.env.COURSE_STAGE_TIMEOUT_MS || "45000", 10);
+
 async function aiJSON(prompt, maxTokens = 2500, label = "course") {
   let lastErr;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const res = await courseClient.chat.completions.create({
         model: COURSE_MODEL_ID,
-        // gpt-oss is a reasoning model: cap reasoning so it emits a real answer,
-        // and give headroom so the final JSON isn't truncated by the think phase.
+        // NVIDIA models don't all take the same params: gpt-oss accepts
+        // reasoning_effort (cap it so a real answer comes out); DeepSeek thinks
+        // natively and rejects/ignores it. Both need headroom so the final JSON
+        // isn't truncated by the think phase. json_object mode is OpenAI-only.
         ...(useNvidiaCourses
-          ? { reasoning_effort: "low", max_tokens: Math.max(maxTokens, 3000) }
+          ? {
+              max_tokens: Math.max(maxTokens, 3000),
+              ...(/gpt-oss/i.test(COURSE_MODEL_ID) ? { reasoning_effort: "low" } : {}),
+            }
           : { max_tokens: maxTokens, response_format: { type: "json_object" } }),
         messages: [{ role: "user", content: prompt }],
-      });
+      }, { timeout: COURSE_STAGE_TIMEOUT_MS });
       // Reasoning models can return content:null with output in reasoning_content.
       const m = res?.choices?.[0]?.message || {};
       const content = (typeof m.content === "string" && m.content.trim())
@@ -105,7 +118,9 @@ async function aiJSON(prompt, maxTokens = 2500, label = "course") {
     } catch (err) {
       lastErr = err;
       const overloaded = err?.status === 429 || err?.status === 503 || /overload|rate.?limit/i.test(err?.message || "");
-      if (!overloaded || attempt === 3) throw err;
+      const timedOut = err?.name === "APIConnectionTimeoutError" || err?.name === "APIUserAbortError" || /timed?\s*out|timeout|aborted/i.test(err?.message || "");
+      console.error(`[${label}] attempt ${attempt + 1}/4 failed: ${err?.status || ""} ${err?.name || ""} ${err?.message || err}`.trim());
+      if ((!overloaded && !timedOut) || attempt === 3) throw err;
       await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
     }
   }

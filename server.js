@@ -4,6 +4,7 @@ const path = require("path");
 const OpenAI = require("openai");
 const { groundTopic } = require("./grounding");
 const courses = require("./courses");
+const harness = require("./lab-harness");
 
 // Load .env locally (Railway injects env vars directly, so this is a no-op there).
 try { require("fs").readFileSync(path.join(__dirname, ".env"), "utf8")
@@ -58,12 +59,10 @@ const CODEGEN_MODEL = process.env.CODEGEN_MODEL || "nvidia";
 // (no auth needed) before deploying — a delisted id 404s every codegen call.
 const CODEGEN_MODEL_ID = process.env.CODEGEN_MODEL_ID || "z-ai/glm-5.2";
 
-// Output token cap for codegen. The NVIDIA Build FREE endpoint rejects requests
-// above ~16384 and returns an EMPTY stream (0 chars in content AND
-// reasoning_content) with no error — which silently drops every lab to the
-// weaker llama fallback. 16384 is the safe ceiling; override via env only on a
-// paid NIM endpoint that genuinely supports more.
-const CODEGEN_MAX_TOKENS = parseInt(process.env.CODEGEN_MAX_TOKENS || "16384", 10);
+// Output token cap for codegen. NVIDIA NIM caps GLM-5.2 output at 32768 and
+// DEFAULTS to 16384 when the param is omitted — that silent default was the
+// truncation bug (labs cut off mid-<script>). Always send the cap explicitly.
+const CODEGEN_MAX_TOKENS = parseInt(process.env.CODEGEN_MAX_TOKENS || "32768", 10);
 
 // Codegen stream guards. CODEGEN_TIMEOUT_MS = hard wall-clock ceiling for ONE
 // Kimi call; CODEGEN_IDLE_MS = max gap between streamed chunks before we treat
@@ -72,43 +71,25 @@ const CODEGEN_MAX_TOKENS = parseInt(process.env.CODEGEN_MAX_TOKENS || "16384", 1
 const CODEGEN_TIMEOUT_MS = parseInt(process.env.CODEGEN_TIMEOUT_MS || "300000", 10); // 5 min (GLM is slower than Kimi)
 const CODEGEN_IDLE_MS = parseInt(process.env.CODEGEN_IDLE_MS || "45000", 10);        // 45 s
 
-// GLM-5.1 is a hybrid reasoning model: by default it emits a long internal
-// chain-of-thought (reasoning_content) BEFORE writing any HTML. But by codegen
-// time we've already done all the design reasoning upstream (thinkAboutTopic →
-// specFromThinking → thinkAboutLab → thinkAboutVisualPedagogy), so the model
-// re-thinking from scratch is pure wasted wall-clock — often 40-60% of the call.
-// Turning thinking OFF makes GLM go straight to writing the file.
-//   CODEGEN_THINKING=off  (default) → disable GLM's chain-of-thought
-//   CODEGEN_THINKING=on             → keep it (revert if quality drops)
+// GLM-5.2 is a hybrid reasoning model: by default it emits an internal
+// chain-of-thought (reasoning_content) BEFORE writing any code. Stage 1 already
+// did the design reasoning, so default is OFF — GLM goes straight to writing.
+//   CODEGEN_THINKING=on → keep it (try if sim-logic quality drops)
 // The control key for the Zhipu GLM family on NVIDIA NIM is
 // chat_template_kwargs.thinking; the OpenAI SDK forwards it verbatim in the body.
 const CODEGEN_THINKING = (process.env.CODEGEN_THINKING || "off").toLowerCase() === "on";
 
-// ── INTERACTION DIRECTOR ──────────────────────────────────────────────────────
-// A parallel extended-thinking call that picks the INTERACTION LANGUAGE for each
-// lab — the way a game designer picks 3D for a Madden-style football game but 2D
-// canvas for a platform fighter. It runs alongside thinkAboutLab/visualPedagogy
-// (zero added wall-clock) and outputs a concrete "interaction contract" injected
-// into codegen, so labs stop defaulting to slider-only interactivity.
-// Default model: gpt-oss-20b on NVIDIA Build (a reasoning model — same family the
-// course generator already uses; reasoning_effort=high gives the extended think).
-//   ENABLE_INTERACTION_DIRECTOR=off  → skip entirely (pipeline identical to before)
-//   INTERACTION_MODEL_ID=<id>        → any NVIDIA Build / OpenAI-compatible model
-const ENABLE_INTERACTION_DIRECTOR = (process.env.ENABLE_INTERACTION_DIRECTOR || "on").toLowerCase() !== "off";
-// DeepSeek V4 Flash on NVIDIA Build: a native thinking model (reasons by default,
-// no reasoning_effort param needed; openaiCreateStreamed already collects its
-// reasoning_content). NOTE: deepseek-r1 was DELISTED from NVIDIA Build (404
-// "page not found") — verify any override against GET /v1/models first.
-// If the primary is unreachable, thinkAboutInteraction retries once with
-// REASON_MODEL (llama-70b) — a non-thinking contract beats no contract.
-const INTERACTION_MODEL_ID = process.env.INTERACTION_MODEL_ID || "deepseek-ai/deepseek-v4-flash";
+// ── 2-STAGE PIPELINE MODELS ───────────────────────────────────────────────────
+// Lesson + quiz: DeepSeek V4 Flash on NVIDIA Build — fast (~10s), native thinking
+// model, already proven for JSON output. The lesson streams to the learner FIRST
+// so they read while the lab builds. NOTE: deepseek-r1 was DELISTED from NVIDIA
+// Build — verify any override against GET /v1/models first.
+const LESSON_MODEL_ID = process.env.LESSON_MODEL_ID || process.env.INTERACTION_MODEL_ID || "deepseek-ai/deepseek-v4-flash";
 
-// labthink ("Thinking about how to build it") runs in the SAME parallel window as
-// the interaction director. Both used to lean on llama-3.3-70b, and concurrent
-// heavy calls to the ONE flaky model are exactly where the free tier burns out.
-// Route labthink to a DIFFERENT DeepSeek model (v4-pro) so the two parallel heavy
-// stages hit separate endpoints and neither depends on the stalling 70b. Falls
-// back down the gpt-oss chain (never back to 70b). Override with THINK_MODEL_ID.
+// Stage 1 blueprint: DeepSeek V4 Pro — the one heavy reasoning call in the
+// pipeline. Produces the JSON blueprint (mechanism, misconception, formulas,
+// variables, concept_type, interaction contract) that drives everything else.
+// Falls back down REASON_FALLBACK_CHAIN (gpt-oss-120b → 20b → llama-70b).
 const THINK_MODEL_ID = process.env.THINK_MODEL_ID || (NVIDIA_API_KEY ? "deepseek-ai/deepseek-v4-pro" : (process.env.OPENAI_MODEL || "gpt-4o"));
 
 // OpenAI model selectors — centralized so you can swap models from env (Railway
@@ -178,14 +159,7 @@ const visionClient = NVIDIA_API_KEY ? nvidia : openai;
 const VISION_MODEL = process.env.VISION_MODEL_ID || (NVIDIA_API_KEY ? "nvidia/nemotron-nano-12b-v2-vl" : OPENAI_MODEL);
 console.log(`[boot] reasoning provider: ${useNvidiaReasoning ? `NVIDIA Build (${REASON_MODEL}), mini: ${REASON_MINI_MODEL}, think: ${THINK_MODEL_ID}, fallback chain: ${REASON_FALLBACK_CHAIN.join(" → ")}` : `OpenAI (${REASON_MODEL})`}`);
 console.log(`[boot] vision provider: ${NVIDIA_API_KEY ? `NVIDIA Build (${VISION_MODEL})` : `OpenAI (${OPENAI_MODEL})`}`);
-console.log(`[boot] visual critic: ${process.env.ENABLE_VISUAL_CRITIC === "1" ? "ON (puppeteer headless Chrome — OOM risk on small containers)" : "OFF (static guardrail only)"}`);
-
-// Optional mockup-image model — runs on NVIDIA Build (free) via the OpenAI-
-// compatible images endpoint, reusing the `nvidia` client. The mockup step is
-// gated behind USE_MOCKUP=1; it is OFF by default because the text brief drives
-// codegen. Swap models from env: black-forest-labs/flux.1-schnell (fast, default),
-// black-forest-labs/flux.1-dev (more detail), or qwen/qwen-image (legible labels).
-const IMAGE_MODEL_ID = process.env.IMAGE_MODEL_ID || "black-forest-labs/flux.1-dev";
+console.log(`[boot] codegen: ${CODEGEN_MODEL_ID} (max_tokens=${CODEGEN_MAX_TOKENS}, thinking=${CODEGEN_THINKING ? "on" : "off"}) | lesson/quiz: ${LESSON_MODEL_ID}`);
 
 const { createClient } = require("@supabase/supabase-js");
 let supabase = null;
@@ -262,72 +236,6 @@ async function openaiCreateStreamed(params, label = "reason-stream", reqOpts = {
     }
   }
   throw lastErr;
-}
-
-// Extract an HTML document from a raw model response.
-// Models sometimes wrap the output in markdown fences or add a preamble sentence.
-// We find the first occurrence of <!doctype or <html (case-insensitive) and return
-// everything from there, stripping any trailing markdown fence.
-function extractHtml(raw) {
-  const s = String(raw || "");
-  const idx = s.search(/<!doctype\s+html|<html[\s>]/i);
-  if (idx === -1) return null;
-  let html = s.slice(idx).trim();
-  // Strip trailing ``` fence if present
-  html = html.replace(/```\s*$/, "").trim();
-  return html.length > 200 ? html : null;
-}
-
-// Static, dependency-free liveness check on a generated lab. Encodes the
-// "a lab must be live, manipulable, and winnable" contract as cheap structural
-// assertions so blank / dead / truncated labs are caught BEFORE they ship — no
-// headless browser, so it runs ALWAYS (even when the visual critic is disabled).
-// It only ever triggers a regeneration; it never hard-rejects a lab, so a quirky
-// but valid lab can't be turned into an error by a regex miss.
-function validateLabHtml(html, interactionContract = null) {
-  const s = String(html || "");
-  const issues = [];
-  if (!/<\/html\s*>/i.test(s))
-    issues.push("HTML is truncated (no closing </html>) — your previous output EXCEEDED the ~16K output-token budget and was cut off. You CANNOT fix this by writing more; you must fit a COMPLETE, working file INTO the budget: strip ALL comments, remove redundant/duplicate code, use terse variable names, collapse whitespace, and cut any non-essential flourish. Same core simulation, tighter code, every tag closed.");
-  else if (!/<\/script\s*>/i.test(s))
-    issues.push("The script is cut off (no closing </script>) — finish the JavaScript and close every tag.");
-  if (!/THREE\s*\.\s*(WebGLRenderer|Scene)/.test(s))
-    issues.push("No Three.js renderer/scene is created — build a THREE.WebGLRenderer and THREE.Scene so the 3D world actually renders.");
-  if (!/requestAnimationFrame/.test(s))
-    issues.push("No requestAnimationFrame loop — add an animation loop so the scene is live and changes are visible, not a frozen frame.");
-  const hasListener = /addEventListener\s*\(\s*['"`](pointer|mouse|click|input|change|key|touch|wheel|drag)/i.test(s);
-  const hasControl = /<input\b/i.test(s) || /<button\b/i.test(s);
-  if (!hasListener && !hasControl)
-    issues.push("No interaction wiring — add pointer/key/drag listeners (or input/button controls) so the learner can manipulate the scene.");
-  if (!/labCheck/.test(s) || !/postMessage/.test(s))
-    issues.push("No labCheck win signal — call window.parent.postMessage({type:'labCheck', result:{ok:true,score,total}}, '*') when the learner succeeds, so the lab is winnable.");
-  // Interaction-contract check (only when a director contract demanded direct
-  // manipulation — never fires on the legacy path, so no new regen risk there).
-  // A lab whose only wiring is <input> 'input'/'change' listeners is slider-only:
-  // require at least one direct-manipulation listener (pointer/mouse/touch/key/
-  // drag/wheel) so the primary interaction from the contract can actually exist.
-  if (interactionContract && interactionContract.primary_interaction) {
-    const hasDirect = /addEventListener\s*\(\s*['"`](pointerdown|pointermove|mousedown|mousemove|touchstart|keydown|keyup|drag|wheel)/i.test(s);
-    if (!hasDirect)
-      issues.push(`Slider-only lab — the interaction contract requires "${interactionContract.primary_interaction.style}" as the PRIMARY interaction (${interactionContract.primary_interaction.binding || ""}). Wire pointer/key listeners on the play area so the learner directly manipulates the scene; sliders may only be secondary.`);
-  }
-  return { ok: issues.length === 0, issues };
-}
-
-// Turn liveness failures into a corrective note fed back into the SAME codegen
-// call (reuses codeFromImageBrief's existing critiqueNotes input — no new model,
-// no new flow, no extra dependency).
-function labCheckNotes(issues) {
-  // If the previous output truncated, the retry MUST be more compact, not longer —
-  // the free endpoint's ~16K cap is hard, so "write more" just truncates again.
-  const truncated = issues.some(i => /truncat|token|cut off/i.test(i));
-  const budgetNote = truncated
-    ? "\nCRITICAL: your last attempt ran past the ~16K output-token limit and was cut off mid-file. You CANNOT fix this by writing more — you must write LESS to fit a COMPLETE file in budget: no comments, no dead code, terse names, minimal whitespace, drop any non-essential flourish. Correctness and closed tags come first."
-    : "";
-  return "AUTOMATED QA FOUND BLOCKERS IN YOUR PREVIOUS OUTPUT. Regenerate the COMPLETE corrected HTML file and fix ALL of these:\n"
-    + issues.map(i => `- ${i}`).join("\n")
-    + budgetNote
-    + "\nThe file MUST end with </script></body></html>.";
 }
 
 // Whether to send response_format:{type:"json_object"}. OpenAI honors it; many
@@ -440,6 +348,9 @@ function topicKey(topic) {
   return topic.toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
+// Cache rule: unrated labs are served as-is (benefit of the doubt); labs the
+// community has rated below 3★ average are treated as a MISS so they get
+// regenerated by the current pipeline instead of replaying a known-bad lab.
 async function getCachedLab(key) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return null;
   try {
@@ -447,12 +358,16 @@ async function getCachedLab(key) {
     if (!sb) return null;
     const { data, error } = await sb
       .from('labs')
-      .select('lab_data')
+      .select('lab_data, rating_sum, rating_count')
       .eq('topic_key', key)
       .limit(1)
       .single();
-    if (error) return null;
-    return data ? data.lab_data : null;
+    if (error || !data) return null;
+    if (data.rating_count > 0 && (data.rating_sum / data.rating_count) < 3) {
+      console.log(`[cache] "${key}" rated ${(data.rating_sum / data.rating_count).toFixed(1)}★ — regenerating instead of serving`);
+      return null;
+    }
+    return data.lab_data;
   } catch (err) {
     console.warn('getCachedLab failed:', err.message);
     return null;
@@ -740,20 +655,6 @@ async function analyzeImage(base64Image, question) {
 // ─────────────────────────────────────────────────────────────────
 // REPEND THEME — shared palette for platform UI and generated labs
 // ─────────────────────────────────────────────────────────────────
-const REPEND_THEME = {
-  void: "#050508",
-  bg: "#0c0c14",
-  fog: "#1a0800",
-  mars: "#E85D04",
-  mars2: "#C44A00",
-  dust: "#8B4513",
-  copper: "#D4A574",
-  ice: "#4CC9F0",
-  muted: "#8899BB",
-  green: "#22C55E",
-  glass: "rgba(10,15,30,0.75)",
-  border: "rgba(232,93,4,0.25)",
-};
 
 const CATEGORY_GUIDANCE = {
   "Physics": "NASA mission-control lab: spacecraft, planetary bodies, orbital mechanics, 3D vector fields, telemetry HUD with ice-blue readouts, starfield backdrop, realistic scale models",
@@ -770,83 +671,6 @@ function categoryGuidance(category) {
   return CATEGORY_GUIDANCE[category] || CATEGORY_GUIDANCE.General;
 }
 
-// Preferred archetypes per course category — AI should pick from these first
-const CATEGORY_ARCHETYPE_HINTS = {
-  "Physics": "physics-sim, wave-interference, threshold",
-  "Biology": "molecular-builder, agent-social-sim, process-flow, threshold",
-  "Sports & Skills": "sports-game (always preferred for this category)",
-  "Money & Econ": "accumulation, tradeoff, budget-allocation, agent-social-sim",
-  "Math & Data": "data-sampling, accumulation, tradeoff",
-  "Everyday Science": "physics-sim, experiment-bench, wave-interference",
-  "Language & Humanities": "structure-puzzle, process-flow, branching-decision, threshold",
-  "General": "structure-puzzle, process-flow, branching-decision, threshold, physics-sim",
-};
-
-const LAB_ARCHETYPES = [
-  "physics-sim", "threshold", "accumulation", "process-flow", "tradeoff",
-  "structure-puzzle", "branching-decision", "bias-trap", "budget-allocation", "agent-social-sim",
-  "sports-game", "wave-interference", "molecular-builder", "data-sampling", "experiment-bench",
-];
-
-function categoryArchetypeHints(category) {
-  return CATEGORY_ARCHETYPE_HINTS[category] || CATEGORY_ARCHETYPE_HINTS.General;
-}
-
-// ─────────────────────────────────────────────────────────────────
-// FREEFORM LAB PIPELINE — six steps (image step is optional):
-//   0. expandTopic        — gpt-4o-mini: sharpens vague input to one specific concept
-//   1. thinkAboutTopic    — gpt-4o-mini prose: insight, metaphor, variables + why
-//   2. specFromThinking   — gpt-4o JSON: typed spec
-//   3. thinkAboutLab      — gpt-4o prose brief: behavior + visuals, no UI words
-//   4. mockupImage        — GPT writes a purpose-aware prompt → FLUX.1-schnell on NVIDIA (OPTIONAL, USE_MOCKUP=1)
-//   5. codeFromImageBrief — gpt-4o vision: image + brief → final HTML
-// ─────────────────────────────────────────────────────────────────
-
-// Step 0 — turns vague topics into one specific, teachable concept.
-// "ML" → "Gradient Descent: how a model finds the bottom of a loss landscape"
-// "Physics" → "Newton's Second Law: why heavier objects need more force to accelerate"
-// "Compound Interest" → passes through unchanged (already specific enough)
-async function expandTopic(rawTopic, category = "General", sourceMaterial = null, sourceFocus = null) {
-  const sourceCtx = sourceMaterial ? `
-
-THE LEARNER UPLOADED THEIR OWN MATERIAL. Derive the sharpened concept FROM this material${sourceFocus ? ` (they want to focus on: "${sourceFocus}")` : ""}. Pick the single most important teachable concept in it that has a surprising, drawable insight. The topic name should reflect what their material is actually about.
-
-THEIR MATERIAL (excerpt):
-"""
-${sourceMaterial.slice(0, 4000)}
-"""` : "";
-
-  const res = await reason.chat.completions.create({
-    model: REASON_MINI_MODEL,
-    ...reasonParams(REASON_MINI_MODEL, 200),
-    ...jsonFormat(),
-    messages: [
-      {
-        role: "system",
-        content: `You sharpen vague learning topics into one specific, teachable concept.
-Course category: ${category}. ${categoryGuidance(category)}${sourceCtx}
-
-Return ONLY JSON:
-{
-  "topic": "The sharpened topic. 3-10 words. Must be a CONCEPT with a surprising insight, not a skill or activity. Examples: 'Free-throw shooting arc: how release angle and power control make probability', 'Gradient Descent: why loss curves have valleys a model can slide down', 'Newton\\'s Second Law: why doubling mass halves acceleration for the same force'.",
-  "why": "One sentence: the specific aha moment this concept produces. E.g. 'The moment you see the ball curve MORE than expected is when you understand that spin changes the effective gravity on the ball.'"
-}
-
-RULES:
-- If the input names a SPORT or SKILL (basketball, tennis, golf, soccer, swimming): sharpen to the SPECIFIC SKILL MECHANIC the 3D lab will simulate — keep the real sport environment. 'Basketball' → 'Free-throw shooting arc: how release angle, power, and distance determine make probability'. 'Tennis' → 'Topspin serve: how racket angle and swing speed bend the ball's flight'. NEVER replace a sport with abstract physics-only framing — the lab must feel like that sport.
-- If the input names a non-sport ACTIVITY (cooking, driving, music): find the underlying mechanism but keep the real-world setting (kitchen, road, instrument).
-- If the input names a MUSICAL INSTRUMENT or MUSIC concept (violin, guitar, piano, sound, music): pick the underlying wave/physics concept that is visually drawable. 'Violin' → 'Standing Waves: why pressing a string at different points produces different pitches'. 'Sound' → 'Wave Interference: why two sound waves can cancel each other out'. Always pick something with a visible waveform or physical motion.
-- If the input is a broad FIELD (ML, physics, biology, history): pick the sub-concept with the clearest aha moment.
-- If the input is already a specific CONCEPT (compound interest, Ohm's law, mitosis): return it nearly unchanged.
-- NEVER pick abstract/unmeasurable concepts like 'resonance', 'harmony', 'feel', 'balance', 'energy flow' — these cannot be drawn. Always pick something with a concrete visual output (a wave, a trajectory, a curve, a collision, a graph with a kink).
-- NEVER pick a concept where all the learner does is set inputs with no surprising output.
-- Never return a skill, definition, or procedure. Return the INSIGHT.`,
-      },
-      { role: "user", content: rawTopic },
-    ],
-  });
-  return parseLooseJSON(safeContent(res));
-}
 
 // Build a prompt block describing the full course this lab belongs to, so the
 // single course lab weaves in EVERY module's topic + key concepts rather than
@@ -867,511 +691,6 @@ Design the lab so each module's concept becomes a stage, mode, or layer the lear
 `;
 }
 
-async function thinkAboutTopic(topic, category = "General", levelBackground = null, levelGoal = null, sourceMaterial = null, sourceFocus = null, grounding = null, courseContext = null) {
-  const levelCtx = levelBackground ? `
-LEARNER CONTEXT:
-- Background: ${levelBackground === "beginner" ? "Complete beginner — never touched this topic" : levelBackground === "some" ? "Some familiarity — has heard of it but doesn't deeply get it" : "Pretty solid — wants to go deeper or apply it"}
-- Goal: ${levelGoal === "understand" ? "Get the 'aha' moment — conceptual clarity" : levelGoal === "apply" ? "Apply it in the real world — practical use" : "Master it deeply — be able to explain it to anyone"}
-Tune the lab complexity and scenario accordingly. Beginners need simpler controls and more scaffolding. Advanced learners need edge cases and real-world stakes.` : "";
-
-  const sourceCtx = sourceMaterial ? `
-THE LEARNER UPLOADED THEIR OWN MATERIAL${sourceFocus ? ` and wants to focus on "${sourceFocus}"` : ""}. Ground your analysis, scenario, and the lab's specifics in THIS material — use its examples, terminology, and framing so the lab feels built from their content.
-THEIR MATERIAL (excerpt):
-"""
-${sourceMaterial.slice(0, 6000)}
-"""
-` : "";
-
-  const groundCtx = grounding ? `
-━━━ VERIFIED FACTS (ground your analysis in these — do NOT contradict them, do NOT invent numbers that conflict) ━━━
-${grounding}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-` : "";
-
-  const courseCtx = courseContextBlock(courseContext);
-
-  return openaiText(`You are an expert at designing immersive 3D interactive learning experiences for ANY topic — STEM, sports, history, economics, psychology, arts.
-
-COURSE CATEGORY: ${category}
-CATEGORY AESTHETIC: ${categoryGuidance(category)}
-${levelCtx}${sourceCtx}${groundCtx}${courseCtx}
-Write a short analysis of "${topic}" covering exactly these six things:
-
-STEP 0 — INTERACTION CLASSIFIER: Classify this topic and pick the interaction type.
-Preferred archetypes for ${category}: ${categoryArchetypeHints(category)}
-
-  • If the concept has motion/forces → physics-sim (planets, fluids, projectiles)
-  • If behavior jumps suddenly at a boundary → threshold (phase transitions, action potentials, tipping points)
-  • If things compound/accumulate over time → accumulation (interest, climate, debt, skill)
-  • If something flows through stages → process-flow (supply chains, photosynthesis, legislation)
-  • If two forces optimize against each other → tradeoff (supply/demand, risk/return)
-  • If it's a static structure to assemble → structure-puzzle (circuits, timelines, food webs)
-  • If the learner makes sequential choices with branching consequences → branching-decision (history counterfactuals, ethics dilemmas, medical diagnosis, strategy)
-  • If the learner must EXPERIENCE a bias or social phenomenon firsthand → bias-trap (anchoring, sunk cost, groupthink, prisoner's dilemma)
-  • If learner allocates a fixed resource across competing priorities → budget-allocation (government budgets, personal finance, nutrition, time management)
-  • If emergent social/collective behavior appears from simple individual rules → agent-social-sim (segregation, epidemic spread, market prices, opinion dynamics)
-  • If it's a SPORT or physical skill with aim/release/steer mechanics → sports-game (basketball arc, golf swing, soccer curve, tennis topspin — full video-game sports sim)
-  • If waves, sound, light, or interference/superposition are central → wave-interference (standing waves, Doppler, noise cancellation, string instruments)
-  • If atoms, molecules, bonds, or molecular structure are central → molecular-builder (DNA base pairing, enzyme active sites, chemical bonding, protein folding simplified)
-  • If probability, sampling, statistics, or distributions are central → data-sampling (CLT, Bayes, birthday paradox, regression — run many trials, histogram builds live)
-  • If mixing reagents, temperature, or lab-bench chemistry → experiment-bench (titration, pH, reaction rates, microwaves heating food, catalyst effects)
-For SPORTS/SKILLS category: use sports-game, NOT physics-sim.
-State: "INTERACTION TYPE: [chosen type] because [one sentence reason]."
-
-1. THE CORE INSIGHT — what single thing, once experienced interactively, makes this concept truly click? Not a definition — the moment of understanding.
-2. THE 3D VISUAL/INTERACTIVE METAPHOR — what immersive Three.js world does this concept live in? Be vivid and TOPIC-SPECIFIC. Basketball = night court under stadium lights, ball leaving hands toward rim. Mars geology = crater rim with rover. Be specific to ${topic} — never a generic grid. NEVER use a generic "space" or "planet" background unless the topic is astronomy. The metaphor must be NEAT and ANIMATED: things should bob, rotate, or pulse gently when idle.
-3. THE KEY VARIABLES or CHOICES — what 2-4 things can a learner change or decide? For each, explain WHY it matters to the insight.
-4. THE AHA MOMENT — the precise moment when the learner says "oh!". What did they just see or experience?
-5. THE REAL-WORLD COST — one concrete situation where not understanding this costs something real (money, health, justice, a relationship, a historical outcome).
-
-Write in plain direct prose. Be specific to ${topic}.`, 1000, REASON_MINI_MODEL);
-}
-
-async function specFromThinking(topic, thinking, category = "General", grounding = null, courseContext = null) {
-  const raw = await openaiCreateStreamed({
-    model: REASON_MODEL,
-    max_tokens: 4096,
-    messages: [
-      {
-        role: "system",
-        content: `You convert educational reasoning into an interactive lab spec. Read the reasoning and produce JSON.
-Course category: ${category}. ${categoryGuidance(category)}
-Preferred archetypes for this category: ${categoryArchetypeHints(category)}
-
-Return ONLY JSON with this exact shape:
-{
-  "topic": "Display name for the topic",
-  "scenario": "2-3 paragraph immersive 2nd-person scenario. Open with a CONCRETE real-world moment: a real role, place, dollar amount, failure mode. End by telling the learner exactly what they are about to manipulate and why it matters right now.",
-  "verificationQuestion": "One specific question the learner can only answer correctly AFTER interacting with the lab.",
-  "spec": {
-    "title": "Short punchy lab title",
-    "course_category": "${category}",
-    "lab_archetype": "Exactly one of: ${LAB_ARCHETYPES.join(" | ")}. Choose the ONE whose interaction mechanic best exposes the core insight:\n  physics-sim = continuous motion/forces (orbital mechanics, waves, projectile, fluid dynamics)\n  threshold = behavior jumps suddenly at a boundary (states of matter, action potential, tipping points, viral spread)\n  accumulation = things compound over time (compound interest, debt, climate CO2, skill building)\n  process-flow = something moves through stages (photosynthesis, digestion, supply chain, legislation passage)\n  tradeoff = two competing forces find an optimum (supply/demand, risk/return, specialization/flexibility)\n  structure-puzzle = click to arrange/mark a static structure (circuits, genetics pedigree, food web, historical timeline)\n  branching-decision = learner makes sequential choices that lead to different outcomes (historical counterfactual, ethical dilemma, business strategy, medical diagnosis)\n  bias-trap = learner EXPERIENCES a cognitive bias first-hand (anchoring, confirmation bias, groupthink, sunk cost)\n  budget-allocation = learner allocates a fixed resource across competing priorities with live tradeoffs\n  agent-social-sim = many autonomous agents follow simple rules; emergent patterns appear (segregation, epidemic spread, market prices)\n  sports-game = playable sports video game with real venue, aim/release/steer controls, scoreboard, ghost replay (basketball, golf, soccer, tennis, swimming, baseball)\n  wave-interference = superposition of waves in 3D; phase, frequency, amplitude control constructive/destructive interference (sound, light, strings, Doppler, noise cancellation)\n  molecular-builder = drag-and-snap 3D atoms/molecules; bond formation, geometry, active sites (DNA, enzymes, chemical bonding, protein structure simplified)\n  data-sampling = run many randomized trials; live histogram/distribution builds; sample size and bias visible (CLT, Bayes, birthday paradox, correlation, regression)\n  experiment-bench = 3D lab bench; pour/mix reagents, adjust temperature/concentration, observe reaction thresholds and color/state changes (chemistry, pH, reaction rates, catalysis)",
-    "learning_goal": "One sentence using the exact words of the core insight from the reasoning.",
-    "visualMetaphor": "One vivid sentence describing what the simulation looks and feels like IN MOTION. Not a chart type — a scene. E.g. 'Money piling up in stacks of gold coins, each new coin landing with a clink, the stacks growing taller until they overflow the screen.' Copy from the reasoning verbatim.",
-    "entry_misconception": "A specific wrong belief the learner likely holds — e.g. 'heavier objects fall faster' not 'they don't understand gravity'",
-    "first_move": "The concrete action the learner should try first that surprises them within 10 seconds and challenges the entry_misconception",
-    "direct_manipulation": "What canvas/3D object the learner grabs with mouse/finger — NOT a slider. E.g. 'Drag the basketball launch point to change release angle' or 'Steer the rover with arrow keys'",
-    "interaction_palette": [
-      { "type": "draggable", "element": "name of grabbable object", "effect": "what changes when dragged" },
-      { "type": "toggle-button", "element": "name of toggle", "effect": "what flips visually" },
-      { "type": "keyboard-steer", "element": "movable object name", "effect": "arrow keys / WASD control" }
-    ],
-    "variables": [
-      {
-        "name": "variable name",
-        "unit": "unit string or empty",
-        "min": 0,
-        "max": 100,
-        "default": 10,
-        "why_it_matters": "REQUIRED — one sentence explaining why THIS variable matters to the core insight. Not what it is — why changing it reveals something. E.g. 'Rate matters because doubling it doesn\\'t double the outcome — it compounds, so small rate differences explode over time.'",
-        "regimes_note": "REQUIRED for the PRIMARY variable — describe the distinct regimes this variable spans across its range, and set min/max/default so ALL regimes are reachable. E.g. for orbital velocity: 'Below 6 = spirals in and crashes; 6-8 = stable circular/elliptical orbit; above 8 = escapes off-screen. min 3, max 11, default 6.5 (just below circular so a small nudge reveals the ellipse).' Set default NEAR the most surprising boundary so a tiny move flips the outcome."
-      }
-    ],
-    "formulas": {
-      "output_name": "exact math expression using variable names from the variables array. Use JS-style syntax. E.g. 'emitted_wavelength': '1240 / (bandgap * Math.pow(dotSize, 2))', 'interest_total': 'principal * Math.pow(1 + rate/100, years)'"
-    },
-    "rules": [
-      {
-        "when": "exact JS condition using variable names, e.g. 'dotSize < 3'",
-        "visual_change": "what visually changes on canvas at this threshold",
-        "message": "short insight text shown to learner, e.g. 'Quantum confinement regime — size controls color!'"
-      }
-    ],
-    "reflection": {
-      "question": "One specific question testable only after interacting with the lab. E.g. 'What happens to emitted wavelength when dot size is halved?'",
-      "options": ["A: it doubles", "B: it quadruples", "C: it halves", "D: nothing changes"],
-      "correct": "B: it quadruples",
-      "explanation": "Because wavelength ∝ 1/size², halving size means wavelength × 4."
-    },
-    "stage_description": "Detailed paragraph: what is drawn on screen, what moves, what colors. Reference the visualMetaphor directly. Specific positions, sizes, what animates.",
-    "interaction_description": "What the learner does step by step. What they touch first. What changes visually on each interaction. What the aha moment looks like on screen.",
-    "aha_trigger": "The exact visual event that marks the aha moment. Be specific: what threshold, what visual change, what the learner sees right before vs. right after.",
-    "success_condition": "Exact programmatic rule for completion.",
-    "real_world_payoff": "One sentence: the real-world consequence the learner now understands."
-  }
-}
-
-RULES:
-- visualMetaphor must be a vivid scene description, never a chart type or UI pattern name
-- every variable MUST have why_it_matters — if you can't explain why it matters, remove the variable
-- the PRIMARY variable (the one that produces the aha) MUST have regimes_note describing the distinct outcomes across its range, with min/max/default chosen so EVERY regime is reachable and the default sits just below the most surprising boundary
-- formulas MUST be real math — look up the actual equation for this concept. Every output shown in Zone B must have a formula entry.
-- PHYSICAL TRUTH: every variable MUST appear in at least one formula expression. If a variable affects no formula, it is fake — DELETE it. Never invent decorative variables that sound topical but don't drive the physics (e.g. "contact surface" for Newton's third law). Three honest variables beat four where one is a lie — the learner WILL move it and learn something false.
-- UNITS ARE REAL: every variable unit and every readout is a real physical/financial unit (N, m/s, kg, %, $, years). NEVER pixels, NEVER unitless numbers. If the canvas measures something spatially, define a scale (e.g. 50 px = 1 m) and display the converted value.
-- DIMENSIONALITY: ALWAYS 3D IMMERSIVE. Every lab is a full Three.js WebGL scene — cinematic camera, real depth, environmental lighting, particles/fog. The visualMetaphor MUST describe a 3D world the learner enters (a basketball court at night, a Mars crater, a molecular space, an orbital vista). Even graph/economics topics get a 3D data landscape or holographic terrain — never flat 2D canvas-only.
-- TOPIC FIDELITY: variables, environment, and mission MUST match the exact topic. Basketball → court, hoop, ball arc, release angle°, power N, distance m. Compound interest → 3D coin stacks growing in a vault. Supply/demand → 3D market floor with animated price surfaces. Never generic placeholders. NEVER use a generic "space" or "planet" background unless the topic is astronomy.
-- NEATNESS & ANIMATION: the scene must feel alive and polished. Specify idle animations (bobbing, pulsing, slow rotation) for key objects.
-- LABELS: every object the learner sees must be nameable in one word. If a variable or object can't be given a clear one-word on-screen label, it's probably too abstract — reconsider it.
-- rules MUST include at least one threshold that triggers the aha moment visually
-- the default state must already show interesting behavior on load — never a blank or boring starting point. The sim opens mid-phenomenon.
-- reflection question must be answerable only AFTER interacting — not a definition lookup
-- lab_archetype MUST be one of the fifteen listed — choose the one that best reveals the concept through interaction. Category hints: Physics → physics-sim/wave-interference; Biology → molecular-builder/agent-social-sim; Sports & Skills → sports-game (required); Money & Econ → accumulation/tradeoff; Math & Data → data-sampling/accumulation; Everyday Science → experiment-bench/physics-sim. History/ethics → branching-decision; psychology → bias-trap; nutrition/gov finance → budget-allocation; sociology/epidemiology → agent-social-sim
-- entry_misconception MUST be a specific wrong belief, not a vague gap — "they think heavier objects fall faster" not "they don't understand gravity"
-- first_move MUST describe a concrete action that surprises the learner within 10 seconds and directly challenges the entry_misconception
-- direct_manipulation MUST describe a 3D object the learner grabs with their finger/mouse or steers with keys — not a slider. The primary variable is controlled by interacting with the 3D world.
-- interaction_palette MUST include at least 3 entries: one "draggable" or "keyboard-steer", one "toggle-button", and one "slider" or "click-spawn" — the lab needs multiple interaction types
-- For Sports & Skills category: lab_archetype MUST be sports-game; interaction_palette MUST include "keyboard-steer"; visualMetaphor MUST describe a real sport venue
-- do NOT include interaction_type or any format label anywhere in the JSON
-
-Now produce the spec JSON.`
-      },
-      { role: "user", content: `Topic: ${topic}\nCategory: ${category}\n\nReasoning:\n${thinking}\n${grounding ? `\nVERIFIED FACTS — formulas, constants, units, and real numbers MUST be consistent with these (use the real equation and real magnitudes, never fabricated ones):\n${grounding}\n` : ""}${courseContextBlock(courseContext)}\nNow produce the spec JSON.` }
-    ],
-  }, "spec");
-  const parsed = parseLooseJSON(raw);
-  normalizeReflection(parsed);
-  normalizeSpec(parsed);
-  return parsed;
-}
-
-// Fill critical interactivity fields when the spec model leaves them empty.
-// These fields are interpolated into the design brief (thinkAboutLab) and the
-// codegen prompt; an empty value used to collapse whole interaction/purpose
-// sections to a blank line — or print "undefined" — which is a leading cause of
-// mechanically inert "weak" labs. Fallbacks are neutral and topic-derived, never
-// fabricated specifics, so they can only improve a thin spec, never mislead.
-function normalizeSpec(design) {
-  const sp = design && design.spec;
-  if (!sp) return;
-  const topic = (design.topic || sp.title || "this concept").toString().trim() || "this concept";
-  const fill = (v, fallback) => ((typeof v === "string" && v.trim()) ? v.trim() : fallback);
-  sp.learning_goal       = fill(sp.learning_goal,       `Build an intuition for ${topic} by manipulating it directly and watching what changes.`);
-  sp.entry_misconception = fill(sp.entry_misconception, `Learners often predict ${topic} will behave one way; the lab shows what actually happens.`);
-  sp.first_move          = fill(sp.first_move,          `Grab and move the primary 3D object (or adjust the main control) to see the effect immediately.`);
-  sp.direct_manipulation = fill(sp.direct_manipulation, sp.first_move);
-  sp.aha_trigger         = fill(sp.aha_trigger,         `The moment the visible result diverges from what the learner expected.`);
-  sp.success_condition   = fill(sp.success_condition,   sp.aha_trigger);
-  sp.real_world_payoff   = fill(sp.real_world_payoff,   `Connect ${topic} to a concrete real-world situation where it matters.`);
-  sp.visualMetaphor      = fill(sp.visualMetaphor,      `A clear, legible 3D scene that makes ${topic} directly visible.`);
-  if (!Array.isArray(sp.variables)) sp.variables = [];
-  if (!Array.isArray(sp.interaction_palette)) sp.interaction_palette = [];
-}
-
-// Guard the reflection quiz so Step 3 never lands in a broken state.
-// The frontend matches the picked option to `correct` by exact string equality,
-// so `correct` MUST be one of `options` verbatim. If the model drifts (extra
-// whitespace, a paraphrase, a missing letter prefix), repair it or drop the
-// quiz entirely so the frontend falls back to the AI text-verify path.
-function normalizeReflection(design) {
-  const r = design && design.spec && design.spec.reflection;
-  if (!r) return;
-  const opts = Array.isArray(r.options) ? r.options.map(o => String(o).trim()) : [];
-  r.options = opts;
-  if (opts.length < 2 || !r.question) { design.spec.reflection = null; return; }
-
-  const correct = String(r.correct == null ? "" : r.correct).trim();
-  if (opts.includes(correct)) { r.correct = correct; return; }
-
-  // Try a forgiving match: ignore case, punctuation, and any "A:" style prefix.
-  const strip = s => s.toLowerCase().replace(/^[a-d]\s*[:.)-]\s*/i, "").replace(/[^a-z0-9 ]/g, "").trim();
-  const target = strip(correct);
-  const hit = opts.find(o => strip(o) === target) || (target && opts.find(o => strip(o).includes(target)));
-  if (hit) { r.correct = hit; return; }
-
-  // No reliable match — drop the quiz rather than show a question with no
-  // correct answer. Frontend falls back to free-text verify.
-  design.spec.reflection = null;
-}
-
-// Step 3 — reasons concretely about what to draw and how.
-// Output is a structured visual brief the coder can follow exactly.
-// Generate lesson slides (text-only, fast mini model) from the design spec.
-// Returns { slides: [{title, bullets:[]}], summary } or null on failure.
-async function generateLesson(design) {
-  const spec = design.spec || {};
-  const prompt = `You are a curriculum writer. Given this lab topic and spec, write a short lesson that prepares the learner to understand and use the interactive lab.
-
-TOPIC: ${design.topic}
-LEARNING GOAL: ${spec.learning_goal || ""}
-ENTRY MISCONCEPTION: ${spec.entry_misconception || ""}
-REAL WORLD PAYOFF: ${spec.real_world_payoff || ""}
-KEY VARIABLES: ${(spec.variables || []).map(v => `${v.name} (${v.unit || ""}): ${v.why_it_matters}`).join("; ")}
-AHA TRIGGER: ${spec.aha_trigger || ""}
-
-Return ONLY valid JSON (no markdown, no fences):
-{
-  "summary": "1-2 sentence hook that makes the learner excited for the lab",
-  "slides": [
-    { "title": "slide title", "bullets": ["bullet 1", "bullet 2", "bullet 3"] }
-  ]
-}
-
-Rules:
-- Exactly 3 slides
-- Slide 1: The core concept (what it is and why it matters)
-- Slide 2: The key variables and how they relate (use the real variable names)
-- Slide 3: The real-world payoff + what they'll discover in the lab
-- Each slide: 3-4 bullets, max 15 words each
-- Address the entry misconception head-on in slide 1 or 2
-- No filler, no "in this lesson we will learn" — start every bullet with a concrete fact or action verb`;
-
-  try {
-    const resp = await reason.chat.completions.create({
-      model: REASON_MINI_MODEL,
-      max_tokens: 800,
-      temperature: 0.4,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const raw = resp.choices?.[0]?.message?.content || "";
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error("no JSON in lesson response");
-    return JSON.parse(m[0]);
-  } catch (e) {
-    console.warn("[lesson] generation failed:", e.message);
-    return null;
-  }
-}
-
-// Generate quiz questions (fast mini model) from the design spec.
-// Returns { questions: [{q, options:[4], answer:0-based-index, explanation}] } or null.
-async function generateQuiz(design) {
-  const spec = design.spec || {};
-  const prompt = `You are a curriculum writer. Create a short quiz that tests whether the learner understood the key insight from this interactive lab.
-
-TOPIC: ${design.topic}
-LEARNING GOAL: ${spec.learning_goal || ""}
-VERIFICATION QUESTION: ${design.verificationQuestion || ""}
-AHA TRIGGER: ${spec.aha_trigger || ""}
-REAL WORLD PAYOFF: ${spec.real_world_payoff || ""}
-KEY VARIABLES: ${(spec.variables || []).map(v => `${v.name}: ${v.why_it_matters}`).join("; ")}
-
-Return ONLY valid JSON (no markdown, no fences):
-{
-  "questions": [
-    {
-      "q": "question text",
-      "options": ["option A", "option B", "option C", "option D"],
-      "answer": 0,
-      "explanation": "1 sentence why this is correct and what the others miss"
-    }
-  ]
-}
-
-Rules:
-- Exactly 4 questions
-- Question 1: conceptual (tests the core insight, not memorization)
-- Question 2: application (a scenario where they apply the concept)
-- Question 3: the verification question from the lab itself (reuse it verbatim)
-- Question 4: real-world payoff (what would they do differently now?)
-- Each question: 4 options, exactly one correct (answer = 0-based index of correct option)
-- Wrong options should be plausible misconceptions, not obviously silly
-- Explanation: punchy, 1 sentence, reinforces the aha moment`;
-
-  try {
-    const resp = await reason.chat.completions.create({
-      model: REASON_MINI_MODEL,
-      max_tokens: 1000,
-      temperature: 0.3,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const raw = resp.choices?.[0]?.message?.content || "";
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error("no JSON in quiz response");
-    return JSON.parse(m[0]);
-  } catch (e) {
-    console.warn("[quiz] generation failed:", e.message);
-    return null;
-  }
-}
-
-async function thinkAboutLab(design, category = "General", courseContext = null) {
-  const cat = design.spec.course_category || category;
-  const courseCtx = courseContextBlock(courseContext);
-  const vars = (design.spec.variables || [])
-    .map(v => `  • ${v.name} (${v.unit || ""}), range ${v.min}–${v.max}, default ${v.default}: ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES: ${v.regimes_note}` : ""}`)
-    .join("\n");
-
-  const prompt = `You are a senior 3D creative technologist designing an immersive interactive learning lab inspired by NASA Mars Exploration interactive experiences (Pablo Coronel style: cinematic WebGL, geometry-rich environments, smooth motion UX, HUD overlays, atmospheric depth). You will produce a CONCRETE 3D VISUAL BRIEF that a developer implements with Three.js r128+.
-
-COURSE CATEGORY: ${cat}
-CATEGORY AESTHETIC: ${categoryGuidance(cat)}
-COLOR PALETTE (must match Repend platform exactly): void ${REPEND_THEME.void}, fog ${REPEND_THEME.fog}, Mars rust ${REPEND_THEME.mars}, copper ${REPEND_THEME.copper}, ice HUD ${REPEND_THEME.ice}, muted ${REPEND_THEME.muted}
-${courseCtx}
-━━━ THE PURPOSE OF THIS LAB — design every element to serve these five things ━━━
-TOPIC: ${design.topic}
-LEARNING GOAL: ${design.spec.learning_goal}
-ENTRY MISCONCEPTION (the wrong belief this lab must CORRECT):
-  "${design.spec.entry_misconception || ""}"
-  → The DEFAULT SCENE must INVITE this misconception — on first glance, a learner who doesn't interact yet should find this belief plausible. Describe what makes the starting scene feel like the misconception is true.
-FIRST MOVE (what they do first, that surprises them and cracks the misconception):
-  "${design.spec.first_move || ""}"
-  → Design the scene so this action is OBVIOUS without reading instructions. Describe what visual affordance (glow, arrow, label) points the learner to it.
-AHA TRIGGER (the exact visual event that delivers the insight — NOT just a number changing):
-  "${design.spec.aha_trigger || ""}"
-  → This must be an UNMISSABLE visual event: a sudden shape change, collision, phase flip, curve bending, threshold crossed with a burst of color. Describe it in cinematic terms.
-REAL-WORLD PAYOFF (shown on win — must appear verbatim):
-  "${design.spec.real_world_payoff || ""}"
-VISUAL METAPHOR: "${design.spec.visualMetaphor}"
-DIRECT MANIPULATION: "${design.spec.direct_manipulation || ""}"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-VARIABLES:
-${vars}
-
-AHA MOMENT: ${design.spec.aha_trigger}
-
-Write a concrete brief covering these areas. Be specific enough that a developer can write the Three.js code directly from your description — no ambiguity, no "something that represents X".
-
-━━━ 0. VISIBILITY FIRST (before aesthetics) ━━━
-A beautiful brief is worthless if the scene is black. Every Three.js lab MUST:
-• AmbientLight(0xffffff, 0.7) + DirectionalLight at (5,10,7) + PointLight rim — ALL THREE, always
-• Camera at a position where the interactive objects are within view at startup (e.g. position (0,4,10) looking at origin)
-• All interactive meshes: MeshStandardMaterial with emissive + emissiveIntensity≥0.3 so they glow slightly even in low light
-• Objects spawn within x:[-3,3], y:[-2,2], z:[0] by default — never off-screen, never inside each other
-• Scene must show something the learner can grab within the first 100ms of load — describe exactly what they see
-
-━━━ 0b. TOPIC REALISM (non-generic) ━━━
-The lab content must depict "${design.topic}" literally — NEVER a default space/planet scene unless the topic is actually about space.
-• REAL 3D OBJECTS: build recognizable meshes for every topic element (basketball=SphereGeometry, rim=TorusGeometry, allele=labeled SphereGeometry with distinct color, language card=BoxGeometry with texture text)
-• MATERIALS: MeshStandardMaterial with roughness/metalness, emissive accents on interactive elements
-• ATMOSPHERE: FogExp2 scene depth, dust particles, slow camera idle drift — applied to the topic's real environment
-• LIGHTING: warm DirectionalLight (sun/lamp) + cool PointLight (rim) + AmbientLight — shadows via renderer.shadowMap
-• HUD: glass panels with backdrop-filter blur, ${REPEND_THEME.ice} readouts, ${REPEND_THEME.mars} accent borders — NASA mission-control aesthetic
-• For sports-game archetype: treat as a VIDEO GAME — scoreboard, attempt counter, stadium lights, crowd particle ambience, keyboard/touch controls, replay ghost of previous shot, combo/streak feedback
-• For wave-interference: two+ 3D wave sources with visible superposition; color-code constructive/destructive regions
-• For molecular-builder: colored atom spheres with snap-to-bond drag; show geometry angles live
-• For data-sampling: 3D histogram bars grow trial-by-trial; ghost curve shows true distribution
-• For experiment-bench: beakers on lab bench, pour animation, burner glow, live pH/temp readouts
-
-━━━ 1. WHAT DRAWS ON LOAD (before any interaction) ━━━
-Describe exactly what the Three.js scene shows at startup. Name every 3D object (meshes, lights, particles), camera position/angle, environment (skybox/fog/color), and what's animated. The scene must feel cinematic and alive before interaction — slow camera drift, dust particles, emissive accents, volumetric fog.
-
-Example: "Full-screen WebGL. Camera at (0, 2.5, 8) looking at origin. Mars-dust orange fog (FogExp2, #1a0a00). A regulation basketball court floor (PlaneGeometry, wood texture tone #8B4513) with painted lines. A glowing orange basketball (SphereGeometry r=0.12) hovering at release point. A rim 4.5m away (TorusGeometry). Starfield Points in background. Ambient + directional light with warm rim light. HUD overlay: 'Release angle: 52°' top-left."
-
-━━━ 2. HOW EACH VARIABLE CHANGES THE CANVAS ━━━
-For each variable, describe the EXACT canvas change when its value changes. Name the specific drawing operations: what shape changes size/position/color/shape, what equation drives it, what the visual looks like at min vs max value.
-
-Example: "Frequency (1–10 Hz): the sine wave's horizontal compression changes — at 1Hz one full wave spans the canvas, at 10Hz ten waves are crammed in. The white dot's speed increases proportionally. The label updates to 'frequency: N Hz'."
-
-━━━ 3. THE AHA MOMENT VISUAL ━━━
-Describe the specific canvas state right before and right after the aha moment. What threshold triggers it? What visual event makes it unmissable? Use a concrete trigger: a value crossing a number, a wave doing something specific, two lines intersecting.
-
-Example: "When frequency crosses 5Hz, the wave peaks start overlapping with the reflected wave — destructive interference appears as the amplitude suddenly drops to near-zero. A golden ring pulses around the wave for 1 second. Label flashes 'Destructive interference!' in #D4A574."
-
-━━━ 4. LIVE READOUTS IN ZONE B ━━━
-List every text label that updates live on the canvas as values change. Each readout must show the OUTPUT of the concept (what the concept produces), not just the input value. Format: "Label text: [formula or description], position on canvas, color."
-
-Example: "• 'Wavelength: X m' — top-left, #8899BB, updates as frequency changes (wavelength = speed/frequency)
-• 'Interference: constructive / destructive' — center-top, color shifts green→red based on phase overlap"
-
-━━━ 5. MAKE THE INVISIBLE VISIBLE ━━━
-This is the most important section. Real understanding comes from SEEING the hidden mechanism, not just the surface. Describe:
-- The TRACE/TRAIL: what path or history persists on screen so the learner compares "before vs now" without remembering? (e.g. the orbit trail that morphs circle→ellipse→escape as velocity changes; the ghost of the previous curve faded behind the current one). This morphing trace is usually the single most important visual — describe it precisely.
-- The HIDDEN VECTORS/FORCES: what arrows, fields, or quantities that you can't see in reality should be drawn? (velocity arrow, gravity-force arrow pointing inward, energy bars). Name each, its color, what it attaches to, how it changes.
-- The LINKED REPRESENTATIONS: the same quantity shown two+ ways at once that update together (a number AND a bar AND the physical motion). Name which quantity and which representations.
-
-Example: "A continuously drawn orbital trail (copper, fading older segments to 20% alpha) traces the satellite's path — at default velocity it's a near-circle, drop velocity and the trail spirals inward to a crash, raise it and the trail opens into an ellipse then a hyperbola that flies off-screen. A blue velocity arrow extends from the satellite in its direction of motion, length ∝ speed. A red gravity arrow always points from satellite to planet, length ∝ 1/r². An energy bar (top-left) splits kinetic (blue) vs potential (orange) and shifts live."
-
-━━━ G. THE MISSION ━━━
-Design the lab as a playable challenge, not a free-form sandbox. Describe:
-- THE GOAL: one concrete, visible objective the learner must achieve by exploiting the concept (e.g. "park the satellite in the green target ring and keep it there for 3 seconds", "breed a population that survives the drought", "deliver 100W to the bulb without melting the wire"). The goal must be impossible to hit by luck — succeeding requires using the mechanism the lab teaches.
-- DIRECT MANIPULATION: what the learner grabs, drags, or steers IN the play area itself — a draggable launch point, a steerable object via arrow keys, an aim-and-release gesture. Prefer touching the world over panel sliders whenever the concept allows it.
-- THE TARGET VISUAL: how the goal is drawn on canvas (a target zone, a finish line, a threshold marker) and how progress toward it is shown live (a meter filling, the zone glowing as you get close).
-- WIN/FAIL FEEDBACK: what plays on success (celebration burst, the win text) and what a near-miss looks like, so failing teaches WHY it failed in the concept's own terms.
-
-━━━ H. FORMULA PANEL ━━━
-The spec provides formulas{}. The lab must TEACH the formula, not just animate the result.
-Describe how to render a formula panel in Zone A (or pinned to the top of Zone B):
-- Show the governing equation written out symbolically (e.g. "R = v²·sin(2θ) / g").
-- For each variable the learner controls, name the symbol it maps to in the equation.
-- When the learner moves a control, that term in the equation should be visually highlighted (color flash, bold, or glow) AND the computed result updates live next to the equation.
-- The learner sees the arc, the equation, and the number update together — concept + formula + animation are three linked representations of the same thing.
-Describe the panel's position, which equation to show, which term each control highlights, and what computed value to display.
-
-━━━ I. REAL-WORLD LINE ━━━
-The spec provides real_world_payoff. In the Reveal step, this must land as one concrete sentence the learner reads AFTER they've hit the aha moment — not a generic topic sentence but a direct connection to what they just did.
-Write that sentence here. Format: "[What you just saw] is why [real-world consequence]."
-Example: "The steep drop angle you just found is why basketball coaches teach the high arc — a ball dropping steeply hits a 30% wider effective target."
-
-━━━ J. REAL SCENARIO TO MATCH ━━━
-Learning flows backward when the equation comes first. Instead, open with REALITY and let the learner discover the rule by matching it:
-- Name ONE real, specific instance of this concept with real numbers — a documented basketball shot arc, the actual growth of $1,000 at 7% from 1990–2020, Darwin's finch beak-size shift after the 1977 drought, a real city's epidemic curve. Real names, real units, real magnitudes (approximate is fine; invented-but-plausible is acceptable if no famous dataset exists).
-- This real instance is drawn on the canvas from the start as a fixed TARGET — a ghost curve, a dotted trajectory, a faded historical line — clearly labeled as the real thing ("Curry's 2016 shot", "S&P 500 actual").
-- The learner's controls drive THEIR model's curve/behavior, drawn live on the same axes. Their goal: tune the parameters until their model lies on top of reality. Show a live match readout ("Match: 84%").
-- When the match crosses ~95%: that's the moment the equation is EARNED — reveal/highlight the formula with the learner's discovered parameter values plugged in ("You found it: A = 1000·(1.07)^t").
-This section applies whenever the concept produces a measurable output (most topics). If the topic is truly non-quantitative (e.g. a logical fallacy), say so and skip it — the mission from section G carries the lab instead.
-
-RULES:
-- Every element must be implementable in Three.js (Mesh, Group, Line, Points, CSS2D labels for HUD)
-- Minimum 2 variables with distinct 3D visual effects (ball trajectory changes, environment shifts, object morphs)
-- The PRIMARY variable must let the learner reach EVERY regime from its REGIMES note
-- The 3D viewport fills at least 75% of screen height — immersive, edge-to-edge feel
-- Controls are a floating glass HUD panel (bottom or right) — semi-transparent, minimal, NASA-mission-control aesthetic
-- The central 3D subject must be LARGE and hero-framed — cinematic close-ups on interaction
-- Topic-specific environment is mandatory: basketball = court+hoop, orbit = planet+satellite, biology = 3D cell space
-- Include camera choreography: smooth lerp/GSAP transitions when variables cross thresholds
-- No flat 2D-only canvas labs — WebGL is the primary stage
-- For Sports & Skills: describe video-game features — score display, attempt counter, on-screen touch buttons (◀▲▼▶), keyboard steering, near-miss slow-motion replay, mission target ring glowing when close
-- For wave-interference: describe each wave source position, frequency, phase, and how superposition colors the mesh
-- For molecular-builder: name each atom type, bond rules, snap distances, and target structure
-- For data-sampling: describe trial mechanics, bin layout, and what changes when sample size increases
-- For experiment-bench: describe each beaker, reagent, pour gesture, and reaction threshold visuals`;
-
-  const text = await openaiCreateStreamed({
-    model: THINK_MODEL_ID,
-    max_tokens: 1200,
-    ...(isReasoningModel(THINK_MODEL_ID) ? { reasoning_effort: "low" } : {}),
-    // Never fall back to the flaky 70b for labthink — walk the gpt-oss chain.
-    _fallbackChain: REASON_FALLBACK_CHAIN,
-    messages: [{ role: "user", content: prompt }],
-  }, "labthink");
-  if (!text) throw new Error(`labthink (${THINK_MODEL_ID}) returned empty content`);
-  return text.trim();
-}
-
-// Step 4 (optional) — gpt-image-1 generates a clean UI mockup.
-// Returns a base64 data URL or null on failure (pipeline continues without image).
-// GPT turns the lab's PURPOSE (not just its looks) into an image-gen prompt, so
-// the mockup depicts what the lab teaches — the misconception it kills, what the
-// learner manipulates, and what the "aha" moment looks like — not a generic scene.
-async function mockupPromptFromSpec(design) {
-  const s = design.spec || {};
-  const brief = [
-    `Topic: ${design.topic}`,
-    `Learning goal: ${s.learning_goal || ""}`,
-    `Misconception it corrects: ${s.entry_misconception || ""}`,
-    `What the learner manipulates: ${s.direct_manipulation || s.first_move || ""}`,
-    `The "aha" visual moment: ${s.aha_trigger || ""}`,
-    `Visual metaphor: ${s.visualMetaphor || ""}`,
-  ].join("\n");
-
-  return openaiText(`You write a single text-to-image prompt for a mockup of an interactive learning lab. The image must visually communicate the lab's PURPOSE — show the exact moment of insight and what the learner controls, not just a pretty scene.
-
-LAB:
-${brief}
-
-Write ONE vivid image prompt (max 100 words). Requirements:
-- Depict the concept's core insight literally (e.g. an exponential curve pulling away from a straight line = the compounding gap IS the lesson).
-- Include the labeled controls the learner uses and a live readout.
-- Cinematic dark theme: near-black #050508 background, teal #4CC9F0 accents, glassmorphic HUD, volumetric rim light, 16:9 landscape.
-- No paragraphs of body text, no browser chrome, no watermark.
-Return ONLY the prompt text.`, 300, REASON_MINI_MODEL);
-}
-
-// Renders the mockup on NVIDIA Build (free) via the OpenAI-compatible images
-// endpoint, reusing the `nvidia` client. Fail-open: never blocks lab generation.
-async function mockupImage(design) {
-  if (!NVIDIA_API_KEY) return null;
-  try {
-    const prompt = await mockupPromptFromSpec(design);
-    const res = await nvidia.images.generate({
-      model: IMAGE_MODEL_ID,
-      prompt,
-      response_format: "b64_json",
-    });
-    const b64 = res.data?.[0]?.b64_json;
-    if (!b64) return null;
-    return `data:image/png;base64,${b64}`;
-  } catch (err) {
-    console.warn(`mockupImage (${IMAGE_MODEL_ID}) failed, continuing without:`, err.message);
-    return null;
-  }
-}
-
-// Step 5 — writes the final HTML lab.
-// Takes the prose brief (source of truth for behavior) + optional mockup image (look/layout).
-//
 
 function isOverloadError(err) {
   const msg = String(err && err.message || err);
@@ -1402,139 +721,6 @@ function isQuotaError(err) {
   return /insufficient_quota|exceeded your current quota|billing/i.test(msg);
 }
 
-// Step 3b — per-topic visual pedagogy: how THIS specific concept is best taught in a WebGL 3D scene.
-async function thinkAboutVisualPedagogy(topic, archetype, category) {
-  const prompt = `You are an expert in visual pedagogy and interactive learning design. Your job is to reason specifically about how the concept "${topic}" (archetype: ${archetype}, category: ${category}) should be taught in an interactive WebGL/Three.js 3D scene.
-
-Answer these five questions concisely (2-4 sentences each):
-
-1. OBJECT IDENTITY: What are the key objects/entities in this concept that the learner must distinguish? What one-word labels should appear on each so the learner never wonders "what is this thing"?
-
-2. WIN STATE: What specific, observable thing must happen in the 3D world for the learner to know they've "got it"? Describe it as a visual event (not a score), e.g. "the tRNA anticodon snaps into the ribosome A-site and the polypeptide chain extends by one bead."
-
-3. CORE MECHANIC: What is the ONE action the learner performs that IS the learning — not earns points for learning, but where doing the action correctly requires understanding the concept? It must be a direct 3D manipulation (drag, steer, place, aim), not reading or watching.
-
-4. FEEDBACK DESIGN: When the learner makes a wrong move, what should happen within 300ms to teach WHY it was wrong in the concept's own terms? Be specific about what text appears and on which object in the scene.
-
-5. ANTI-BROCCOLI CHECK: How does this design avoid "chocolate-covered broccoli" (where the game and the learning are separate layers)? Confirm the mechanic = the learning or describe the fix.
-
-Be specific to "${topic}". Do not give generic answers. Do not repeat the archetype patterns verbatim.`;
-
-  return openaiText(prompt, 800, REASON_MINI_MODEL);
-}
-
-// Step 3c — INTERACTION DIRECTOR (parallel extended-thinking call).
-// Picks the interaction language the way a human game designer would: the medium
-// and mechanics must fit the genre. Football sim → 3D field with aim/steer/release.
-// Card probability → drag-and-flip. Ethics dilemma → branching choices you click
-// through and can rewind. The current pipeline always lands on "3D scene + HUD
-// sliders"; this step forces a deliberate choice of PRIMARY direct manipulation
-// and demotes sliders to secondary. Additive: on any failure it returns null and
-// the pipeline behaves exactly as before.
-const INTERACTION_PALETTE = [
-  "grab-and-drag-3d (raycast: pick up objects in the scene, move them, drop them — placement IS the answer)",
-  "aim-and-release (pull back / set angle+power, release, watch consequence — projectile, investment timing, immune response)",
-  "steer (WASD/arrow keys or on-screen joystick: drive an entity through the space in real time)",
-  "drag-and-snap-assembly (drag parts that snap into valid configurations — molecules, circuits, timelines, food webs)",
-  "pour-mix-heat (run an experiment: combine amounts, apply conditions, cross a reaction threshold)",
-  "scrub-time (drag a timeline scrubber to move the whole system through time; discover rates by feeling them)",
-  "draw-a-path (sketch a trajectory/boundary/curve with the pointer; the sim tests whether the drawn hypothesis survives reality)",
-  "place-bets-then-reveal (commit a prediction FIRST — click/drag a marker — then run reality and confront the gap)",
-  "click-sequence-choices (make sequential decisions at branch points; backtrack and explore alternate universes)",
-  "swarm-perturbation (poke/attract/scatter many agents with the pointer and watch emergent order re-form)",
-  "orbit-inspect-probe (orbit camera around a structure, click hotspots to probe/measure — anatomy, machines, geology)",
-  "chase-and-collect (move to catch/avoid moving targets under the topic's real rules — timed, arcade-feel)",
-];
-
-async function thinkAboutInteraction(design, category = "General", courseContext = null) {
-  if (!ENABLE_INTERACTION_DIRECTOR) return null;
-  const cat = design.spec.course_category || category;
-  const vars = (design.spec.variables || []).map(v => `${v.name} (${v.min}–${v.max} ${v.unit || ""})`).join(", ");
-  const prompt = `You are the INTERACTION DIRECTOR for an interactive learning lab. Think like a game designer choosing the medium for a genre: a football sim earns a 3D field with aim/steer/release controls; a platform fighter earns 2D canvas with keyboard combat; a card-odds game earns draggable cards on a table. The interaction style must FIT the concept — not default to one house pattern.
-
-THE HOUSE PATTERN TO BREAK: our labs currently all converge on "3D scene + sliders in a HUD panel". Sliders are fine as a SECONDARY tuning control, but the PRIMARY interaction must be direct manipulation inside the play area, chosen to fit this specific topic.
-
-TOPIC: ${design.topic}
-CATEGORY: ${cat}
-ARCHETYPE: ${design.spec.lab_archetype || "physics-sim"}
-LEARNING GOAL: ${design.spec.learning_goal}
-FIRST MOVE: ${design.spec.first_move || ""}
-AHA TRIGGER: ${design.spec.aha_trigger || ""}
-DIRECT MANIPULATION (from spec): ${design.spec.direct_manipulation || ""}
-VARIABLES: ${vars}${courseContext ? `\nCOURSE CONTEXT: part of a course — keep controls consistent with a learning sequence.` : ""}
-
-INTERACTION PALETTE (choose from these, or invent a better one if the topic demands it):
-${INTERACTION_PALETTE.map(p => `• ${p}`).join("\n")}
-
-Reason it through: (1) What does UNDERSTANDING this concept feel like as a physical action? (2) Which palette entry makes that action the gameplay itself — not chocolate-covered broccoli? (3) What can the learner EXPLORE beyond the win path — what open-ended "what if I…" moves should be possible and rewarded?
-
-Then return ONLY a JSON object (no markdown, no prose) with exactly this shape:
-{
-  "primary_interaction": {
-    "style": "<one palette style name>",
-    "binding": "<exact controls: what the pointer/keys do, e.g. 'drag the electron with pointer; hold Shift to slow time'>",
-    "why_it_is_the_learning": "<one sentence: doing this action correctly REQUIRES understanding the concept>"
-  },
-  "secondary_interaction": { "style": "<different style or 'sliders'>", "binding": "<controls>" },
-  "slider_policy": "<which variables (if any) stay on sliders, and why they are tuning knobs rather than the core action>",
-  "exploration_moments": ["<2-3 open-ended discoveries: things a curious learner can try that are NOT required to win but produce a visible, honest consequence>"],
-  "surprise_variation": "<one unpredictable element that makes each session feel alive (randomized scenario flavor, a second hidden regime, an entity with autonomous behavior) — must not change WHAT is taught>",
-  "controls_legend": "<one line shown in the HUD, e.g. 'DRAG planet · SCROLL zoom · SPACE pause · R reset'>"
-}`;
-
-  // Primary model first, then REASON_MODEL (known-good llama-70b) — so a
-  // delisted/unreachable INTERACTION_MODEL_ID degrades to a non-thinking
-  // contract instead of no contract at all.
-  const candidates = [INTERACTION_MODEL_ID];
-  if (REASON_MODEL !== INTERACTION_MODEL_ID) candidates.push(REASON_MODEL);
-  for (const model of candidates) {
-    try {
-      const raw = await openaiCreateStreamed({
-        model,
-        max_tokens: 4000,
-        // Extended thinking: gpt-oss reasoning models take reasoning_effort; high =
-        // real deliberation. Non-reasoning models simply ignore the field.
-        ...(isReasoningModel(model) ? { reasoning_effort: "high" } : {}),
-        messages: [{ role: "user", content: prompt }],
-      }, "interaction-director");
-      const contract = parseLooseJSON(raw);
-      if (!contract || !contract.primary_interaction || !contract.primary_interaction.style) {
-        console.warn(`[interaction] director (${model}) returned unusable JSON`);
-        continue;
-      }
-      console.log(`[interaction] primary=${contract.primary_interaction.style} (via ${model})`);
-      return contract;
-    } catch (err) {
-      console.warn(`[interaction] director (${model}) failed:`, err.message);
-    }
-  }
-  console.warn("[interaction] all director models failed — continuing without contract");
-  return null;
-}
-
-// Render the interaction contract as a codegen prompt section. Empty string when
-// the director is disabled or failed — codegen prompt is then byte-identical to
-// the pre-director pipeline.
-function interactionContractBlock(ic) {
-  if (!ic) return "";
-  const explore = (ic.exploration_moments || []).map(m => `  • ${m}`).join("\n");
-  return `
-━━━ INTERACTION CONTRACT (from the interaction director — BINDING) ━━━
-The primary interaction below was chosen specifically for this topic. Sliders may exist only in the role the slider_policy allows — a lab whose only interaction is sliders VIOLATES this contract.
-
-PRIMARY INTERACTION (this is the gameplay AND the learning):
-  STYLE: ${ic.primary_interaction.style}
-  CONTROLS: ${ic.primary_interaction.binding}
-  WHY: ${ic.primary_interaction.why_it_is_the_learning || ""}
-SECONDARY: ${ic.secondary_interaction ? `${ic.secondary_interaction.style} — ${ic.secondary_interaction.binding}` : "none"}
-SLIDER POLICY: ${ic.slider_policy || "sliders are secondary tuning knobs only"}
-EXPLORATION MOMENTS (implement all — each must produce a visible, honest consequence):
-${explore || "  • (none specified)"}
-SURPRISE VARIATION: ${ic.surprise_variation || ""}
-CONTROLS LEGEND (render verbatim in the HUD): "${ic.controls_legend || ""}"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`;
-}
 
 // ── KIMI CONCURRENCY LOCK ─────────────────────────────────────────────────────
 // The NVIDIA Build FREE tier accepts ONE Kimi request at a time. When two lab
@@ -1549,8 +735,9 @@ function withKimiLock(fn) {
   return run;
 }
 
-// One Kimi streaming call with wall-clock + idle-stall timeouts. Returns the
-// extracted HTML or throws a retryable error.
+// One GLM streaming call with wall-clock + idle-stall timeouts. Returns the raw
+// model output (the three-fragment block) or throws a retryable error. Fragment
+// extraction + validation happen in the caller via lab-harness.
 async function _runKimiStream(briefText, onProgress) {
   const ac = new AbortController();
   const startedAt = Date.now();
@@ -1565,6 +752,7 @@ async function _runKimiStream(briefText, onProgress) {
     max_tokens: CODEGEN_MAX_TOKENS,
     temperature: 0.7,
     stream: true,
+    chat_template_kwargs: { thinking: CODEGEN_THINKING },
     messages: [{ role: "user", content: briefText }],
   }, { signal: ac.signal });
   let raw = "", reasoning = "", lastReport = 0, finishReason = null;
@@ -1593,795 +781,167 @@ async function _runKimiStream(briefText, onProgress) {
     e.status = 503;
     throw e;
   }
-  const html = extractHtml(raw) || extractHtml(reasoning);
-  if (!html) throw new Error(`${CODEGEN_MODEL_ID} returned non-HTML content (content:${raw.length} reasoning:${reasoning.length} chars, finish_reason:${finishReason})`);
-  return html;
-}
-
-async function codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category = "General", onProgress = null, critiqueNotes = null, interactionContract = null) {
-  const cat = design.spec.course_category || category;
-  const vars = (design.spec.variables || [])
-    .map(v => `  • ${v.name} (${v.unit || ""}): ${v.min}–${v.max}, default ${v.default}. ${v.why_it_matters}${v.regimes_note ? `\n    REGIMES (make all reachable): ${v.regimes_note}` : ""}`)
-    .join("\n");
-
-  const formulas = design.spec.formulas
-    ? Object.entries(design.spec.formulas).map(([k, v]) => `  ${k} = ${v}`).join("\n")
-    : "";
-  const rules = (design.spec.rules || [])
-    .map(r => `  • when (${r.when}): ${r.visual_change} — show message "${r.message}"`)
-    .join("\n");
-
-  const archetype = design.spec.lab_archetype || "physics-sim";
-
-  // Archetype-specific Three.js architecture patterns injected into codegen
-  const archetypeArchitecture = {
-    "physics-sim": `
-━━━ ARCHITECTURE: PHYSICS SIMULATION (Three.js) ━━━
-Build on requestAnimationFrame with Three.js scene. State object holds positions/velocities. Physics integrates every frame. Trail stored as TubeGeometry or Line geometry updating live.
-const state = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), trail: [], t: 0 };
-function update(dt) { /* integrate forces on state.pos/state.vel */ state.trail.push(state.pos.clone()); if(state.trail.length>200) state.trail.shift(); updateTrailMesh(); }
-function animate() { update(dt); renderer.render(scene, camera); requestAnimationFrame(animate); }
-// Raycast for draggable 3D objects; keyboard-steer for movable entities`,
-
-    "threshold": `
-━━━ ARCHITECTURE: THRESHOLD (Three.js) ━━━
-One primary slider drives the 3D simulation. Scene shows continuous change PLUS a sudden visual jump at threshold (GSAP camera shake, emissive flash, particle burst).
-const state = { value: defaultVal, threshold: X, crossed: false };
-// At threshold: trigger golden particle burst + emissive pulse on key mesh + HUD message`,
-
-    "accumulation": `
-━━━ ARCHITECTURE: ACCUMULATION (D3 + minimal Three.js chrome) ━━━
-This archetype is fundamentally a TIME-SERIES CHART — force 3D on it and the data becomes unreadable (dark meshes block the axes). Use D3 for the chart itself; Three.js chrome (particles, glow) is optional decoration only.
-
-D3 CHART (required):
-• Full-viewport SVG with labeled axes: X = years (0–40), Y = balance ($).
-• TWO live curves drawn as D3 paths, both visible at once:
-  - Faded/dotted: linear expectation (no compounding).
-  - Bright solid: actual compound curve (the learner's values).
-• Ghost target line labeled with the mission goal (e.g. "$500k by 30 yrs").
-• As learner drags sliders, both curves redraw instantly via D3 transition (200ms ease).
-• Area between the two curves filled with a semi-transparent accent color so the compounding gap is visceral.
-• Tooltip on hover showing exact year + balance.
-
-STATE:
-const state = { principal:1000, rate:0.07, monthly:100, years:30, won:false };
-// recompute both curves on every slider input, redraw via d3.select(path).datum(data).attr("d", line)
-
-INTERACTION: HUD sliders for Principal ($), Monthly Contribution ($), Interest Rate (%), Years. Each updates state.* then redraws immediately.
-WIN: when compound curve crosses the target line → golden glow on the crossing point + "MISSION COMPLETE" card.`,
-
-    "process-flow": `
-━━━ ARCHITECTURE: PROCESS FLOW (Three.js) ━━━
-Each stage is a labeled 3D region (BoxGeometry platforms). Particles (Points or small Spheres) flow between stages along CatmullRomCurve3 paths.
-const stages = [{position, label, rate},...]; const particles = [];
-// Particles transform color/size at each stage; bottleneck = particles pile up before slow stage`,
-
-    "tradeoff": `
-━━━ ARCHITECTURE: TRADEOFF (Three.js) ━━━
-Two opposing 3D surfaces or curves in the scene. Learner drags a 3D cursor/marker. Show current values of both curves + total on HUD.
-// Optimum point marked with glowing emissive sphere — pulses when cursor within 5%`,
-
-    "structure-puzzle": `
-━━━ ARCHITECTURE: STRUCTURE PUZZLE (Three.js) ━━━
-3D nodes as clickable meshes in the scene. Raycast on click to toggle state. No continuous physics — state changes on interaction.
-const nodes = [{mesh, state:'unset'},...];
-// Raycaster for click detection; evaluate() checks if config matches correct pattern; GSAP for hover glow`,
-
-    "branching-decision": `
-━━━ ARCHITECTURE: BRANCHING DECISION (Three.js) ━━━
-3D tree of consequence nodes connected by glowing TubeGeometry edges. Current node large in center, choices as HUD buttons.
-const tree = { id:'root', text:'...', choices:[...] };
-// Visited nodes = solid emissive; unvisited = faded; GSAP camera transitions between nodes`,
-
-    "bias-trap": `
-━━━ ARCHITECTURE: BIAS TRAP (Three.js + D3 overlay) ━━━
-Phase 1: learner makes judgments via 3D HUD panels. Phase 2: reveal as 3D histogram bars (BoxGeometry heights) with learner's dot highlighted.
-// Show bias name ONLY after trials complete — the reveal is a 3D data visualization`,
-
-    "budget-allocation": `
-━━━ ARCHITECTURE: BUDGET ALLOCATION (Three.js) ━━━
-Fixed total resource distributed via HUD sliders. 3D stacked bar (BoxGeometry segments) shows allocation. Each category has a 3D icon that morphs with allocation level.
-const TOTAL = 1000;
-// Constraint: sum always equals TOTAL; live outcome score computed from formula`,
-
-    "agent-social-sim": `
-━━━ ARCHITECTURE: AGENT SOCIAL SIM (Three.js) ━━━
-Many autonomous agent Spheres in 3D space follow local rules. Emergent patterns appear naturally.
-const agents = Array.from({length:100}, () => ({ position: new THREE.Vector3(), type, state }));
-// Live aggregate chart as 3D ribbon or HUD D3 overlay; convergence triggers win`,
-
-    "sports-game": `
-━━━ ARCHITECTURE: SPORTS VIDEO GAME (Three.js) ━━━
-Full playable sports sim — NOT a passive physics demo. Real venue, game loop, scoreboard.
-const state = { attempts:0, makes:0, streak:0, ball:new THREE.Vector3(), vel:new THREE.Vector3(), phase:'aim' };
-// Venue: PlaneGeometry court/field + stadium PointLights + crowd Points ambience
-// Scoreboard HUD: attempts/makes/streak/mission target; JetBrains Mono numbers
-// Controls: raycast drag for aim angle + power OR keyboard-steer (held keys Set) + touch buttons ◀▲▼▶
-// Ghost replay: faded TubeGeometry of previous attempt trajectory
-// Physics loop: integrate projectile with gravity/spin; collision with hoop/target zone
-// Near-miss: HUD shows WHY in sport terms for 2s; instant retry
-// Win: mission target hit → golden particle burst + camera GSAP zoom + labCheck postMessage`,
-
-    "wave-interference": `
-━━━ ARCHITECTURE: WAVE INTERFERENCE (Three.js) ━━━
-Two or more wave sources in 3D; superposition visible as rippling PlaneGeometry or TubeGeometry waves.
-const sources = [{ freq, amp, phase, pos }, ...]; const t = 0;
-// Displace PlaneGeometry vertices each frame: sum of sin(k·r - ωt + φ) from each source
-// Color mesh by amplitude (constructive=green emissive, destructive=red/dim)
-// Controls: frequency, amplitude, phase sliders → highlight terms in wave equation panel
-// Standing wave mode: reflect at boundary; show nodes/antinodes as glowing markers
-// Aha: phase shift crosses π → destructive interference valley appears`,
-
-    "molecular-builder": `
-━━━ ARCHITECTURE: MOLECULAR BUILDER (Three.js) ━━━
-3D atoms as colored Spheres with element labels; bonds as CylinderGeometry between snap points.
-const atoms = [{ element, pos, mesh }, ...]; const bonds = [];
-// Raycast drag: snap atom to valid bond distance on release; invalid = red flash + bounce back
-// Bond angles update live; show VSEPR-style geometry or base-pair matching rules
-// evaluate(): check if current structure matches target (DNA pair, enzyme-substrate, Lewis structure)
-// Electron clouds: transparent SphereGeometry shells with emissive pulse on correct bonds`,
-
-    "data-sampling": `
-━━━ ARCHITECTURE: DATA SAMPLING (Three.js + D3) ━━━
-Run many trials; each trial spawns a small Sphere that lands in a bin. Histogram builds as 3D BoxGeometry bars.
-const trials = []; let sampleSize = 10; let running = false;
-// "Run Trial" / "Run 100" buttons; each trial draws from the true distribution
-// Live histogram: bar heights = count per bin; overlay true distribution as ghost curve (D3 or TubeGeometry)
-// Controls: sample size slider, population parameter slider — watch CLT converge as N increases
-// Highlight learner's sample mean vs population mean; show standard error shrinking with N
-// Win: learner identifies bias or reaches target confidence interval`,
-
-    "experiment-bench": `
-━━━ ARCHITECTURE: EXPERIMENT BENCH (Three.js) ━━━
-3D lab bench (BoxGeometry table) with beakers (CylinderGeometry + transparent material), burners, thermometers.
-const reagents = [{ name, volume, color, temp }, ...]; let reactionState = 'idle';
-// Pour: click beaker → drag to flask → volume transfers with animated fluid level (scaled CylinderGeometry height)
-// Temperature slider → burner flame intensity (PointLight + emissive) → reaction rate changes
-// Threshold: color shift + particle burst when pH/temp/concentration crosses reaction point
-// Safety/readouts: live thermometer, pH meter, color indicator on HUD
-// Win: achieve target product state (color, pH, gas bubbles) by tuning variables`,
-  };
-
-  const briefText = `━━━ REPEND CODEGEN — build ONE playable learning lab ━━━
-Repend teaches any topic through hands-on interaction. Before writing code, ask: "What is the most engaging way to make THIS concept click — a simulation, a game, a decision tree, a visual puzzle?" Build the format that lets the learner FEEL the concept. A good lab produces an "aha" a textbook can't. Passive explanations, static charts, read-only screens are REJECTED — every element responds to the learner's action.
-
-━━━ OUTPUT — read this first ━━━
-Return ONE complete, self-contained, runnable HTML file. No prose, no summaries, no explanations, no "// ..." / TODO placeholders — and EVERY tag closed (ending </html>). Three.js r128 + GSAP from the exact CDNs below; zero console errors on first load; works from 360px wide up.
-Keep the code TIGHT: no dead code, no duplicated logic, terse names where clarity allows, minimal whitespace. A COMPLETE working file that fits the budget always beats an ambitious one that gets cut off mid-file. If you're running long, cut flourish — never cut correctness or a closing tag.
-
-━━━ THE THREE PILLARS — judged before anything else; failing ANY one = a FAILED lab ━━━
-1. INTERACTIVITY — the learner DRIVES, never watches.
-   • Primary action is IN the play area: grab/drag, aim-and-release, or steer with held arrow keys (mirror with on-screen ◀▲▼▶ touch buttons). Sliders are secondary.
-   • Every control makes an immediate, visible, meaningful change (<100ms). No inert controls, no decorative motion, no "press play and watch."
-   • Within 3 seconds of load there's something obvious to grab and the learner knows what to do without reading. First action is hands-on BEFORE any explanation. The repeated core action IS the concept (drag the right anticodon = learning translation), never a quiz wrapper.
-
-2. GAMIFIED — a GAME played to WIN, not a sandbox to poke.
-   • A concrete WIN GOAL drawn on the canvas (target ring / finish zone / threshold line) with LIVE progress toward it (meter fills, target glows, counter climbs).
-   • 2–4 LIVE CONSEQUENCE BARS (horizontal, 0→max, in Zone A) — each a metric a real operator in this domain tracks (Revenue, Reaction Rate, Carbon — never "score"/"progress"). Every action updates them immediately (<300ms CSS transition). Under each bar, a one-line string explaining WHY it moved ("Higher temp breaks more bonds → rate spikes") — this text is the pedagogical payload; the fast-animating bar makes the learner wait to see where it lands.
-   • NEAR-MISS feedback in the concept's own words on every failed attempt, then instant retry.
-   • A WIN winnable ONLY by using the concept's real mechanism → golden burst + S/A/B/C/D grade (from final metrics vs real-world thresholds) + labCheck postMessage. Auto-detect the win the instant it happens. The mission MUST be mathematically reachable — verify control values exist that drive it to 100%; a meter stuck at 0% is the #1 failure.
-
-3. REAL-WORLD — the concept visibly operates in the actual world.
-   • Open on a CONCRETE real instance (a real role/place/$amount/news moment). When quantitative, draw the real target (ghost curve / dotted trajectory / historical line, labeled with real name + units) the learner reverse-engineers, with a live MATCH% readout (gap between their model and the target) that doubles as the mission meter.
-   • The REVEAL lands real_world_payoff as ONE concrete sentence: "[What you just did] is why [real-world consequence]." — never a generic summary. It appears as a visible in-sim event (slides in, ~4s, then fades), not a paragraph.
-   • Real units on every quantitative readout (N, m/s², kg, m, %, $, °).
-
-━━━ GOLD-STANDARD HARNESS — copy this EXACT 11-section skeleton (fill the topic-specific parts, keep every section, in order) ━━━
-proof-lab.html is the hand-written gold standard. Do NOT invent a different structure.
-
-S1 Renderer + scene + camera — THREE.WebGLRenderer {antialias, pixelRatio≤2, ACESFilmicToneMapping, exposure 1.15}; renderer.domElement into a position:fixed #app (NOT body); a CSS2DRenderer appended too (same size, position:fixed, pointer-events:none). Camera positioned so ALL objects are in view on frame 1 — NEVER at origin looking at origin (e.g. camera.position.set(0,4,10); camera.lookAt(0,0,0)).
-
-S2 Lighting (UNCONDITIONAL — add all three, no if-checks; this is the ONE canonical light rig — a black scene is a broken lab):
-  scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-  const key = new THREE.DirectionalLight(0xffffff, 1.25); key.position.set(5,10,7); scene.add(key);
-  const rim = new THREE.PointLight(0x4CC9F0, 0.9, 60); rim.position.set(-6,4,-4); scene.add(rim);
-  Plus ~240 THREE.Points dust (slow drift) for depth. Materials must read under this light — MeshStandardMaterial with emissive when in doubt ({color:0x9B59B6, emissive:0x4A1070, emissiveIntensity:0.4}); if a mesh looks black, raise emissiveIntensity.
-
-S3 Palette + topic objects (FILL IN) — build the main topic environment (stage/court/bench/vault) first, then interactive objects, all within camera view (x:0±3, y:0±2, z:0), never spawned inside another mesh or off-screen. Every mesh carries a meaningful one-word CSS2DObject label (never an unlabeled shape). IDLE LIFE: key objects bob/pulse/rotate gently and dust drifts when no one's interacting — the scene is alive on load, never frozen.
-
-S4 HUD (position:fixed glass panels, NOT inside the canvas — plain HTML divs with higher z-index):
-  #hud{position:fixed;top:18px;left:18px;padding:16px 20px;width:280px;max-width:280px;background:rgba(10,15,30,.75);backdrop-filter:blur(10px);border:1px solid rgba(232,93,4,.3);border-radius:14px;z-index:10}
-  Contains: title, goal/subtitle, progress meter (bar + count), result line.
-  FIVE reserved corners, ONE panel each, NEVER two overlapping:
-    top-left = #hud (title+goal+progress, ALWAYS fully visible, never collapses)
-    top-right = controls/sliders OR score (pick one; stack extra panels vertically in this SAME column: display:flex;flex-direction:column;gap:8px)
-    bottom-left = legend (collapsible, ≤220px)
-    bottom-right = reset button only
-    bottom-center = hint strip (single line ≤40px tall)
-  Give every panel max-width ≤320px so text wraps INSIDE it; ≥16px gap between panels; stack text as normal block flow (line-height ≥1.4), never two absolutely-positioned lines at the same top. CSS2D labels: small font, opaque/blurred chip, offset ABOVE the mesh. Every secondary panel (Controls, Live Metrics, Formula, Legend) has a collapse toggle when panels exceed ~60% of viewport height:
-    <div class="panel"><div class="panel-header" onclick="this.parentElement.classList.toggle('collapsed')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center"><span>Controls</span><span class="chevron">▲</span></div><div class="panel-body">…</div></div>
-    .panel.collapsed .panel-body{display:none} .panel.collapsed .chevron{transform:rotate(180deg)}
-  SELF-TEST: at 1280×800, no two fixed panels may overlap by >4px.
-
-S5 Drag / interaction — 3D: Raycaster (pointerdown→intersect→pointerup snap/reject). 2D: addEventListener('input'/'click') on every control writing to a shared state object. CLICK-LAYERING (the #1 fatal "nothing is clickable" bug — a full-viewport canvas sits ON TOP of the HUD by default and swallows clicks): canvas/renderer.domElement = position:fixed;inset:0;z-index:0; every HUD/control container = z-index:10 AND pointer-events:auto. If the canvas needs no direct interaction, set canvas pointer-events:none. If it does (raycaster drag), keep pointer-events:auto but every HUD element gets a higher z-index.
-
-S6 Place / win logic (topic-specific) — correct drop/match → tweenTo snap + bloom + burst(x,y,color) + increment; wrong → red emissive flash 260ms + hint 1.8s then tweenTo home; complete → update result, setTimeout 500ms → #win overlay + 6 staggered bursts + postMessage.
-
-S7 Win overlay + postMessage (copy verbatim):
-  <div id="win" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;background:rgba(5,5,8,.6);backdrop-filter:blur(3px);z-index:5"><div class="grade">[grade]</div><div class="msg">[win message]</div><div class="sub2">[payoff sentence]</div></div>
-  try { window.parent.postMessage({ type:'labCheck', result:{ ok:true, score:1, total:1 } }, '*'); } catch(_){}
-
-S8 Tween system (copy verbatim — smooth motion, not CSS transitions):
-  const tweens = [];
-  function ease(t){ return t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
-  function tweenTo(obj,to,dur,done){ tweens.push({obj,kind:'pos',from:obj.position.clone(),to:to.clone(),t:0,dur,done}); }
-  function tweenScale(obj,to,dur,done){ tweens.push({obj,kind:'scale',from:obj.scale.x,to,t:0,dur,done}); }
-  function updateTweens(dt){ for(let i=tweens.length-1;i>=0;i--){ const tw=tweens[i]; tw.t+=dt/tw.dur; const k=ease(Math.min(tw.t,1)); if(tw.kind==='pos') tw.obj.position.lerpVectors(tw.from,tw.to,k); else tw.obj.scale.setScalar(tw.from+(tw.to-tw.from)*k); if(tw.t>=1){if(tw.done)tw.done();tweens.splice(i,1);} } }
-
-S9 Particle bursts (copy verbatim):
-  const bursts = [];
-  function burst(x,y,color){ const n=70,g=new THREE.BufferGeometry(),pos=new Float32Array(n*3),vel=[]; for(let i=0;i<n;i++){ pos[i*3]=x;pos[i*3+1]=y;pos[i*3+2]=0.8; const a=Math.random()*Math.PI*2,s=2+Math.random()*4; vel.push(new THREE.Vector3(Math.cos(a)*s,Math.sin(a)*s,(Math.random()-.5)*3)); } g.setAttribute('position',new THREE.BufferAttribute(pos,3)); const p=new THREE.Points(g,new THREE.PointsMaterial({color,size:0.16,transparent:true,opacity:1,blending:THREE.AdditiveBlending})); scene.add(p); bursts.push({p,vel,life:0}); }
-  function updateBursts(dt){ for(let i=bursts.length-1;i>=0;i--){ const b=bursts[i];b.life+=dt; const arr=b.p.geometry.attributes.position.array; for(let j=0;j<b.vel.length;j++){arr[j*3]+=b.vel[j].x*dt;arr[j*3+1]+=b.vel[j].y*dt-2*dt*b.life;arr[j*3+2]+=b.vel[j].z*dt;} b.p.geometry.attributes.position.needsUpdate=true;b.p.material.opacity=Math.max(0,1-b.life/1.3); if(b.life>1.3){scene.remove(b.p);bursts.splice(i,1);} } }
-
-S10 THE ANIMATION LOOP — the ONLY place rendering happens (copy this ONE canonical structure verbatim):
-  const state = { /* positions, velocities, target, score, matchPct, won:false, …topic values */ };  // ONE shared mutable object holds everything that changes
-  const clock = new THREE.Clock();
-  function animate(){
-    requestAnimationFrame(animate);            // reschedules itself
-    const dt = clock.getDelta();               // getDelta called EXACTLY ONCE per frame
-    const t  = clock.elapsedTime;
-    updateTweens(dt);
-    updateBursts(dt);
-    update(dt);                                // mutate meshes FROM state, scaled by dt — VISIBLE motion whenever input is non-neutral
-    if (controls) controls.update();           // damped OrbitControls are DEAD without this
-    checkWin();                                // auto-detect win every frame
-    renderer.render(scene, camera);
-    if (labelRenderer) labelRenderer.render(scene, camera);
-  }
-  animate();  // called ONCE to start
-  ⚠️ CONST vs LET — #1 crash "Assignment to constant variable": any counter/score/position/angle/velocity/flag that update() or a handler writes to MUST be a state.* property (state.score++) or declared let — NEVER const. Scan output for a const on the LHS of =,+=,-=,++,-- and fix it.
-  ⚠️ WIRING: every slider has addEventListener('input', e=>{ state.x = +e.target.value; }); every button addEventListener('click',…); handlers write ONLY to state, the loop moves the meshes. animate() is called once at the end. A slider with no listener, or an animate() never called, is the dead-screen bug. If moving a control changes no mesh, wire it or delete it.
-
-S11 Resize + reset (copy verbatim structure):
-  addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); if(labelRenderer) labelRenderer.setSize(innerWidth,innerHeight); });
-  document.getElementById('reset').onclick = () => { /* restore objects to home, clear placed/won state */ };
-
-CDN URLs (use EXACTLY these — no other versions, never invent r165):
-  three r128: https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js
-  CSS2DRenderer: https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js
-  GSAP 3.12.5: https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js
-  D3 7.9.0: https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js
-  KaTeX 0.16.11: https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js + /katex.min.css
-  Google Fonts: https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap
-
-━━━ HARD CONTRACTS — each stated once; all mandatory ━━━
-• TRUTH / NO FAKE VARIABLES: every control maps to a real term in a formula (or a real categorical outcome) and visibly changes a real output. Never invent a topical-sounding inert variable (the "Contact Surface" slider on F=-F affected nothing — that bug: if a variable drives no formula, DELETE it). Three honest controls beat four with one lie.
-• REAL UNITS, never pixels/bare numbers: declare a world scale (const PX_PER_M = 50) and show "Separation: 3.1 m" / "Acceleration: 3.2 m/s²" / "Balance: $4,820" — never "154 px" or "Resulting Motion: 7.12".
-• CONTROL BOUNDS: set min/max/step to the real domain (prob 0–1 step .01; pH 0–14 step .1; rate 0–20% step .25; angle 0–90° step 1) and clamp in the handler (state.x=Math.min(max,Math.max(min,+e.target.value))). Discrete choices (allele, element, phase) = a fixed button set, never a free slider. Physically impossible states (negative mass, >100%) must be unreachable. Disable inapplicable controls (opacity:.4;cursor:not-allowed), never leave them silently dead.
-• LABELS: every distinct object carries a one-word label ON/beside it ("Hand","Wall","Cart A","Buyer") — the learner never sees a shape and wonders what it is. Put each label/readout ADJACENT to the thing it names (Mayer spatial contiguity), never in a far-off list.
-• SOLID OBJECTS CANNOT OVERLAP (intertwining-circles bug): two solid bodies collide, never interpenetrate. Resolve every frame incl. during drag:
-    const dx=B.x-A.x,dy=B.y-A.y,dist=Math.hypot(dx,dy)||0.0001,minDist=A.r+B.r; if(dist<minDist){const nx=dx/dist,ny=dy/dist,ov=minDist-dist; A.x-=nx*ov/2;A.y-=ny*ov/2;B.x+=nx*ov/2;B.y+=ny*ov/2;}
-  A dragged body clamps to contact along the normal — they touch and exert force, never overlap.
-• AFFORDANCES: grabbable objects signal it — cursor grab→grabbing, subtle hover glow, hit radius ≥24px for touch, position updates synchronously with the pointer (no lag).
-• FRAME-RATE INDEPENDENCE: all motion scaled by dt (mesh.position.x += state.v*dt), never bare per-frame increments; camera moves via GSAP (gsap.to(camera.position,{…,ease:"power2.out"})) or a dt-scaled lerp, never a raw per-frame lerp.
-• COHERENCE: every element reacts to input or displays a result. No ornamental shapes/motion. If deleting it loses no understanding, delete it.
-• SIGNALING: when a control changes a value, briefly highlight the affected element/term (color flash/glow) so attention goes to what changed.
-• ANIMATION POLISH: UI transitions 150–200ms, full-stage 300–400ms, exits shorter than entrances; entrances ease-out, exits ease-in, else ease-in-out (never linear for discrete motion); stagger grouped entrances 20–50ms; CSS animates ONLY transform/opacity (never top/left/width/height).
-
-━━━ CONTROLS LEGEND — required, the #1 thing labs miss; build EXACTLY ━━━
-A persistent, always-visible panel (Zone A, titled "Controls"/"How to play"), a real DOM element. First line is the GOAL ("GOAL: sink 3 shots in a row"). Then ONE line per interactive element, format: <icon/swatch> <NAME> — <VERB> it → <exact effect>, ≤8 words after the verb, concrete effect ("steepens the growth curve", never "changes the graph"):
-    🎚️ Launch Angle — SLIDE → raises/lowers the shot arc
-    🟠 The Ball — DRAG on the court → sets where you shoot from
-The VERB must equal the wired interaction (DRAG=pointer on canvas, SLIDE=range input, CLICK/PLACE=discrete, TOGGLE=boolean, DECIDE=pick one). Each control sits next to a LIVE readout of its value + consequence ("Rate: 5% → doubles in ~14 yrs"). SELF-TEST: legend lines must be 1:1 with interactive elements — no control without a line, no line without a wired control. Legend may collapse to an icon but the GOAL line stays; never hide all instructions after load.
-
-━━━ ONBOARDING — never a blank, unexplained lab ━━━
-• A "How this works" strip visible at load (≤2 lines: what it shows + first thing to try, from design.spec.first_move); may auto-dismiss after first interaction. PREFER this bottom-center hint strip over any intro overlay. If you DO use a "Begin" overlay: z-index≥100, pointer-events:auto, and wire dismissal with BOTH an inline onclick AND an addEventListener backup — never z-index alone.
-• 🎯 OBJECTIVES panel (collapsible, HUD corner): EXACTLY 2–3 outcome bullets, each ≤12 words, starting with an action verb (Predict/Compare/Explain/Derive/Identify/Trade off), tied to what the learner physically does here and to the aha ("Predict how nanoparticle size shifts emission color" — NOT "Learn about quantum dots"). Use design.spec.learning_goal + the key variables.
-• A legend names every distinct visual element (what each color/shape/mesh means) — no unexplained symbols. As the sim runs, ONE live line just below it narrates what's happening now ("Escape velocity not reached — orbit decaying").
-• SELF-TEST: within 3 seconds a first-time user knows (1) what they're looking at, (2) what to touch first, (3) what success looks like. If any is unclear, add the missing label/strip. NO modal/gate/prediction screen before the sim — it's fully interactive the moment it loads.
-
-━━━ TOPIC-SPECIFIC VISUAL PEDAGOGY (overrides any generic rule above that conflicts — written for "${design.topic}") ━━━
-${pedagogy}
-${interactionContractBlock(interactionContract)}
-LAB ARCHETYPE: ${archetype.toUpperCase()} — use the harness structure exactly; only replace domain-specific contents.
-${imageDataUrl ? `Two inputs: a VISUAL MOCKUP (image) — use ONLY for layout/color/spatial arrangement; and the BEHAVIORAL BRIEF below — source of truth for what the lab DOES. Brief always wins; ignore garbled/fake text in the image.` : `The behavioral brief below is the source of truth for what the lab does.`}
-
-━━━ SCENE = THE LITERAL TOPIC (overrides every aesthetic note) ━━━
-The 3D world DEPICTS "${design.topic}" literally. The cinematic/"NASA" references are RENDERING QUALITY ONLY (lighting, fog, glass HUD, smooth camera) — NOT a cue to build space. Do NOT add planets/orbits/spacecraft/starfields unless the topic is genuinely astronomy. Language lab = big legible 3D letters/words to drag & match, waveform ribbons, translation cards — not planets. History/art = timelines, 3D artifacts, document panels. If you catch yourself drawing an unlabeled "Body" sphere or generic orbit, STOP — build the real subject.
-
-COURSE CATEGORY: ${cat}
-CATEGORY AESTHETIC: ${categoryGuidance(cat)}
-REPEND PALETTE — use EXACTLY these in all CSS + Three.js materials: void ${REPEND_THEME.void}, fog ${REPEND_THEME.fog}, mars accent ${REPEND_THEME.mars} (buttons/borders/emissive), mars2 ${REPEND_THEME.mars2}, dust ${REPEND_THEME.dust}, copper/gold ${REPEND_THEME.copper} (trails/bursts), ice HUD ${REPEND_THEME.ice} (readouts/labels), muted ${REPEND_THEME.muted}, success ${REPEND_THEME.green}, glass ${REPEND_THEME.glass} border ${REPEND_THEME.border}. Fonts: Inter (UI), JetBrains Mono (numbers).
-${cat === "Sports & Skills" || archetype === "sports-game" ? `
-SPORTS VIDEO-GAME MODE (required here): a PLAYABLE sports game — full 3D venue with accurate markings + floodlights + crowd ambience; scoreboard HUD (attempts/makes/streak/target); keyboard-steer + on-screen ◀▲▼▶; loop aim→release/steer→physics→near-miss→instant retry; faded TubeGeometry ghost trail of the previous attempt; win = hit the mission target; golden burst + camera zoom on success.` : ""}
-${archetypeArchitecture["physics-sim"] ? `THREE.JS BASE (implement this skeleton, then fill topic meshes):
-const scene=new THREE.Scene(); scene.fog=new THREE.FogExp2(0x1a0800,0.04);
-const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,800);
-const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setSize(innerWidth,innerHeight); renderer.toneMapping=THREE.ACESFilmicToneMapping; document.body.appendChild(renderer.domElement);
-// lights per S2; topic Group (court/planet/molecules); physics in animate() (integrate projectile/orbit, update TubeGeometry trail); GSAP camera on threshold crossings.
-ARCHETYPE PATTERN (${archetype}):
-${archetypeArchitecture[archetype] || archetypeArchitecture["physics-sim"]}
-` : ""}
-
-━━━ CHOOSE THE MEDIUM — 3D is NOT always right ━━━
-Pick by what the topic IS, never default to 3D. 2D (D3/SVG as PRIMARY) for anything read on axes — compound interest, supply & demand, sampling distributions, growth curves, budgets, "value over time/inputs"; a 3D mesh over axes makes data unreadable. 3D (Three.js PRIMARY) for spatial/physical/object topics — projectile, orbit, molecules, anatomy, pendulums, vectors. Either for emergent/sequential — pick the most legible.
-If 2D: full-viewport SVG with unit-labeled axes; two distinct series when comparing (bright solid = learner's live result, faded/dotted = target); D3 transitions 150–300ms on every redraw (never a jump-cut); same dark theme; Three.js becomes optional low-z ambience only, NEVER touching/occluding the data.
-If 3D primary: cinematic WebGL of the LITERAL topic — geometry-rich world, FogExp2, dust Points, animated rim light, glass HUD, emissive accents, CanvasTexture where needed (wood grain, pebbled ball, grass); recognizable meshes for every element, never gray placeholder boxes, never a generic empty grid.
-LAYOUT ZONES (2D or 3D): title bar (top: topic + one-line goal); Zone B main stage (center, largest — the only place complex visuals live); Zone A controls/HUD (docked left/right, fixed width, never floating over Zone B); readout/formula strip. HARD: Zone A never covers Zone B — no panel/mesh occludes an axis, curve, mesh, or label; a win-card may overlay only momentarily then dismiss.
-
-━━━ REQUIRED INTERACTIONS — implement every one ━━━
-TOPIC: ${design.topic}
-CONCEPT TYPE: ${archetype}
-ENTRY MISCONCEPTION: "${design.spec.entry_misconception || ""}"
-FIRST MOVE (try first; should surprise): "${design.spec.first_move || ""}"
-LEARNING GOAL: ${design.spec.learning_goal}
-VISUAL METAPHOR: "${design.spec.visualMetaphor}"
-${design.spec.direct_manipulation ? `PRIMARY DIRECT MANIPULATION (not a slider — grabbed on the canvas): ${design.spec.direct_manipulation}` : ""}
-${(design.spec.interaction_palette || []).map(p => `  [${p.type}] ${p.element} → ${p.effect}`).join("\n") || `  [draggable] at least one canvas object to grab and drag
-  [click-spawn] clicking the canvas creates a visible effect
-  [toggle-button] at least one toggle that flips a boolean and changes the visual`}
-
-INTERACTION CODE PATTERNS — copy exactly:
-[draggable] grab + drag with grab/grabbing cursor + solid-collision clamp:
-  let drag=null; const HIT=Math.max(28,state.obj.r);
-  canvas.addEventListener('pointerdown',e=>{ const{mx,my}=canvasPt(e); if(Math.hypot(mx-state.obj.x,my-state.obj.y)<HIT){ drag={ox:state.obj.x-mx,oy:state.obj.y-my}; canvas.style.cursor='grabbing'; canvas.setPointerCapture(e.pointerId);} });
-  canvas.addEventListener('pointermove',e=>{ const{mx,my}=canvasPt(e); if(drag){ state.obj.x=mx+drag.ox; state.obj.y=my+drag.oy; for(const other of state.solids){ if(other===state.obj)continue; const dx=state.obj.x-other.x,dy=state.obj.y-other.y,d=Math.hypot(dx,dy)||0.0001,min=state.obj.r+other.r; if(d<min){const nx=dx/d,ny=dy/d; state.obj.x=other.x+nx*min; state.obj.y=other.y+ny*min;} } } else { canvas.style.cursor=Math.hypot(mx-state.obj.x,my-state.obj.y)<HIT?'grab':'default'; } });
-  canvas.addEventListener('pointerup',()=>{ drag=null; canvas.style.cursor='default'; });
-  function canvasPt(e){ const r=canvas.getBoundingClientRect(); return{mx:(e.clientX-r.left)*(canvas.width/r.width),my:(e.clientY-r.top)*(canvas.height/r.height)}; }
-  // set CSS touch-action:none on the canvas so dragging doesn't scroll.
-[keyboard-steer] arrow/WASD steer (required whenever there's a movable object — rocket, particle, organism). Track HELD keys so holding acts every frame:
-  const held=new Set();
-  window.addEventListener('keydown',e=>{ if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyA','KeyS','KeyD'].includes(e.code)){ held.add(e.code); e.preventDefault(); } });
-  window.addEventListener('keyup',e=>held.delete(e.code));
-  // in update(dt): if(held.has('ArrowUp')||held.has('KeyW')) applyThrust(dt); etc.
-  Hint chip: "← → ↑ ↓ to steer (click the play area first)" (iframe needs focus). ALWAYS mirror with on-screen ◀▲▼▶ (pointerdown=press/pointerup=release feeding the same held Set) so phones get the same game.
-
-CONCEPT-TYPE → INTERACTION (classify "${design.topic}", then build the matching form):
-  Quantitative/functional → slider(s) + live linked chart + a concrete real referent (money stacks growing, not just a curve).
-  Dynamic physical → learner-controlled rAF animation + live graph; draggable starting conditions.
-  Emergent/agent-based → MANY visible individual entities on local rules + controls to perturb; macro pattern emerges. NEVER one slider on an aggregate curve.
-  Sequential process → learner-paced step-through ("next"), each step highlighting the one change. NEVER autoplay-only.
-  Spatial/geometric → draggable objects with live measurements exposing the invariant.
-  Probabilistic → animate individual trials accumulating into a building histogram; learner sets sample size, runs many.
-  Abstract/relational → sort-into-bins with feedback, or side-by-side contrasts; tradeoffs = a slider that visibly gives up one thing for another.
-  Network/feedback → stocks that visibly fill/drain + flows the learner adjusts + a linked time graph.
-
-━━━ BEHAVIORAL BRIEF — build exactly this ━━━
-${labThinking}
-
-VARIABLES THE LEARNER CONTROLS:
-${vars}
-${formulas ? `
-FORMULAS — implement EXACTLY in JS (no approximations); every live readout is computed from these and shown as a changing real number:
-${formulas}
-
-FORMULA PANEL (pinned in Zone A or top of Zone B): show the governing equation symbolically; map each control to a symbol ("θ → angle slider"); on input, highlight the corresponding term AND update the computed result live beside it — animation, equation, result all change together. Render with the renderFormula helper (KaTeX + plain-text fallback), never as code.
-HIGHLIGHTABLE TERMS — copy this exact pattern (raw "<span…" text on screen is the #1 formula bug): KaTeX can't highlight a sub-part, so wrap EACH highlightable variable in its OWN renderFormula call with plain HTML around it:
-  <div id="formula-row"><span id="term-v"></span><span> · sin(2</span><span id="term-theta"></span><span>) / </span><span id="term-g"></span></div>
-  <script>renderFormula(document.getElementById('term-v'),'v^2','v²'); renderFormula(document.getElementById('term-theta'),'\\\\theta','θ'); renderFormula(document.getElementById('term-g'),'g','g'); function highlightTerm(id){const el=document.getElementById(id);el.classList.add('flash');setTimeout(()=>el.classList.remove('flash'),400);}</script>
-  Use .innerHTML when the string has tags, .textContent only for plain numbers/strings — never assign a "<span…>" string with .textContent (that prints literal tags).` : `
-PRINCIPLE PANEL (NON-QUANTITATIVE topic — do NOT invent a formula, units, or numeric "score"; forcing math onto language/history/art/ethics/music is a FAILURE): render the governing rule in plain words ("Spanish adjectives agree with the noun's gender and number"). Each control maps to a clause — highlight it the moment the learner engages it. Readouts are CATEGORICAL ("Tense: past", "Match: correct ✓", "Mood: minor"), never fake units. The "result" they watch is the conjugated word / assembled argument / resolved chord / matched translation — a concrete outcome, not a curve.`}
-${rules ? `
-THRESHOLD RULES — trigger these exact visual events (golden glow burst on the key element + message shown prominently 2–3s):
-${rules}` : ""}
-SUCCESS CONDITION: ${design.spec.success_condition}
-REAL-WORLD PAYOFF: "${design.spec.real_world_payoff || ""}"
-
-REAL SCENARIO MATCHING (if the brief's section J gives a real scenario — it usually does): draw the real instance as a fixed TARGET from the first frame (ghost curve/dotted trajectory/faded historical line, real name + units; D3 for data on axes); the learner's controls drive THEIR model on the same axes, visually distinct (target faded/dotted, model bright); a live MATCH% readout = the mission meter; crossing threshold: the equation reveal with their discovered values IS the celebration ("You found it: A = 1000·(1.07)^t") + win + labCheck postMessage. The learner reverse-engineers reality; the formula arrives as the answer they earned. If section J was skipped (non-quantitative topic), the mission from the brief's section G carries the lab instead — never force a fake dataset.
-
-━━━ PURPOSE MANDATE — the soul of the lab; every element must serve these five ━━━
-ENTRY MISCONCEPTION: "${design.spec.entry_misconception || ""}" → the DEFAULT STATE must INVITE this misconception (a glance-only learner should be tempted to believe it), and within ~10s of the first move it starts to crack.
-FIRST MOVE: "${design.spec.first_move || ""}" → instantly obvious from the UI (highlighted draggable / blinking prompt / on-screen arrow) and doing it produces a SURPRISING result that challenges the misconception.
-AHA TRIGGER: "${design.spec.aha_trigger || ""}" → an unmissable VISUAL EVENT (curve bending, phase flip, collision, threshold crossed with a burst/color-shift/jump) the learner SEES without being told to look — not merely a number changing.
-LEARNING GOAL: "${design.spec.learning_goal || ""}" → stated EXPLICITLY on screen: a goal line in the controls panel AND the reveal text when the aha fires / win is met.
-REAL-WORLD PAYOFF: "${design.spec.real_world_payoff || ""}" → verbatim on the win/reveal card, format "[What you just saw] is why [real-world consequence]", naming something in the learner's world. A vague "now you understand X" fails.
-
-━━━ PLATFORM CONSTRAINTS — the lab runs in a sandboxed iframe; non-negotiable ━━━
-• ONE self-contained HTML file, inline CSS/JS. Start with <!doctype html>. No localStorage/sessionStorage, no fetch(). Works in sandbox="allow-scripts". Responsive 360px→desktop. Zero console errors on first load.
-• Load a CDN lib ONLY if the concept needs it (don't load what you don't use); each with an inline fallback check. Google Fonts is the one always-on item (system fonts take over if it fails):
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">  // Inter for UI, JetBrains Mono for every number/readout/match%/formula-fallback (tabular numbers feel precise)
-• THREE.JS — only if 3D is primary or a thin decorative layer; always include CSS2DRenderer + OrbitControls addons. REQUIRED WebGL fallback (never a silent black screen) — detect BEFORE creating the renderer and wrap creation in try/catch:
-  function webglOK(){try{const c=document.createElement('canvas');return !!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')));}catch(e){return false;}}
-  if(!webglOK()){document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#120800;color:#E85D04;font:16px system-ui;text-align:center;padding:2rem">This 3D lab needs WebGL. Enable hardware acceleration or try another browser/device.</div>';} else { try{ /* create renderer + run lab */ }catch(e){ document.body.innerHTML='…friendly dark-panel message…'; } }
-• GSAP — always required for cinematic transitions; include a no-op fallback so the lab still runs if it fails: <script>if(typeof gsap==='undefined'){window.gsap={to:(el,o)=>{if(o.onComplete)setTimeout(o.onComplete,(o.duration||0.5)*1000);}};}</script>
-• D3 for data on axes; p5.js only for many-entity 2D overlays on a Three.js scene; Matter.js for collision/gravity physics — each with a fallback check.
-• KaTeX for the formula panel (never raw ASCII math like v^2*sin(2*theta)/g). ⚠️ BACKSLASH ESCAPING — #1 cause of broken equations (a normal JS string EATS backslashes: "\\lambda"→"lambda", and throwOnError:false fails SILENTLY): write EVERY TeX command with String.raw OR doubled backslashes:
-  renderFormula(el, String.raw\`E = \\\\frac{hc}{\\\\lambda}\`, 'E = hc/λ');   // PREFERRED raw template literal
-  renderFormula(el, "E = \\\\\\\\frac{hc}{\\\\\\\\lambda}", 'E = hc/λ');       // or double every backslash in a "…" string
-  NEVER single backslashes in a "…"/'…' string passed to renderFormula. Plain-text fallback uses real Unicode (λ η ² ·). SELF-TEST: any TeX command with a single backslash inside a normal string is BROKEN.
-• CANVAS SIZING (prevents a stretched/blank canvas): set width/height from the element's actual rendered size, never hardcoded —
-  function resizeCanvas(){ canvas.width=canvas.offsetWidth; canvas.height=canvas.offsetHeight; } resizeCanvas(); addEventListener('resize',resizeCanvas);
-  Something meaningful must be drawn within 100ms of load. Use pointer events (pointerdown/move/up) for all dragging (mouse+touch).
-• SELF-IDENTIFYING CHOICE OBJECTS: if the learner must pick/drag/match the CORRECT object among candidates, EACH candidate visibly displays its decision-relevant identity (anticodon, value, name, charge, payload) as a label anchored to it (Sprite/CSS2D for 3D, HTML overlay tracking screen position for 2D), AND the target it matches against is labeled too ("Current codon: AUG"). A pile of identical unlabeled blobs to guess between is a FAILED lab.
-• Include a Reset button. SUCCESS REPORTING (a visible "Check Answer" button evaluates the same condition as the auto-detect, as a fallback):
-  window.parent.postMessage({type:"labCheck",result:{ok:true,score:1,total:1}},"*")   // on success (also show the payoff card)
-  window.parent.postMessage({type:"labCheck",result:{ok:false,score:0,total:1}},"*")  // on failure
-• DO NOT render any multiple-choice quiz, prediction modal, "Commit & Start" gate, or "verify understanding" section — the platform shows its own quiz after the lab.
-
-━━━ ARCHETYPE-SPECIFIC CHECK (only if it applies to ${archetype}) ━━━
-  branching-decision → tree renders as a visual graph; learner can backtrack/explore alternates; each leaf reveals a concrete consequence.
-  bias-trap → learner completes trials WITHOUT knowing the bias first; reveal is a distribution plot with their own data highlighted.
-  budget-allocation → total always constrained (sum=TOTAL); each allocation shows live consequences, not just a number.
-  agent-social-sim → agents follow LOCAL rules only (no hard-coded macro pattern); live D3 aggregate chart shows the emergent trend.
-  sports-game → scoreboard + ghost-replay trail + keyboard&touch controls + winnable mission target in a real venue.
-  wave-interference → 2+ sources superposed with color-coded constructive/destructive regions; phase/frequency controls the pattern live.
-  molecular-builder → atoms drag & snap into bonds; evaluate() checks structure vs a target.
-  data-sampling → run many trials, watch a histogram build; sample size visibly changes the distribution shape (CLT).
-  experiment-bench → 3D bench with pourable beakers, live pH/temp/color readouts, a threshold reaction to trigger.
-${critiqueNotes ? `
-━━━ A PREVIOUS ATTEMPT WAS REVIEWED — FIX THESE EXACT PROBLEMS ━━━
-A reviewer looked at a screenshot and found real problems. Regenerate the FULL lab from scratch, keep what works, and make sure every issue below is actually fixed — these are required corrections, not suggestions:
-${critiqueNotes}
-` : ""}
-━━━ OUTPUT BUDGET — hard ~16000-token limit; the file MUST be COMPLETE and end with </script></body></html> ━━━
-Write efficiently: no verbose comments, no repeated boilerplate, reuse helpers, concise CSS/JS. Target 600–900 lines. A complete working smaller lab beats a richer one cut off mid-script — if you approach the limit, drop optional polish and CLOSE ALL TAGS.
-Output ONLY the HTML file. Start with <!doctype html>. No markdown, no explanation, no code fences.`;
-
-  // ── CODEGEN DISPATCH ──────────────────────────────────────────────────────
-  // CODEGEN_MODEL=nvidia → CODEGEN_MODEL_ID on NVIDIA Build (Kimi K2.6, etc.)
-  // Fallback → OpenAI gpt-4o (also handles mockup imageDataUrl via vision).
-  const useNvidia = (CODEGEN_MODEL === "nvidia" || CODEGEN_MODEL === "nemotron")
-    && !!NVIDIA_API_KEY
-    && !imageDataUrl;   // NVIDIA Build text-only
-
-  if (useNvidia) {
-    console.log(`[codegen] routing to NVIDIA Build model: ${CODEGEN_MODEL_ID}`);
-    // Serialize all Kimi calls — the NVIDIA Build FREE tier accepts one request
-    // at a time. When two lab generations run concurrently, both queue on NVIDIA's
-    // side, both time out at ~47-49s, and both return empty streams (finish_reason:null).
-    // The lock makes concurrent requests wait in line instead of hammering in parallel.
-    let lastErr;
-    for (let attempt = 1; attempt <= 4; attempt++) {
-      try {
-        const html = await withKimiLock(() => _runKimiStream(briefText, onProgress));
-        return html;
-      } catch (err) {
-        lastErr = err;
-        if (err && (/abort/i.test(err.name || "") || /abort|timeout|idle stall/i.test(err.message || ""))) {
-          err.status = err.status || 503;
-          console.warn(`[codegen/nvidia] aborted: ${err.message} — will retry/fall back`);
-        }
-        const status = err && (err.status || err.statusCode);
-        const retryable = status === 429 || status === 503 || status === 500;
-        if (retryable && attempt < 4) {
-          const wait = Math.pow(2, attempt) * 1000;
-          console.warn(`[codegen/nvidia] attempt ${attempt}/4 status ${status} — retrying in ${wait}ms`);
-          await new Promise(r => setTimeout(r, wait));
-        } else {
-          break;
-        }
-      }
-    }
-    const isNetworkError = lastErr && (lastErr.status === 429 || lastErr.status === 503 || lastErr.status === 500 || !lastErr.status);
-    if (!isNetworkError) {
-      throw new Error("Lab generation failed: the AI returned an unexpected response. Please retry — a different phrasing usually works.");
-    }
-    console.warn(`[codegen/nvidia] ${CODEGEN_MODEL_ID} failed, falling back to OpenAI:`, lastErr && lastErr.message);
-  }
-
-  // ── CODEGEN FALLBACK ──────────────────────────────────────────────────────
-  // Reached when NVIDIA Build (Kimi) is unavailable or CODEGEN_MODEL is not "nvidia".
-  // Routes through the reasoning provider (NVIDIA gpt-oss-20b by default, OpenAI
-  // when REASONING_PROVIDER=openai) with streaming so the connection stays alive.
-  console.log(`[codegen] routing to reasoning fallback ${REASON_MODEL}`);
-  const messages = [{ role: "user", content: briefText }];
-  if (imageDataUrl && !useNvidiaReasoning) {
-    // Vision is only available on the OpenAI path — gpt-oss-20b is text-only.
-    messages[0].content = [
-      { type: "text", text: briefText },
-      { type: "image_url", image_url: { url: imageDataUrl } },
-    ];
-  }
-
-  let oaLastErr;
-  for (let attempt = 1; attempt <= 4; attempt++) {
-    try {
-      const stream = await openaiCreate({
-        model: REASON_MODEL,
-        max_tokens: CODEGEN_MAX_TOKENS,
-        temperature: 0.7,
-        stream: true,
-        messages,
-      }, "codegen/fallback", { timeout: CODEGEN_TIMEOUT_MS });
-      let raw = "";
-      let reasoning = "";
-      let lastReport = 0;
-      for await (const chunk of stream) {
-        const delta = chunk.choices?.[0]?.delta || {};
-        if (delta.content) raw += delta.content;
-        if (delta.reasoning_content) reasoning += delta.reasoning_content;
-        const seen = raw.length + reasoning.length;
-        if (onProgress && seen - lastReport >= 2000) {
-          lastReport = seen;
-          try { onProgress(seen); } catch (_) {}
-        }
-      }
-      const html = extractHtml(raw) || extractHtml(reasoning);
-      if (!html) {
-        throw new Error(`${REASON_MODEL} returned non-HTML content (content:${raw.length} reasoning:${reasoning.length} chars)`);
-      }
-      return html;
-    } catch (err) {
-      oaLastErr = err;
-      const status = err && (err.status || err.statusCode);
-      const retryable = status === 429 || status === 503 || status === 500;
-      if (retryable && attempt < 4) {
-        const wait = Math.pow(2, attempt) * 1000;
-        console.warn(`[codegen/openai] attempt ${attempt}/4 (${err.message}) — retrying in ${wait}ms`);
-        await new Promise(r => setTimeout(r, wait));
-      } else {
-        break;
-      }
-    }
-  }
-  console.error("[codegen/openai] lab generation failed:", oaLastErr && oaLastErr.message);
-
-  // LAST-RESORT INDEPENDENT FALLBACK — when the reasoning provider is NVIDIA
-  // Build, both Kimi (primary) and llama-3.3-70b (fallback above) live on the
-  // SAME endpoint. If NVIDIA's EngineCore is down, both fail and the learner gets
-  // a bare network error. So if a real OpenAI key is configured, make one final
-  // attempt against OpenAI gpt-4o — a genuinely separate provider — before giving up.
-  if (useNvidiaReasoning && hasOpenAIKey()) {
-    console.warn("[codegen] NVIDIA Build exhausted — trying independent OpenAI gpt-4o last-resort");
-    if (onProgress) { try { onProgress(null, "Switching to backup model…"); } catch (_) {} }
-    try {
-      const oaMessages = imageDataUrl
-        ? [{ role: "user", content: [{ type: "text", text: briefText }, { type: "image_url", image_url: { url: imageDataUrl } }] }]
-        : [{ role: "user", content: briefText }];
-      const stream = await openai.chat.completions.create({
-        model: OPENAI_MODEL,
-        max_tokens: CODEGEN_MAX_TOKENS,
-        temperature: 0.7,
-        stream: true,
-        messages: oaMessages,
-      });
-      let raw = "", reasoning = "", lastReport = 0;
-      for await (const chunk of stream) {
-        const delta = chunk.choices?.[0]?.delta || {};
-        if (delta.content) raw += delta.content;
-        if (delta.reasoning_content) reasoning += delta.reasoning_content;
-        const seen = raw.length + reasoning.length;
-        if (onProgress && seen - lastReport >= 2000) { lastReport = seen; try { onProgress(seen); } catch (_) {} }
-      }
-      const html = extractHtml(raw) || extractHtml(reasoning);
-      if (html) return html;
-      console.error(`[codegen/openai-lastresort] ${OPENAI_MODEL} returned non-HTML (content:${raw.length} reasoning:${reasoning.length})`);
-    } catch (e) {
-      console.error("[codegen/openai-lastresort] failed:", e && e.message);
-    }
-  }
-
-  throw oaLastErr;
+  // GLM sometimes puts the fragments in reasoning_content when content is empty.
+  return raw.trim() ? raw : reasoning;
 }
 
 // ─────────────────────────────────────────────────────────────────
-// VISUAL CRITIC LOOP
-// Renders the generated lab headlessly, screenshots it, and asks
-// GPT-4o vision to critique it against a fixed rubric. If the critic
-// finds blockers, we feed a structured fix-list back into Nemotron and
-// regenerate (capped retries so cost/latency stay bounded).
+// 2-STAGE PIPELINE
+// lesson (flash, ~10s, pushed first) → Stage 1 blueprint (pro) →
+// deterministic node select → GLM codegen ∥ quiz (flash) →
+// static validate → regenerate ONCE with failure reasons → save
 // ─────────────────────────────────────────────────────────────────
 
-let _puppeteerBrowser = null;
-async function getBrowser() {
-  if (_puppeteerBrowser) return _puppeteerBrowser;
-  const puppeteer = require("puppeteer");
-  _puppeteerBrowser = await puppeteer.launch({
-    headless: "new",
-    args: [
-      "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
-      // WebGL via SwiftShader (software renderer) — Railway has no GPU, so without
-      // these every Three.js lab screenshots as a BLACK canvas, which makes the
-      // vision critic flag a false "blank canvas" blocker and triggers needless
-      // Kimi regenerations. SwiftShader renders WebGL in software, headless.
-      "--use-gl=angle", "--use-angle=swiftshader",
-      "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist",
-      "--enable-webgl", "--enable-accelerated-2d-canvas",
-      // Memory reduction — the headless Chrome + SwiftShader stack OOM-kills small
-      // Railway containers (process SIGKILLed → SSE drops → "network error" with
-      // NOTHING logged). Trim every non-essential subsystem and cap the V8 heap.
-      "--no-zygote", "--renderer-process-limit=1", "--disable-extensions",
-      "--disable-background-networking", "--disable-default-apps", "--mute-audio",
-      "--disable-features=site-per-process,Translate,BackForwardCache",
-      "--js-flags=--max-old-space-size=256",
-    ],
-  });
-  // If Chrome dies (OOM / crash), drop the cached handle so the next call relaunches
-  // instead of reusing a dead browser and throwing on every subsequent lab.
-  _puppeteerBrowser.on("disconnected", () => { _puppeteerBrowser = null; });
-  return _puppeteerBrowser;
-}
-
-// Serialize screenshotLab — two concurrent headless renders double the memory
-// footprint and are the most common trigger for the OOM kill. A simple promise
-// chain forces renders to run one at a time.
-let _screenshotLock = Promise.resolve();
-function withScreenshotLock(fn) {
-  const run = _screenshotLock.then(fn, fn);
-  // Keep the chain alive even if fn rejects, but don't leak the rejection.
-  _screenshotLock = run.catch(() => {});
-  return run;
-}
-
-// Renders the lab HTML in headless Chrome, screenshots it, AND probes it for
-// liveness — a single screenshot can't tell a frozen/dead lab from a working
-// one. We instrument the page BEFORE its scripts run to count animation-loop
-// frames (requestAnimationFrame) and interaction wiring (addEventListener), which
-// is far more reliable than pixel-diffing (moving a slider thumb changes pixels
-// on its own and would mask a dead sim).
-// Returns { screenshot, jsError, isAnimated, hasInputWiring, controlCount }.
-async function screenshotLab(html) {
-  const browser = await getBrowser();
-  const page = await browser.newPage();
-  let jsError = null;
-  page.on("pageerror", (e) => { if (!jsError) jsError = e.message; });
-  try {
-    await page.setViewport({ width: 1280, height: 800 });
-    // Inject instrumentation as the very first script in the document so it runs
-    // before the lab's own scripts (evaluateOnNewDocument doesn't survive setContent).
-    const probeScript = `<script>(function(){window.__rafCount=0;var _raf=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=function(cb){window.__rafCount++;return _raf(cb);};window.__wiring=0;var _add=EventTarget.prototype.addEventListener;EventTarget.prototype.addEventListener=function(t){if(/^(input|change|click|pointer|mouse|touch|key)/.test(t))window.__wiring++;return _add.apply(this,arguments);};})();</script>`;
-    const instrumented = /<head[^>]*>/i.test(html)
-      ? html.replace(/<head[^>]*>/i, (m) => m + probeScript)
-      : /<html[^>]*>/i.test(html)
-      ? html.replace(/<html[^>]*>/i, (m) => m + probeScript)
-      : probeScript + html;
-    await page.setContent(instrumented, { waitUntil: "load", timeout: 20000 });
-    await new Promise(r => setTimeout(r, 2000)); // let the animate() loop draw a settled frame
-
-    // ANIMATION CHECK — sample the rAF counter twice; if it climbs, a loop is running.
-    const raf1 = await page.evaluate(() => window.__rafCount || 0);
-    await new Promise(r => setTimeout(r, 500));
-    const raf2 = await page.evaluate(() => window.__rafCount || 0);
-    const isAnimated = raf2 > raf1 + 2;
-
-    const stats = await page.evaluate(() => ({
-      wiring: window.__wiring || 0,
-      controlCount: document.querySelectorAll('input, button, select, [draggable="true"]').length,
-    }));
-    const hasInputWiring = stats.wiring > 0;
-
-    const screenshot = (await page.screenshot({ type: "png" })).toString("base64");
-    return { screenshot, jsError, isAnimated, hasInputWiring, controlCount: stats.controlCount };
-  } catch (err) {
-    return { screenshot: null, jsError: jsError || err.message, isAnimated: false, hasInputWiring: false, controlCount: 0 };
-  } finally {
-    await page.close();
-  }
-}
-
-const CRITIC_RUBRIC = `You are reviewing a screenshot of an auto-generated interactive educational lab (a self-contained HTML/Three.js/D3 webpage). Score it against this rubric and return ONLY valid JSON, no markdown:
-
+// Lesson — fires FIRST so the learner reads while the lab builds. Fast model,
+// no dependency on the blueprint (the topic alone is enough for prose).
+async function generateLessonV2(topic, category, courseContext) {
+  const prompt = `Write a short, punchy lesson about "${topic}" (category: ${category}).${courseContextBlock(courseContext)}
+Return ONLY valid JSON (no markdown fences):
 {
-  "score": <0-100 overall quality>,
-  "accept": <true if score >= 70 AND no blockers, else false>,
-  "issues": [
-    { "severity": "blocker" | "minor", "area": "occlusion" | "legibility" | "topic_fidelity" | "interactivity" | "visual_hierarchy" | "purpose" | "clarity" | "affordance", "problem": "<what's wrong, specifically>", "fix": "<concrete instruction the code generator can act on>" }
+  "summary": "1-2 sentence hook — why this matters in the real world",
+  "slides": [
+    { "title": "slide title", "bullets": ["bullet 1", "bullet 2", "bullet 3"] }
   ]
 }
-
-Rubric dimensions:
-- occlusion: is any chart, axis, control, or readout blocked/overlapped by another element (e.g. a 3D mesh sitting on top of a 2D chart, a panel covering data)? This is always a blocker if present.
-- legibility: is all text actually rendered and readable (not raw HTML tags showing as literal text, not low-contrast text on the dark background, not tiny/cut-off labels)? Raw tag text like "<span..." visible on screen is always a blocker.
-- topic_fidelity: does the visual literally depict the stated topic (not a generic/space scene unless the topic is space)?
-- interactivity: are controls (sliders, buttons, draggable objects) visually obvious and is there a clear primary action?
-- visual_hierarchy: is the main visual (chart or 3D scene) the clear focal point, not crowded out by chrome?
-- purpose: does every visible element appear to serve the learning goal, or is there obvious decorative clutter with no purpose?
-- clarity: would a first-time learner know, within 3 seconds and with no outside instructions, (a) what they're looking at, (b) what to touch first, and (c) what success looks like? Missing goal line, missing "how this works" / first-move hint, or an unexplained stage is a blocker.
-- affordance: is every control labeled with its ROLE — the action verb + the thing it acts on + the effect (e.g. "Drag the ball → launch angle", "Slide Rate → faster growth")? Is there a visible "Controls"/"How to play" legend panel that lists EVERY interactive element (one line each: name — verb → effect) plus the goal? A missing legend panel, an unlabeled slider/button/draggable, or a control with no visible live readout of its consequence, is a blocker. Also flag controls that look unbounded or able to reach nonsensical values for the topic.
-- purpose_execution: does the lab visually encode its PURPOSE — the specific entry_misconception it must correct, the aha_trigger visual event, and the real_world_payoff? Judge: (a) Is the entry_misconception something a learner COULD hold after looking at this lab's default state (i.e. the default state should INVITE the misconception so overcoming it is meaningful)? (b) Is there a visible, unmissable visual event that matches the aha_trigger description — NOT just a slider that changes a number? (c) Is the real_world_payoff shown explicitly (as text or a labeled scene element) when the learner wins, NOT just implied? A lab that looks nice but fails to stage the misconception, deliver the aha, or land the payoff is a blocker on this dimension.
-
-Be concrete in "fix" — name the exact element and the exact correction, so a code generator with no other context can apply it.`;
-
-async function critiqueLab(imageBase64, design) {
-  const s = design.spec || {};
-  const purposeCtx = [
-    `Topic: "${design.topic}"`,
-    `Learning goal: "${s.learning_goal || ""}"`,
-    `Entry misconception to CORRECT: "${s.entry_misconception || ""}"`,
-    `First move (what surprises them within 10s): "${s.first_move || ""}"`,
-    `Aha trigger (the exact visual event): "${s.aha_trigger || ""}"`,
-    `Real-world payoff (shown on win): "${s.real_world_payoff || ""}"`,
-  ].join("\n");
-  try {
-    // Vision call — uses visionClient (NVIDIA qwen2.5-vl when NVIDIA_API_KEY is set,
-    // otherwise OpenAI). Both support image_url in the OpenAI-compatible format.
-    const resp = await visionClient.chat.completions.create({
-      model: VISION_MODEL,
-      max_tokens: 1200,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: `${CRITIC_RUBRIC}\n\n${purposeCtx}` },
-            { type: "image_url", image_url: { url: `data:image/png;base64,${imageBase64}` } },
-          ],
-        },
-      ],
-    });
-    return parseLooseJSON(safeContent(resp));
-  } catch (err) {
-    console.warn("[critic] failed, skipping critique:", err.message);
-    return { score: 100, accept: true, issues: [] }; // fail open — never block lab delivery on critic errors
-  }
+Rules: exactly 4 slides. Slide 1 = the hook (a concrete real-world moment). Slides 2-3 = the core mechanism, built up step by step. Slide 4 = the common misconception and why it's wrong. 3-4 bullets per slide, ≤18 words per bullet. Plain English — no LaTeX, no backslash escapes.`;
+  const res = await openaiCreate({
+    model: LESSON_MODEL_ID,
+    max_tokens: 2000,
+    temperature: 0.5,
+    _fallbackChain: REASON_FALLBACK_CHAIN,
+    messages: [{ role: "user", content: prompt }],
+  }, "lesson");
+  return parseLooseJSON(safeContent(res));
 }
 
-function issuesToNotes(issues) {
-  return issues
-    .filter(i => i.severity === "blocker" || i.severity === "minor")
-    .map(i => `- [${i.severity.toUpperCase()}] (${i.area}) ${i.problem} → FIX: ${i.fix}`)
-    .join("\n");
+// Stage 1 — the ONE heavy reasoning call. Produces the blueprint that drives
+// node selection, codegen, and the quiz. Every field is load-bearing:
+// concept_type routes libraries, interaction_contract shapes the sim,
+// formulas trigger the KaTeX panel, misconception drives the predict gate.
+async function stageOneBlueprint(topic, category, groundingText, courseContext, levelBackground, levelGoal, sourceMaterial, sourceFocus) {
+  const personal = [
+    levelBackground ? `LEARNER BACKGROUND: ${levelBackground}` : "",
+    levelGoal ? `LEARNER GOAL: ${levelGoal}` : "",
+    sourceFocus ? `FOCUS: ${sourceFocus}` : "",
+    sourceMaterial ? `SOURCE MATERIAL (derive the lab from THIS):\n${sourceMaterial}` : "",
+  ].filter(Boolean).join("\n");
+  const prompt = `You are designing an interactive lab that teaches "${topic}" (category: ${category}).
+${groundingText ? `VERIFIED FACTS (use these, do not contradict them):\n${groundingText}\n` : ""}${personal ? personal + "\n" : ""}${courseContextBlock(courseContext)}
+Think hard about the ONE mechanism that, once seen moving, makes this topic click — and the ONE wrong belief most learners carry in.
+
+Return ONLY valid JSON:
+{
+  "topic": "sharpened display title for the lab",
+  "scenario": "2-3 sentence second-person hook: a concrete real-world moment where this mechanism decides an outcome",
+  "mechanism": "the core cause→effect chain the sim must make VISIBLE, stated precisely",
+  "misconception": "the specific wrong belief the lab must confront (this becomes the predict question)",
+  "aha_moment": "the exact on-screen event where the misconception visibly breaks",
+  "payoff": "one sentence: what the learner can now do/see in the real world",
+  "formulas": [ { "latex": "F = ma", "symbols": { "F": "force (N)", "m": "mass (kg)", "a": "acceleration (m/s²)" } } ],
+  "variables": [ { "name": "mass", "symbol": "m", "unit": "kg", "min": 1, "max": 50, "default": 10, "why": "what changing it reveals" } ],
+  "concept_type": "one of: dynamic-physical | emergent | quantitative | probabilistic | spatial-2D | spatial-3D | sequential | abstract | network | ml-concept",
+  "interaction_contract": {
+    "primaryInteraction": "the main verb (drag the ball, perturb the flock, step the algorithm...)",
+    "secondaryInteraction": "a second meaningful verb",
+    "objectsMove": true,
+    "feedbackLoop": "what visibly changes within 100ms of the learner acting",
+    "cameraResponds": false,
+    "requiresPhysics": false,
+    "playerAgency": "what the learner is free to break/explore beyond the guided path",
+    "successCondition": "the observable state that means they've got it (drives Lab.check)"
+  },
+  "verificationQuestion": "a question answerable ONLY by having interacted with the lab"
+}
+concept_type guide: dynamic-physical = motion/forces over time; emergent = many agents, local rules; quantitative = formula/curve relationships; probabilistic = randomness converging; spatial-2D = geometric invariants; spatial-3D = ONLY if depth itself carries the insight; sequential = ordered process/algorithm; abstract = categories/definitions; network = stocks, flows, graphs; ml-concept = learning algorithms.
+formulas: [] if the topic has no natural equation. requiresPhysics: true ONLY for collisions/gravity/constraints needing a physics engine.`;
+  const res = await openaiCreate({
+    model: THINK_MODEL_ID,
+    max_tokens: 6000,
+    temperature: 0.6,
+    _fallbackChain: REASON_FALLBACK_CHAIN,
+    messages: [{ role: "user", content: prompt }],
+  }, "blueprint");
+  const bp = parseLooseJSON(safeContent(res));
+  if (!bp || !bp.mechanism || !bp.misconception) {
+    throw new Error("Stage 1 blueprint missing mechanism/misconception — cannot build a lab from it");
+  }
+  return bp;
 }
 
-// Deterministic interaction probe → blocker issues the vision model can't see
-// from a single still frame (frozen sim, dead controls, JS crash).
-function probeIssues(probe) {
-  const issues = [];
-  if (probe.jsError) {
-    issues.push({ severity: "blocker", area: "interactivity",
-      problem: `The lab threw a JavaScript error on load: "${probe.jsError}". This usually means the sim never started.`,
-      fix: "Fix the JS error. Ensure all referenced DOM ids/variables exist before use, libraries are loaded before they're called, and animate() runs without throwing." });
-  }
-  if (probe.controlCount > 0 && !probe.hasInputWiring && !probe.jsError) {
-    issues.push({ severity: "blocker", area: "interactivity",
-      problem: "The lab has controls (sliders/buttons) but NOT A SINGLE input/click/pointer event listener was registered — the controls are dead, nothing happens when the learner uses them.",
-      fix: "Wire every control with addEventListener('input'/'click'/'pointerdown', ...) writing to a shared state object that animate() reads each frame. Set the full-viewport canvas to pointer-events:none (or give every HUD element a higher z-index) so clicks reach the controls." });
-  }
-  if (probe.controlCount > 0 && probe.hasInputWiring && !probe.isAnimated && !probe.jsError) {
-    issues.push({ severity: "blocker", area: "interactivity",
-      problem: "No animation loop is running (requestAnimationFrame is never called repeatedly) — the sim is frozen, so even wired controls produce no visible motion.",
-      fix: "Add a self-rescheduling animate(){ requestAnimationFrame(animate); update(dt); renderer.render(...) } loop that reads the shared state every frame, and call animate() once to start it. Controls must write to state; the loop is what moves the visuals." });
-  }
-  if (probe.controlCount === 0 && !probe.jsError) {
-    issues.push({ severity: "blocker", area: "interactivity",
-      problem: "No interactive controls (sliders/buttons) and no draggable response were detected at all — the lab is not interactive.",
-      fix: "Add the controls from the interaction palette: sliders/buttons that change the sim, or a draggable canvas object, each producing immediate visible change." });
-  }
-  return issues;
+// Quiz — runs in PARALLEL with codegen, off the Stage 1 JSON (not the lesson),
+// so it tests the mechanism the lab actually teaches.
+async function generateQuizV2(blueprint, category) {
+  const prompt = `Write a quiz for a lab that teaches this mechanism (category: ${category}):
+MECHANISM: ${blueprint.mechanism}
+MISCONCEPTION IT CONFRONTS: ${blueprint.misconception}
+AHA MOMENT: ${blueprint.aha_moment || ""}
+VARIABLES: ${JSON.stringify((blueprint.variables || []).map(v => v.name))}
+
+Return ONLY valid JSON:
+{ "questions": [ { "q": "question", "options": ["A","B","C","D"], "answer": 0, "explanation": "why correct" } ] }
+Rules: exactly 5 questions. Q1 targets the misconception directly. At least 2 questions require having SEEN the sim behavior (not recall). 1 correct + 3 plausible distractors each. Plain English, no LaTeX.`;
+  const res = await openaiCreate({
+    model: LESSON_MODEL_ID,
+    max_tokens: 2500,
+    temperature: 0.4,
+    _fallbackChain: REASON_FALLBACK_CHAIN,
+    messages: [{ role: "user", content: prompt }],
+  }, "quiz");
+  return parseLooseJSON(safeContent(res));
 }
 
-// Wraps codeFromImageBrief with a render → probe + vision-critique → regenerate
-// loop. Regenerates when EITHER the deterministic probe finds a dead/static lab
-// OR the vision critic finds a visual blocker. Capped retries bound cost/latency.
-async function codeFromImageBriefWithCritique(design, labThinking, pedagogy, imageDataUrl, category, onProgress, interactionContract = null, maxRetries = 2) {
-  let html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress, null, interactionContract);
+// Build the GLM codegen prompt from blueprint + selected node. On retry,
+// `failures` carries the validator's reasons so GLM fixes them specifically.
+function codegenPrompt(blueprint, node, category, failures) {
+  const libs = node.libs.length ? node.libs.join(", ") : "none — vanilla JS only";
+  return `You are an elite creative coder building an interactive learning lab.
 
-  // ── ALWAYS-ON static guardrail (cheap regex, no headless browser) ──────────
-  // Catches the failure modes that ship blank/dead/truncated labs — truncated
-  // HTML, no Three.js scene, no animation loop, no interaction, no win hook —
-  // and regenerates via the SAME codegen call with a corrective note. Runs even
-  // when the heavier (OOM-prone) visual critic below is disabled. This is the
-  // primary defense against empty/weak labs in the default deployment.
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const check = validateLabHtml(html, interactionContract);
-    if (check.ok) break;
-    console.warn(`[labcheck] attempt ${attempt} blockers: ${check.issues.join(" | ")}`);
-    if (onProgress) { try { onProgress(null, `Reviewing and fixing your lab… (${check.issues.length} issue${check.issues.length > 1 ? "s" : ""})`); } catch (_) {} }
-    html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress, labCheckNotes(check.issues), interactionContract);
-  }
+TOPIC: ${blueprint.topic}
+SCENARIO: ${blueprint.scenario}
+MECHANISM TO MAKE VISIBLE: ${blueprint.mechanism}
+MISCONCEPTION TO BREAK: ${blueprint.misconception}
+AHA MOMENT: ${blueprint.aha_moment}
+CATEGORY AESTHETIC: ${categoryGuidance(category)}
+VARIABLES: ${JSON.stringify(blueprint.variables || [])}
+${node.hasFormulas ? `FORMULAS (register via Lab.formula.set, update live): ${JSON.stringify(blueprint.formulas)}` : "No formulas — do NOT call Lab.formula.*"}
+INTERACTION CONTRACT (non-negotiable):
+${JSON.stringify(blueprint.interaction_contract || {}, null, 2)}
 
-  // The render→critique loop launches headless Chromium (puppeteer). On a
-  // memory-limited Railway container, SwiftShader software-WebGL rendering can
-  // OOM-kill the whole process (→ 502). So it's OFF by default and only runs when
-  // ENABLE_VISUAL_CRITIC=1 (e.g. a box with enough RAM). Without it, Kimi's output
-  // ships directly — the deterministic extractHtml + final HTML guard still protect
-  // against blank labs; we just skip the screenshot-based visual QA.
-  if (process.env.ENABLE_VISUAL_CRITIC !== "1") {
-    return html;
-  }
+LIBRARIES AVAILABLE (already loaded as script tags — use them directly, do NOT add CDN tags): ${libs}
+VISUAL RULES FOR THIS LAB TYPE: ${node.visualRules}
 
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    let probe, critique;
-    try {
-      probe = await withScreenshotLock(() => screenshotLab(html));
-      critique = probe.screenshot
-        ? await critiqueLab(probe.screenshot, design)
-        : { score: 0, accept: false, issues: [] };
-    } catch (err) {
-      console.warn("[critic] render/critique pipeline failed, shipping as-is:", err.message);
-      break;
+${harness.HARNESS_API_DOC}
+
+REQUIREMENTS:
+1. Call Lab.predict.setup() FIRST with a predict question built from the misconception above.
+2. Boot the sim inside Lab.onStart().
+3. Register every on-screen color/entity with Lab.legend.add().
+4. Wire Lab.playback.attach() if anything animates continuously.
+5. Call Lab.check(true, detail) when the interaction contract's successCondition is reached.
+6. Call Lab.reveal.show() at the end state, referencing the learner's prediction.
+7. The aha moment must be a VISIBLE on-screen event, not text.
+${failures && failures.length ? `\nYOUR PREVIOUS ATTEMPT FAILED VALIDATION. Fix ALL of these:\n${failures.map(f => `- ${f}`).join("\n")}\n` : ""}
+Output the three fragments EXACTLY as specified (style, lab-stage div, script). No markdown fences, no explanation, no <html> wrapper.`;
+}
+
+// Codegen with validation + ONE regeneration. Returns { html, fragments, node }.
+async function generateLabCode(blueprint, category, onProgress) {
+  const node = harness.selectNode(blueprint);
+  console.log(`[node-selector] concept_type=${node.conceptType} libs=[${node.libs.join(",")}]`);
+  let failures = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const prompt = codegenPrompt(blueprint, node, category, failures);
+    const raw = await withKimiLock(() => _runKimiStream(prompt, onProgress));
+    const fragments = harness.extractFragments(raw);
+    const verdict = harness.validateLab(fragments, node, raw);
+    if (verdict.ok) {
+      const html = harness.buildLabHTML({ title: blueprint.topic, blueprint, node, fragments });
+      return { html, fragments, node, attempts: attempt + 1 };
     }
-
-    const allIssues = [...probeIssues(probe), ...(critique.issues || [])];
-    const blockers = allIssues.filter(i => i.severity === "blocker");
-    console.log(`[critic] attempt ${attempt}: score=${critique.score} animated=${probe.isAnimated} wired=${probe.hasInputWiring} controls=${probe.controlCount} jsError=${!!probe.jsError} blockers=${blockers.length}`);
-    if (blockers.length === 0) break;
-
-    if (onProgress) { try { onProgress(null, `Reviewing and improving your lab… (fixing ${blockers.length} issue${blockers.length > 1 ? "s" : ""})`); } catch (_) {} }
-    const notes = issuesToNotes(allIssues);
-    html = await codeFromImageBrief(design, labThinking, pedagogy, imageDataUrl, category, onProgress, notes, interactionContract);
+    failures = verdict.failures;
+    console.warn(`[codegen] attempt ${attempt + 1} failed validation: ${failures.join(" | ")}`);
   }
-
-  return html;
+  throw new Error(`Lab failed validation twice: ${failures.join(" | ")}`);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -2844,17 +1404,11 @@ Rules: lesson has exactly 3 slides (3-4 bullets each, ≤15 words per bullet). Q
           const courseContext = (data.courseContext && Array.isArray(data.courseContext.modules) && data.courseContext.modules.length)
             ? data.courseContext : null;
 
-          let topic, expanded;
-          if (courseContext) {
-            topic = rawTopic;                 // the course title/subject — keep full scope
-            expanded = { topic, why: "" };
-          } else {
-            send("expand", `Sharpening topic…`);
-            expanded = await expandTopic(rawTopic, category, sourceMaterial, sourceFocus);
-            topic = expanded.topic;
-          }
+          // 2-stage pipeline: no separate topic-expansion call — Stage 1 sharpens
+          // the display title itself. Cache is keyed on the raw input topic.
+          const topic = rawTopic;
           const key = topicKey(topic);
-          send("expanded", `Building lab for: ${topic}`, { topic, why: expanded.why, category });
+          send("lesson", `Building lab for: ${topic}`, { topic, category });
 
           // ── Cache hit: serve instantly (bypass for personalised/source-based/course labs) ──
           if (!levelBackground && !levelGoal && !sourceMaterial && !courseContext) {
@@ -2890,72 +1444,54 @@ Rules: lesson has exactly 3 slides (3-4 bullets each, ≤15 words per bullet). Q
             }
           }
 
-          // ── Cache miss (or level-tuned/source-based): run full pipeline then save ──
-          // Ground the topic in verified facts (Wikipedia/Wikidata/Tavily) in parallel
-          // with topic reasoning — grounding is a network call (~1-3s) while thinking
-          // is an LLM call (~5-10s). groundingText feeds specFromThinking downstream.
-          send("ground", "Checking the facts…");
-          send("think", `Reasoning about "${topic}"…`);
-          let groundingText = null;
-          const [thinking] = await Promise.all([
-            thinkAboutTopic(topic, category, levelBackground, levelGoal, sourceMaterial, sourceFocus, null, courseContext),
-            groundTopic(topic, category)
-              .then(g => { if (g) groundingText = g.text; })
-              .catch(e => console.warn("[grounding] failed, continuing ungrounded:", e.message)),
-          ]);
-
-          send("design", "Translating insight into lab spec…");
-          const design = await specFromThinking(topic, thinking, category, groundingText, courseContext);
-
-          send("labthink", "Thinking about how to build it…");
-          // Fire lesson + quiz generation in parallel with labthink — they use the fast
-          // mini model (~10s) while labthink + codegen takes minutes. Badges light up fast.
-          let lessonResult = null, quizResult = null;
-          // Interaction director runs in the same parallel window as labthink —
-          // an extended-thinking call (gpt-oss, reasoning_effort=high) that picks
-          // the interaction language for this topic. Adds zero wall-clock.
-          const [labThinking, pedagogy, interactionContract] = await Promise.all([
-            thinkAboutLab(design, category, courseContext),
-            thinkAboutVisualPedagogy(design.topic, design.spec.lab_archetype || "physics-sim", category),
-            thinkAboutInteraction(design, category, courseContext),
-            generateLesson(design).then(r => {
+          // ── Cache miss: run the 2-stage pipeline then save ──
+          // LESSON fires immediately (flash, ~10s) and is pushed the moment it
+          // resolves so the learner reads while everything else builds. Grounding
+          // (Wikipedia/Wikidata/Tavily, ~1-3s network) runs in the same window and
+          // feeds the Stage 1 blueprint.
+          send("lesson", "Writing your lesson…");
+          let lessonResult = null;
+          const lessonPromise = generateLessonV2(topic, category, courseContext)
+            .then(r => {
               lessonResult = r;
               if (r) send("lesson", "Lesson ready.", { lesson: r });
-            }).catch(() => {}),
-            generateQuiz(design).then(r => {
+            })
+            .catch(e => console.warn("[lesson] failed, lab continues without it:", e.message));
+
+          let groundingText = null;
+          await groundTopic(topic, category)
+            .then(g => { if (g) groundingText = g.text; })
+            .catch(e => console.warn("[grounding] failed, continuing ungrounded:", e.message));
+
+          // ── STAGE 1: the one heavy reasoning call ──
+          send("reasoning", `Reasoning about "${topic}"…`);
+          const blueprint = await stageOneBlueprint(topic, category, groundingText, courseContext,
+            levelBackground, levelGoal, sourceMaterial, sourceFocus);
+
+          // ── STAGE 2: GLM codegen ∥ quiz (both off the Stage 1 JSON) ──
+          send("building", "Building your lab…");
+          let quizResult = null;
+          const quizPromise = generateQuizV2(blueprint, category)
+            .then(r => {
               quizResult = r;
               if (r) send("quiz", "Quiz ready.", { quiz: r });
-            }).catch(() => {}),
-          ]);
+            })
+            .catch(e => console.warn("[quiz] failed, lab continues without it:", e.message));
 
-          let imageDataUrl = null;
-          if (process.env.USE_MOCKUP === "1") {
-            send("image", "Sketching a visual mockup…");
-            imageDataUrl = await mockupImage(design);
-          }
+          const { html, node, attempts } = await generateLabCode(blueprint, category,
+            (chars) => send("building", `Building your lab… (${Math.round(chars / 1000)}k chars)`));
+          console.log(`[codegen] validated on attempt ${attempts} (concept_type=${node.conceptType})`);
 
-          send("code", "Writing your lab…");
-          const html = await codeFromImageBriefWithCritique(design, labThinking, pedagogy, imageDataUrl, category,
-            (chars, msg) => send("code", msg || `Writing your lab… (${Math.round(chars / 1000)}k chars)`),
-            interactionContract);
-
-          // Final guard: never ship a blank/broken iframe. If codegen produced
-          // empty or non-HTML output, surface a real error instead of a blank lab
-          // so the user isn't charged for an invisible result.
-          const htmlOk = typeof html === "string" &&
-            /^\s*<!doctype|^\s*<html/i.test(html) && html.length > 200;
-          if (!htmlOk) {
-            throw new Error("Lab generation returned empty or invalid HTML — not charging you for a blank lab. Please retry.");
-          }
+          await Promise.all([lessonPromise, quizPromise]);
 
           const labData = {
             topicKey: key,
-            topic: design.topic,
-            scenario: design.scenario,
-            verificationQuestion: design.verificationQuestion,
-            learningGoal: design.spec.learning_goal,
-            realWorldPayoff: design.spec.real_world_payoff,
-            reflection: design.spec.reflection || null,
+            topic: blueprint.topic || topic,
+            scenario: blueprint.scenario,
+            verificationQuestion: blueprint.verificationQuestion,
+            learningGoal: blueprint.mechanism,
+            realWorldPayoff: blueprint.payoff,
+            blueprint,
             labHtml: html,
             lesson: lessonResult || undefined,
             quiz: quizResult || undefined,
@@ -2968,7 +1504,7 @@ Rules: lesson has exactly 3 slides (3-4 bullets each, ≤15 words per bullet). Q
           // Fire-and-forget save — don't block the response.
           // Skip caching personalised/source-based/course labs (they're learner- or course-specific).
           if (!levelBackground && !levelGoal && !sourceMaterial && !courseContext) {
-            Promise.resolve(saveLab(key, design.topic, labData)).catch(() => {});
+            Promise.resolve(saveLab(key, labData.topic, labData)).catch(() => {});
           }
 
         } else if (req.url === "/plan") {
@@ -3060,10 +1596,9 @@ if (require.main === module) {
 }
 
 module.exports = {
-  expandTopic,
-  thinkAboutTopic,
-  specFromThinking,
-  thinkAboutLab,
-  thinkAboutVisualPedagogy,
-  codeFromImageBrief,
+  generateLessonV2,
+  stageOneBlueprint,
+  generateQuizV2,
+  generateLabCode,
+  topicKey,
 };

@@ -842,25 +842,21 @@
     <div class="et-why" id="etWhy"></div>
   </div>
   <div class="stages">
-    <div class="stage-row" id="stageThink">
+    <div class="stage-row" id="stageLesson">
       <div class="stage-dot"></div>
-      <div class="stage-text" id="stageThinkText">Reasoning about your topic…</div>
+      <div class="stage-text">Writing your lesson…</div>
     </div>
-    <div class="stage-row" id="stageDesign">
+    <div class="stage-row" id="stageReasoning">
       <div class="stage-dot"></div>
-      <div class="stage-text">Translating insight into lab spec…</div>
+      <div class="stage-text" id="stageReasoningText">Reasoning about your topic…</div>
     </div>
-    <div class="stage-row" id="stageLabThink">
+    <div class="stage-row" id="stageBuilding">
       <div class="stage-dot"></div>
-      <div class="stage-text">Thinking about how to build it…</div>
+      <div class="stage-text">Building your lab…</div>
     </div>
-    <div class="stage-row" id="stageImage" style="display:none">
+    <div class="stage-row" id="stageQuiz">
       <div class="stage-dot"></div>
-      <div class="stage-text">Sketching a visual mockup…</div>
-    </div>
-    <div class="stage-row" id="stageCode">
-      <div class="stage-dot"></div>
-      <div class="stage-text">Writing your lab…</div>
+      <div class="stage-text">Writing your quiz…</div>
     </div>
   </div>
 </div>
@@ -966,12 +962,11 @@
   const etTopic         = document.getElementById("etTopic");
   const etWhy           = document.getElementById("etWhy");
 
-  const stageThink    = document.getElementById("stageThink");
-  const stageDesign   = document.getElementById("stageDesign");
-  const stageLabThink = document.getElementById("stageLabThink");
-  const stageImage    = document.getElementById("stageImage");
-  const stageCode     = document.getElementById("stageCode");
-  const stageThinkText = document.getElementById("stageThinkText");
+  const stageLesson    = document.getElementById("stageLesson");
+  const stageReasoning = document.getElementById("stageReasoning");
+  const stageBuilding  = document.getElementById("stageBuilding");
+  const stageQuiz      = document.getElementById("stageQuiz");
+  const stageReasoningText = document.getElementById("stageReasoningText");
 
   let currentPlan = null;
   let lastLabResult = null;
@@ -987,13 +982,31 @@
   });
 
   function setStage(name) {
-    const map = { think: stageThink, design: stageDesign, labthink: stageLabThink, image: stageImage, code: stageCode };
+    const map = { lesson: stageLesson, reasoning: stageReasoning, building: stageBuilding, quiz: stageQuiz };
     Object.values(map).forEach(el => el.classList.remove("active"));
-    if (name === "image") stageImage.style.display = "flex";
     if (map[name]) map[name].classList.add("active");
-    const order = ["think", "design", "labthink", "image", "code"];
+    const order = ["lesson", "reasoning", "building", "quiz"];
     const idx = order.indexOf(name);
     order.slice(0, idx).forEach(s => { if (map[s]) { map[s].classList.remove("active"); map[s].classList.add("done"); } });
+  }
+
+  // Shared SSE-event handler for the new pipeline stages (used by both the
+  // first attempt and the retry pass).
+  function applySSEStage(event) {
+    if (event.stage === "lesson") {
+      setStage("lesson");
+      if (event.data?.topic) {
+        etTopic.textContent = event.data.topic;
+        etWhy.textContent = "";
+        expandedTopicEl.style.display = "block";
+        stageReasoningText.textContent = `Reasoning about "${event.data.topic}"…`;
+      }
+      if (event.data?.lesson) { stageLesson.classList.remove("active"); stageLesson.classList.add("done"); }
+    }
+    if (event.stage === "reasoning") setStage("reasoning");
+    if (event.stage === "building")  setStage("building");
+    if (event.stage === "quiz")      stageQuiz.classList.add("done");
+    if (event.stage === "error")     throw new Error(event.msg);
   }
 
   function renderQuiz(reflection) {
@@ -1042,13 +1055,12 @@
     topicBadge.style.display = "none";
     loadingEl.style.display = "block";
 
-    [stageThink, stageDesign, stageLabThink, stageImage, stageCode].forEach(el => el.classList.remove("active", "done"));
-    stageImage.style.display = "none";
+    [stageLesson, stageReasoning, stageBuilding, stageQuiz].forEach(el => el.classList.remove("active", "done"));
     expandedTopicEl.style.display = "none";
     etTopic.textContent = "";
     etWhy.textContent = "";
-    stageThinkText.textContent = `Reasoning about "${topic}"…`;
-    setStage("think");
+    stageReasoningText.textContent = `Reasoning about "${topic}"…`;
+    setStage("lesson");
 
     try {
       const response = await fetch("/plan-lab", {
@@ -1079,18 +1091,7 @@
           if (!line.startsWith("data: ")) continue;
           const event = JSON.parse(line.slice(6));
 
-          if (event.stage === "expanded") {
-            etTopic.textContent = event.data.topic;
-            etWhy.textContent = event.data.why;
-            expandedTopicEl.style.display = "block";
-            stageThinkText.textContent = `Reasoning about "${event.data.topic}"…`;
-          }
-          if (event.stage === "think")    setStage("think");
-          if (event.stage === "design")   setStage("design");
-          if (event.stage === "labthink") setStage("labthink");
-          if (event.stage === "image")    setStage("image");
-          if (event.stage === "code")     setStage("code");
-          if (event.stage === "error")    throw new Error(event.msg);
+          applySSEStage(event);
           if (event.stage === "done")     result = event.data;
         }
       }
@@ -1099,7 +1100,7 @@
       // transient empty response). Resets UI stage indicators then tries again.
       if (!result) {
         console.warn("No result on first attempt — retrying once...");
-        setStage("think");
+        setStage("lesson");
         const retry = await fetch("/plan-lab", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1121,13 +1122,7 @@
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             const event = JSON.parse(line.slice(6));
-            if (event.stage === "expanded") { etTopic.textContent = event.data.topic; etWhy.textContent = event.data.why; expandedTopicEl.style.display = "block"; }
-            if (event.stage === "think")    setStage("think");
-            if (event.stage === "design")   setStage("design");
-            if (event.stage === "labthink") setStage("labthink");
-            if (event.stage === "image")    setStage("image");
-            if (event.stage === "code")     setStage("code");
-            if (event.stage === "error")    throw new Error(event.msg);
+            applySSEStage(event);
             if (event.stage === "done")     result = event.data;
           }
         }
