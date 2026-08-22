@@ -1595,10 +1595,20 @@ if (require.main === module) {
   server.listen(PORT, "0.0.0.0", () => console.log(`Repend running at http://0.0.0.0:${PORT}`));
 }
 
-module.exports = {
+// Export the http.Server itself so serverless platforms (Vercel) that import
+// this module get a valid entrypoint — they require the default export to be a
+// request handler or a server instance, not a plain object. The
+// `require.main === module` guard above means importing never calls .listen(),
+// so Railway/Render (which run `node server.js` directly) are unaffected.
+//
+// Pipeline helpers stay reachable via destructuring — `const { topicKey } =
+// require("./server.js")` still works — by hanging them off the server object.
+Object.assign(server, {
   generateLessonV2,
   stageOneBlueprint,
   generateQuizV2,
   generateLabCode,
   topicKey,
-};
+});
+
+module.exports = server;
